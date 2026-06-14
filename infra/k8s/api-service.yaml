@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: zknotes-api
+spec:
+  selector:
+    app: zknotes-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
+

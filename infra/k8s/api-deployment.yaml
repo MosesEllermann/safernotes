@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zknotes-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: zknotes-api
+  template:
+    metadata:
+      labels:
+        app: zknotes-api
+    spec:
+      containers:
+        - name: api
+          image: zknotes-api:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: zknotes-api-secrets
+          readinessProbe:
+            httpGet:
+              path: /api/v1/search/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+

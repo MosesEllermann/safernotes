@@ -1,0 +1,40 @@
+# Local environment
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Local databases and generated backend artifacts
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+backend/zknotes_backend.egg-info/
+
+# Flutter and Dart generated files
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.pub-cache/
+frontend/build/
+frontend/.idea/
+frontend/*.iml
+
+# Flutter platform dependency outputs
+frontend/ios/Pods/
+frontend/ios/.symlinks/
+frontend/ios/Flutter/Flutter.framework
+frontend/ios/Flutter/Flutter.podspec
+frontend/android/.gradle/
+frontend/android/local.properties
+
+# OS/editor noise
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.local/

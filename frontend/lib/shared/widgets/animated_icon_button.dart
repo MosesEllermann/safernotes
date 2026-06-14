@@ -1,0 +1,102 @@
+import 'package:flutter/material.dart';
+
+class AppIconButton extends StatefulWidget {
+  const AppIconButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.selected = false,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final bool selected;
+
+  @override
+  State<AppIconButton> createState() => _AppIconButtonState();
+}
+
+class _AppIconButtonState extends State<AppIconButton> {
+  var _hovered = false;
+  var _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final active = widget.selected || _hovered || _pressed;
+    return Tooltip(
+      message: widget.tooltip,
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() {
+          _hovered = false;
+          _pressed = false;
+        }),
+        child: GestureDetector(
+          onTapDown: widget.onPressed == null
+              ? null
+              : (_) => setState(() => _pressed = true),
+          onTapCancel: () => setState(() => _pressed = false),
+          onTapUp: widget.onPressed == null
+              ? null
+              : (_) {
+                  setState(() => _pressed = false);
+                  widget.onPressed?.call();
+                },
+          child: AnimatedScale(
+            scale: _pressed ? 0.86 : (_hovered ? 1.12 : 1),
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutBack,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutBack,
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: active
+                    ? scheme.surfaceContainerHighest.withValues(alpha: 0.82)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                widget.icon,
+                size: 17,
+                weight: 300,
+                color: widget.onPressed == null
+                    ? scheme.onSurface.withValues(alpha: 0.28)
+                    : scheme.onSurface.withValues(alpha: 0.78),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class AppIconToggle extends StatelessWidget {
+  const AppIconToggle({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppIconButton(
+      icon: icon,
+      tooltip: tooltip,
+      selected: selected,
+      onPressed: onPressed,
+    );
+  }
+}

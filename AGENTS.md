@@ -1,0 +1,53 @@
+# Agent Context
+
+This repository is a zero-knowledge encrypted notes product with a Django backend and a Flutter client.
+
+## Product Shape
+
+- Backend: `backend/`, Django REST API, encrypted payload boundary.
+- Frontend: `frontend/`, Flutter app for web, Android, and iOS.
+- Local docs and phase summaries: `outputs/`.
+- Infrastructure starters: `docker-compose.yml`, `infra/`.
+
+## Current Frontend Direction
+
+The UI is a modern sticky-note app inspired by Google Keep and Animate UI/Lucide-style motion:
+
+- Small animated icon controls live in `frontend/lib/shared/widgets/animated_icon_button.dart`.
+- Main notes surface lives in `frontend/lib/features/notes/notes_screen.dart`.
+- Editor lives in `frontend/lib/features/notes/note_editor_screen.dart`.
+- Notes support active/archive/trash/deleted buckets.
+- Notes can be text notes or checklist notes; checklist mode replaces the body editor.
+- Formatting is Markdown-style with inline preview in editor and card previews.
+
+## Security Boundary
+
+Do not send plaintext note title/body/checklist data to backend note fields. The backend accepts encrypted envelopes for user content. Client-side note data is encrypted in `CryptoService` before sync.
+
+## Commands
+
+Backend checks:
+
+```sh
+cd backend
+../.venv/bin/python manage.py check
+../.venv/bin/python manage.py makemigrations --check --dry-run
+../.venv/bin/python -m pytest -q
+```
+
+Frontend checks:
+
+```sh
+cd frontend
+./tool/flutterw analyze
+./tool/flutterw build web --dart-define=API_BASE_URL=http://127.0.0.1:8000 --no-wasm-dry-run
+```
+
+Flutter widget tests may fail inside restricted sandboxes because Flutter opens a temporary localhost socket.
+
+## Important Caveats
+
+- The prototype client currently uses PBKDF2-SHA256 for password-derived key wrapping. Replace with Argon2id before production.
+- Near-real-time collaboration is currently autosave plus polling/presence refresh. The backend has encrypted WebSocket collaboration primitives, but the Flutter client does not yet use a CRDT/WebSocket editor.
+- Share invitations require recipient user IDs in the current UI.
+

@@ -1,0 +1,13 @@
+replicaCount: 2
+
+image:
+  repository: zknotes-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 80
+
+env:
+  DJANGO_SETTINGS_MODULE: config.settings.production
+
