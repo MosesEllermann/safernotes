@@ -144,7 +144,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                       if (!widget.embedded)
                         AppIconButton(
                           tooltip: l10n.t('close'),
-                          icon: Icons.close,
+                          icon: Icons.chevron_left,
                           onPressed: () {
                             _saveNow();
                             Navigator.of(context).maybePop();
@@ -191,6 +191,14 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                   selectedColor: _color,
                   colors: _colors,
                 ),
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outlineVariant
+                      .withValues(alpha: 0.62),
+                ),
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
@@ -211,13 +219,13 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                             ? Padding(
                                 key: const ValueKey('checklist'),
                                 padding:
-                                    const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                                    const EdgeInsets.fromLTRB(20, 10, 20, 16),
                                 child: checklist,
                               )
                             : Padding(
                                 key: const ValueKey('body'),
                                 padding:
-                                    const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                                    const EdgeInsets.fromLTRB(20, 6, 20, 10),
                                 child: editor,
                               ),
                       );
@@ -393,9 +401,11 @@ class _BodyEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
-      minLines: 18,
+      expands: true,
+      minLines: null,
       maxLines: null,
       keyboardType: TextInputType.multiline,
+      textAlignVertical: TextAlignVertical.top,
       decoration: InputDecoration.collapsed(
         hintText: hint,
       ),

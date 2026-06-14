@@ -20,7 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=8.2,<9",
+  "pytest>=9.0.3,<10",
   "pytest-django>=4.8,<5",
   "ruff>=0.5,<0.13",
   "mypy>=1.10,<1.17",

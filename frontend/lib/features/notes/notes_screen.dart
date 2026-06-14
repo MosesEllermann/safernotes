@@ -9,6 +9,7 @@ import 'package:zknotes_app/shared/models/note.dart';
 import 'package:zknotes_app/shared/widgets/animated_icon_button.dart';
 
 final noteSearchProvider = StateProvider<String>((ref) => '');
+final sideNavExpandedProvider = StateProvider<bool>((ref) => true);
 
 class NotesScreen extends ConsumerWidget {
   const NotesScreen({super.key});
@@ -18,12 +19,28 @@ class NotesScreen extends ConsumerWidget {
     final l10n = ref.watch(l10nProvider);
     final notes = ref.watch(notesControllerProvider);
     final session = ref.watch(authControllerProvider).valueOrNull;
+    final width = MediaQuery.sizeOf(context).width;
+    final desktop = width >= 900;
+    final showLogoText = width >= 620;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 72,
-        titleSpacing: 12,
+        titleSpacing: 8,
         title: Row(
           children: [
+            AppIconButton(
+              tooltip: 'Menue',
+              icon: Icons.menu_rounded,
+              onPressed: () {
+                if (desktop) {
+                  final expanded = ref.read(sideNavExpandedProvider);
+                  ref.read(sideNavExpandedProvider.notifier).state = !expanded;
+                } else {
+                  _showNavigationSheet(context, ref);
+                }
+              },
+            ),
+            const SizedBox(width: 8),
             Container(
               width: 40,
               height: 40,
@@ -34,34 +51,30 @@ class NotesScreen extends ConsumerWidget {
               child:
                   const Icon(Icons.lightbulb_outline, color: Color(0xfff9ab00)),
             ),
-            const SizedBox(width: 12),
-            Text(
-              l10n.t('appName'),
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const SizedBox(width: 24),
+            if (showLogoText) ...[
+              const SizedBox(width: 12),
+              Text(
+                l10n.t('appName'),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+              const SizedBox(width: 24),
+            ] else
+              const SizedBox(width: 10),
             const Expanded(child: _SearchField()),
           ],
         ),
         actions: [
-          const _SyncIndicator(),
-          AppIconButton(
-            tooltip: l10n.t('settings'),
-            icon: Icons.settings_outlined,
-            onPressed: () => showModalBottomSheet<void>(
-              context: context,
-              showDragHandle: true,
-              builder: (_) => const SettingsSheet(),
+          if (desktop) ...[
+            const _SyncIndicator(),
+            AppIconButton(
+              tooltip: l10n.t('settings'),
+              icon: Icons.settings_outlined,
+              onPressed: () => _showSettingsSheet(context),
             ),
-          ),
-          AppIconButton(
-            tooltip: l10n.t('logout'),
-            icon: Icons.logout,
-            onPressed: () =>
-                ref.read(authControllerProvider.notifier).signOut(),
-          ),
+          ],
+          _AccountButton(email: session?.email ?? ''),
           const SizedBox(width: 8),
         ],
       ),
@@ -115,19 +128,6 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (widget.email.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 4, bottom: 8),
-                          child: Text(
-                            widget.email,
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                          ),
-                        ),
                       if (bucket == 'active')
                         _QuickComposer(
                           onTap: () => _openEditor(
@@ -163,6 +163,10 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
                       return _KeepNoteCard(
                         note: note,
                         onTap: () => _openEditor(context, ref, note),
+                        onTogglePin: () => ref
+                            .read(notesControllerProvider.notifier)
+                            .togglePinned(note),
+                        onInvite: () => _showInviteSheet(context, ref, note),
                         onArchive: () => ref
                             .read(notesControllerProvider.notifier)
                             .changeState(note, 'archived'),
@@ -206,27 +210,35 @@ class _SideRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
-    return Container(
-      width: 88,
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+    final expanded = ref.watch(sideNavExpandedProvider);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      width: expanded ? 224 : 88,
+      padding: EdgeInsets.fromLTRB(12, 12, expanded ? 16 : 12, 0),
       child: Column(
+        crossAxisAlignment:
+            expanded ? CrossAxisAlignment.stretch : CrossAxisAlignment.center,
         children: [
           _RailButton(
             bucket: 'active',
             icon: Icons.lightbulb_outline,
             label: l10n.t('notes'),
+            expanded: expanded,
           ),
           const SizedBox(height: 8),
           _RailButton(
             bucket: 'archived',
             icon: Icons.archive_outlined,
             label: 'Archiv',
+            expanded: expanded,
           ),
           const SizedBox(height: 8),
           _RailButton(
             bucket: 'trashed',
             icon: Icons.delete_outline,
             label: 'Papierkorb',
+            expanded: expanded,
           ),
         ],
       ),
@@ -239,11 +251,13 @@ class _RailButton extends ConsumerWidget {
     required this.bucket,
     required this.icon,
     required this.label,
+    required this.expanded,
   });
 
   final String bucket;
   final IconData icon;
   final String label;
+  final bool expanded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -253,21 +267,55 @@ class _RailButton extends ConsumerWidget {
       child: GestureDetector(
         onTap: () => ref.read(noteBucketProvider.notifier).state = bucket,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 220),
           curve: Curves.easeOutBack,
-          width: selected ? 62 : 54,
-          height: 42,
+          height: 44,
+          padding: EdgeInsets.symmetric(horizontal: expanded ? 14 : 0),
           decoration: BoxDecoration(
             color: selected
                 ? Theme.of(context).colorScheme.secondaryContainer
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(expanded ? 999 : 18),
           ),
-          child: Icon(icon,
-              size: 18,
-              color: selected
-                  ? Theme.of(context).colorScheme.onSecondaryContainer
-                  : Theme.of(context).colorScheme.onSurfaceVariant),
+          child: Row(
+            mainAxisAlignment:
+                expanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+            children: [
+              Icon(icon,
+                  size: 18,
+                  color: selected
+                      ? Theme.of(context).colorScheme.onSecondaryContainer
+                      : Theme.of(context).colorScheme.onSurfaceVariant),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                child: expanded
+                    ? Padding(
+                        padding: const EdgeInsets.only(left: 14),
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.fade,
+                          softWrap: false,
+                          style:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    color: selected
+                                        ? Theme.of(context)
+                                            .colorScheme
+                                            .onSecondaryContainer
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                    fontWeight: selected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -294,17 +342,19 @@ class _SearchField extends ConsumerWidget {
                 .surfaceContainerHighest
                 .withValues(alpha: 0.68),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(999),
               borderSide: BorderSide.none,
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(999),
               borderSide: BorderSide.none,
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(999),
               borderSide: BorderSide.none,
             ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           ),
         ),
       ),
@@ -368,6 +418,8 @@ class _KeepNoteCard extends StatefulWidget {
   const _KeepNoteCard({
     required this.note,
     required this.onTap,
+    required this.onTogglePin,
+    required this.onInvite,
     required this.onArchive,
     required this.onTrash,
     required this.onRestore,
@@ -376,6 +428,8 @@ class _KeepNoteCard extends StatefulWidget {
 
   final PlainNote note;
   final VoidCallback onTap;
+  final VoidCallback onTogglePin;
+  final VoidCallback onInvite;
   final VoidCallback onArchive;
   final VoidCallback onTrash;
   final VoidCallback onRestore;
@@ -440,12 +494,13 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                       AnimatedOpacity(
                         opacity: _hovered || note.pinned ? 1 : 0,
                         duration: const Duration(milliseconds: 120),
-                        child: Icon(
-                          note.pinned
+                        child: AppIconButton(
+                          tooltip: note.pinned ? 'Losloesen' : 'Anheften',
+                          icon: note.pinned
                               ? Icons.push_pin
                               : Icons.push_pin_outlined,
-                          size: 18,
-                          color: scheme.onSurfaceVariant,
+                          selected: note.pinned,
+                          onPressed: widget.onTogglePin,
                         ),
                       ),
                     ],
@@ -499,7 +554,7 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                               AppIconButton(
                                 tooltip: 'Mitarbeiter einladen',
                                 icon: Icons.person_add_alt,
-                                onPressed: widget.onTap,
+                                onPressed: widget.onInvite,
                               ),
                             if (note.state != 'trashed')
                               AppIconButton(
@@ -687,7 +742,9 @@ class _MetaPill extends StatelessWidget {
 }
 
 class _SyncIndicator extends ConsumerWidget {
-  const _SyncIndicator();
+  const _SyncIndicator({this.showLabel = false});
+
+  final bool showLabel;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -720,25 +777,487 @@ class _SyncIndicator extends ConsumerWidget {
           Theme.of(context).colorScheme.error
         ),
     };
+    final content = Row(
+      mainAxisSize: showLabel ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          transitionBuilder: (child, animation) => ScaleTransition(
+            scale:
+                CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
+            child: child,
+          ),
+          child: Icon(icon, key: ValueKey(status), size: 18, color: color),
+        ),
+        if (showLabel) ...[
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelLarge
+                  ?.copyWith(color: color, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ],
+    );
     return Tooltip(
       message: label,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 4),
-        child: Row(
+      child: showLabel
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: content,
+            )
+          : SizedBox(
+              width: 40,
+              child: Center(child: content),
+            ),
+    );
+  }
+}
+
+class _AccountButton extends ConsumerWidget {
+  const _AccountButton({required this.email});
+
+  final String email;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final initial = email.isEmpty ? '?' : email.substring(0, 1).toUpperCase();
+    return Tooltip(
+      message: email,
+      child: GestureDetector(
+        onTap: () => _showAccountSideSheet(context, ref, email),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutBack,
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              initial,
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void _showSettingsSheet(BuildContext context) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => const SettingsSheet(),
+  );
+}
+
+void _showNavigationSheet(BuildContext context, WidgetRef ref) {
+  showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Menue schliessen',
+    barrierColor: Colors.black.withValues(alpha: 0.32),
+    transitionDuration: const Duration(milliseconds: 260),
+    pageBuilder: (context, _, __) => Align(
+      alignment: Alignment.centerLeft,
+      child: const _NavigationSideSheet(),
+    ),
+    transitionBuilder: (context, animation, _, child) => SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(-1, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+      child: child,
+    ),
+  );
+}
+
+class _NavigationSideSheet extends ConsumerWidget {
+  const _NavigationSideSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      borderRadius: const BorderRadius.horizontal(right: Radius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: SafeArea(
+        child: SizedBox(
+          width: (MediaQuery.sizeOf(context).width * 0.86).clamp(280.0, 340.0),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xfffff4c2),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.lightbulb_outline,
+                          color: Color(0xfff9ab00), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      l10n.t('appName'),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const Spacer(),
+                    AppIconButton(
+                      tooltip: 'Schliessen',
+                      icon: Icons.close_rounded,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                _MobileMenuButton(
+                  bucket: 'active',
+                  icon: Icons.lightbulb_outline,
+                  label: l10n.t('notes'),
+                ),
+                _MobileMenuButton(
+                  bucket: 'archived',
+                  icon: Icons.archive_outlined,
+                  label: 'Archiv',
+                ),
+                _MobileMenuButton(
+                  bucket: 'trashed',
+                  icon: Icons.delete_outline,
+                  label: 'Papierkorb',
+                ),
+                const Spacer(),
+                const _SyncIndicator(showLabel: true),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _showSettingsSheet(context);
+                  },
+                  icon: const Icon(Icons.settings_outlined),
+                  label: Text(l10n.t('settings')),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileMenuButton extends ConsumerWidget {
+  const _MobileMenuButton({
+    required this.bucket,
+    required this.icon,
+    required this.label,
+  });
+
+  final String bucket;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(noteBucketProvider) == bucket;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: FilledButton.tonalIcon(
+        style: FilledButton.styleFrom(
+          alignment: Alignment.centerLeft,
+          backgroundColor: selected
+              ? Theme.of(context).colorScheme.secondaryContainer
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
+          foregroundColor: selected
+              ? Theme.of(context).colorScheme.onSecondaryContainer
+              : Theme.of(context).colorScheme.onSurfaceVariant,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        ),
+        onPressed: () {
+          ref.read(noteBucketProvider.notifier).state = bucket;
+          Navigator.of(context).pop();
+        },
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+      ),
+    );
+  }
+}
+
+void _showAccountSideSheet(BuildContext context, WidgetRef ref, String email) {
+  showGeneralDialog<void>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Account schliessen',
+    barrierColor: Colors.black.withValues(alpha: 0.34),
+    transitionDuration: const Duration(milliseconds: 280),
+    pageBuilder: (context, _, __) => Align(
+      alignment: Alignment.centerRight,
+      child: _AccountSideSheet(email: email),
+    ),
+    transitionBuilder: (context, animation, _, child) => SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(1, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+      child: child,
+    ),
+  );
+}
+
+class _AccountSideSheet extends ConsumerWidget {
+  const _AccountSideSheet({required this.email});
+
+  final String email;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final initial = email.isEmpty ? '?' : email.substring(0, 1).toUpperCase();
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.surfaceContainer,
+      borderRadius: const BorderRadius.horizontal(left: Radius.circular(30)),
+      clipBehavior: Clip.antiAlias,
+      child: SafeArea(
+        child: SizedBox(
+          width: (MediaQuery.sizeOf(context).width * 0.92).clamp(320.0, 420.0),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Account',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                    const Spacer(),
+                    AppIconButton(
+                      tooltip: 'Schliessen',
+                      icon: Icons.close_rounded,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 28),
+                Center(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutBack,
+                    width: 92,
+                    height: 92,
+                    decoration: BoxDecoration(
+                      color: scheme.primaryContainer,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: scheme.primary.withValues(alpha: 0.18),
+                          blurRadius: 28,
+                          offset: const Offset(0, 16),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      initial,
+                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                            color: scheme.onPrimaryContainer,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  email,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Angemeldet',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+                const Spacer(),
+                FilledButton.tonalIcon(
+                  onPressed: () => _showSettingsSheet(context),
+                  icon: const Icon(Icons.settings_outlined),
+                  label: const Text('Einstellungen'),
+                ),
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: scheme.errorContainer,
+                    foregroundColor: scheme.onErrorContainer,
+                  ),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    ref.read(authControllerProvider.notifier).signOut();
+                  },
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Logout'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void _showInviteSheet(BuildContext context, WidgetRef ref, PlainNote note) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (_) => _InviteSheet(note: note),
+  );
+}
+
+class _InviteSheet extends ConsumerStatefulWidget {
+  const _InviteSheet({required this.note});
+
+  final PlainNote note;
+
+  @override
+  ConsumerState<_InviteSheet> createState() => _InviteSheetState();
+}
+
+class _InviteSheetState extends ConsumerState<_InviteSheet> {
+  final _recipient = TextEditingController();
+  var _role = 'editor';
+  var _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _recipient.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        12,
+        24,
+        MediaQuery.viewInsetsOf(context).bottom + 24,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 6),
-            if (MediaQuery.sizeOf(context).width >= 720)
-              Text(label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: color)),
+            Text(
+              'Mitarbeiter einladen',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _recipient,
+              decoration: const InputDecoration(
+                labelText: 'User ID',
+                prefixIcon: Icon(Icons.person_add_alt),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<String>(
+              selected: {_role},
+              segments: const [
+                ButtonSegment(
+                  value: 'editor',
+                  label: Text('Editor'),
+                  icon: Icon(Icons.edit),
+                ),
+                ButtonSegment(
+                  value: 'viewer',
+                  label: Text('Viewer'),
+                  icon: Icon(Icons.visibility),
+                ),
+              ],
+              onSelectionChanged: (value) =>
+                  setState(() => _role = value.first),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _busy || widget.note.remoteId == null ? null : _invite,
+              icon: _busy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send),
+              label: const Text('Einladen'),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _invite() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(notesControllerProvider.notifier).inviteCollaborator(
+            note: widget.note,
+            recipientUserId: _recipient.text.trim(),
+            role: _role,
+          );
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 

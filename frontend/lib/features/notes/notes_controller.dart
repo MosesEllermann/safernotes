@@ -94,26 +94,33 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       for (final item in remote) {
         final localMatch = merged[item.id];
         if (localMatch != null && localMatch.dirty) continue;
-        final decoded = await ref.read(cryptoServiceProvider).decryptString(
-              item.encryptedPayload,
-              session.masterKey,
-            );
-        final plain = Map<String, dynamic>.from(jsonDecode(decoded) as Map);
-        merged[item.id] = PlainNote.fromEncryptedPayload(
-          localId: localMatch?.localId ?? item.id,
-          remoteId: item.id,
-          updatedAt: item.updatedAt,
-          version: item.version,
-          json: plain,
-        ).copyWith(state: item.state);
+        try {
+          final decoded = await ref.read(cryptoServiceProvider).decryptString(
+                item.encryptedPayload,
+                session.masterKey,
+              );
+          final plain = Map<String, dynamic>.from(jsonDecode(decoded) as Map);
+          merged[item.id] = PlainNote.fromEncryptedPayload(
+            localId: localMatch?.localId ?? item.id,
+            remoteId: item.id,
+            updatedAt: item.updatedAt,
+            version: item.version,
+            json: plain,
+          ).copyWith(state: item.state);
+        } catch (_) {
+          if (localMatch != null) merged[item.id] = localMatch;
+        }
       }
       final notes = merged.values.toList()..sort(_sortNotes);
       await ref.read(offlineStoreProvider).saveNotes(notes);
       state = AsyncData(notes);
       await refreshPresence();
       ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
-    } catch (_) {
-      ref.read(syncStatusProvider.notifier).state = SyncStatus.offline;
+    } catch (error) {
+      ref.read(syncStatusProvider.notifier).state =
+          error is ApiException && error.statusCode == 409
+              ? SyncStatus.conflict
+              : SyncStatus.saved;
     }
   }
 
@@ -180,8 +187,11 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       ref.read(syncStatusProvider.notifier).state =
           sawConflict ? SyncStatus.conflict : SyncStatus.saved;
       if (pullAfterPush) await pullRemote();
-    } catch (_) {
-      ref.read(syncStatusProvider.notifier).state = SyncStatus.offline;
+    } catch (error) {
+      ref.read(syncStatusProvider.notifier).state =
+          error is ApiException && error.statusCode == 409
+              ? SyncStatus.conflict
+              : SyncStatus.offline;
     }
   }
 
@@ -213,9 +223,19 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
         ],
       );
       ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
-    } catch (_) {
-      ref.read(syncStatusProvider.notifier).state = SyncStatus.offline;
+    } catch (error) {
+      ref.read(syncStatusProvider.notifier).state =
+          error is ApiException && error.statusCode == 409
+              ? SyncStatus.conflict
+              : SyncStatus.offline;
     }
+  }
+
+  Future<void> togglePinned(PlainNote note) {
+    return saveDraft(
+      draft: note.copyWith(pinned: !note.pinned),
+      syncImmediately: true,
+    );
   }
 
   Future<void> refreshPresence() async {
