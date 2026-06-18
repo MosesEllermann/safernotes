@@ -8,6 +8,14 @@ final authControllerProvider =
   AuthController.new,
 );
 
+class RecoveryChallenge {
+  const RecoveryChallenge({
+    required this.recoveryWrapper,
+  });
+
+  final EncryptedEnvelope recoveryWrapper;
+}
+
 class AuthController extends AsyncNotifier<AppSession?> {
   @override
   Future<AppSession?> build() async {
@@ -22,12 +30,13 @@ class AuthController extends AsyncNotifier<AppSession?> {
     );
   }
 
-  Future<void> register({
+  Future<String?> register({
     required String email,
     required String password,
     required String workspaceName,
   }) async {
     state = const AsyncLoading();
+    String? recoveryKey;
     state = await AsyncValue.guard(() async {
       final crypto = ref.read(cryptoServiceProvider);
       final material = await crypto.createRegistrationMaterial(
@@ -35,6 +44,7 @@ class AuthController extends AsyncNotifier<AppSession?> {
         deviceName: 'Primary device',
         tenantName: workspaceName,
       );
+      recoveryKey = material.recoveryKey;
       final response = await ref.read(apiClientProvider).register(
             email: email,
             password: password,
@@ -50,6 +60,7 @@ class AuthController extends AsyncNotifier<AppSession?> {
       await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
       return session;
     });
+    return state.valueOrNull == null ? null : recoveryKey;
   }
 
   Future<void> login({
@@ -82,6 +93,78 @@ class AuthController extends AsyncNotifier<AppSession?> {
       await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
       return session;
     });
+  }
+
+  Future<RecoveryChallenge?> startPasswordRecovery({
+    required String email,
+  }) async {
+    final response = await ref.read(apiClientProvider).startPasswordRecovery(
+          email: email,
+        );
+    if (response['recovery_available'] != true) return null;
+    return RecoveryChallenge(
+      recoveryWrapper: EncryptedEnvelope.fromJson(
+        Map<String, dynamic>.from(response['recovery_wrapper'] as Map),
+      ),
+    );
+  }
+
+  Future<void> completePasswordRecovery({
+    required String email,
+    required String code,
+    required String recoveryKey,
+    required String newPassword,
+    required EncryptedEnvelope recoveryWrapper,
+  }) async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final crypto = ref.read(cryptoServiceProvider);
+      final masterKey = await crypto.unlockMasterKeyWithRecovery(
+        recoveryKey: recoveryKey,
+        recoveryWrapper: recoveryWrapper,
+      );
+      final wrappedMasterKey = await crypto.wrapMasterKeyWithPassword(
+        masterKey: masterKey,
+        password: newPassword,
+      );
+      final response =
+          await ref.read(apiClientProvider).completePasswordRecovery(
+                email: email,
+                code: code,
+                password: newPassword,
+                wrappedMasterKey: wrappedMasterKey,
+              );
+      final session = AppSession(
+        email: response['email'] as String? ?? email,
+        accessToken: response['access_token'] as String,
+        refreshToken: response['refresh_token'] as String,
+        defaultTenant: response['default_tenant'] as String? ?? '',
+        masterKey: masterKey,
+      );
+      await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
+      return session;
+    });
+  }
+
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final session = state.valueOrNull;
+    if (session == null) {
+      throw Exception('Not signed in.');
+    }
+    final wrappedMasterKey =
+        await ref.read(cryptoServiceProvider).wrapMasterKeyWithPassword(
+              masterKey: session.masterKey,
+              password: newPassword,
+            );
+    await ref.read(apiClientProvider).changePassword(
+          accessToken: session.accessToken,
+          currentPassword: currentPassword,
+          newPassword: newPassword,
+          wrappedMasterKey: wrappedMasterKey,
+        );
   }
 
   Future<void> signOut() async {

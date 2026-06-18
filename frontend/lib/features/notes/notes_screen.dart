@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zknotes_app/features/auth/auth_controller.dart';
 import 'package:zknotes_app/features/notes/note_editor_screen.dart';
 import 'package:zknotes_app/features/notes/notes_controller.dart';
-import 'package:zknotes_app/features/settings/settings_sheet.dart';
+import 'package:zknotes_app/features/settings/settings_screen.dart';
 import 'package:zknotes_app/shared/app/app_l10n.dart';
 import 'package:zknotes_app/shared/models/note.dart';
 import 'package:zknotes_app/shared/widgets/animated_icon_button.dart';
@@ -71,7 +71,7 @@ class NotesScreen extends ConsumerWidget {
             AppIconButton(
               tooltip: l10n.t('settings'),
               icon: Icons.settings_outlined,
-              onPressed: () => _showSettingsSheet(context),
+              onPressed: () => _openSettings(context),
             ),
           ],
           _AccountButton(email: session?.email ?? ''),
@@ -108,12 +108,17 @@ class _KeepWorkspace extends ConsumerStatefulWidget {
 }
 
 class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
+  String? _draggedId;
+  int? _dropIndex;
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 900;
     final bucket = ref.watch(noteBucketProvider);
     ref.watch(noteSearchProvider);
-    final filtered = _filteredNotes;
+    final baseNotes = _filteredNotes;
+    final filtered = _previewNotes(baseNotes);
+    final dragging = _draggedId != null;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -160,25 +165,75 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
                     itemCount: filtered.length,
                     itemBuilder: (context, index) {
                       final note = filtered[index];
-                      return _KeepNoteCard(
-                        note: note,
-                        onTap: () => _openEditor(context, ref, note),
-                        onTogglePin: () => ref
-                            .read(notesControllerProvider.notifier)
-                            .togglePinned(note),
-                        onInvite: () => _showInviteSheet(context, ref, note),
-                        onArchive: () => ref
-                            .read(notesControllerProvider.notifier)
-                            .changeState(note, 'archived'),
-                        onTrash: () => ref
-                            .read(notesControllerProvider.notifier)
-                            .changeState(note, 'trashed'),
-                        onRestore: () => ref
-                            .read(notesControllerProvider.notifier)
-                            .changeState(note, 'active'),
-                        onDeleteForever: () => ref
-                            .read(notesControllerProvider.notifier)
-                            .changeState(note, 'deleted'),
+                      return DragTarget<PlainNote>(
+                        key: ValueKey('note-drop-${note.localId}'),
+                        onWillAcceptWithDetails: (_) => true,
+                        onMove: (details) {
+                          final nextIndex = _dropIndexForCard(
+                            context: context,
+                            globalOffset: details.offset,
+                            cardIndex: index,
+                            wide: wide,
+                          );
+                          if (_dropIndex == nextIndex) return;
+                          setState(() => _dropIndex = nextIndex);
+                        },
+                        onLeave: (_) {
+                          if (dragging) setState(() => _dropIndex = null);
+                        },
+                        onAcceptWithDetails: (details) {
+                          _commitReorder(
+                            details.data.localId,
+                            _dropIndex ??
+                                _dropIndexForCard(
+                                  context: context,
+                                  globalOffset: details.offset,
+                                  cardIndex: index,
+                                  wide: wide,
+                                ),
+                            bucket,
+                          );
+                        },
+                        builder: (context, candidateData, _) {
+                          final highlighted =
+                              _dropIndex == index || _dropIndex == index + 1;
+                          final card = _KeepNoteCard(
+                            note: note,
+                            dropHighlighted: highlighted,
+                            onTap: () => _openEditor(context, ref, note),
+                            onTogglePin: () => ref
+                                .read(notesControllerProvider.notifier)
+                                .togglePinned(note),
+                            onInvite: () =>
+                                _showInviteSheet(context, ref, note),
+                            onArchive: () => ref
+                                .read(notesControllerProvider.notifier)
+                                .changeState(note, 'archived'),
+                            onTrash: () => ref
+                                .read(notesControllerProvider.notifier)
+                                .changeState(note, 'trashed'),
+                            onRestore: () => ref
+                                .read(notesControllerProvider.notifier)
+                                .changeState(note, 'active'),
+                            onDeleteForever: () => ref
+                                .read(notesControllerProvider.notifier)
+                                .changeState(note, 'deleted'),
+                          );
+                          return LongPressDraggable<PlainNote>(
+                            data: note,
+                            feedback: _NoteDragFeedback(note: note),
+                            onDragStarted: () => setState(() {
+                              _draggedId = note.localId;
+                              _dropIndex = null;
+                            }),
+                            onDraggableCanceled: (_, __) => _clearDragPreview(),
+                            onDragEnd: (_) => _clearDragPreview(),
+                            onDragCompleted: _clearDragPreview,
+                            childWhenDragging:
+                                Opacity(opacity: 0.34, child: card),
+                            child: card,
+                          );
+                        },
                       );
                     },
                   ),
@@ -188,6 +243,50 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
         ),
       ],
     );
+  }
+
+  List<PlainNote> _previewNotes(List<PlainNote> notes) {
+    final draggedId = _draggedId;
+    if (draggedId == null) return notes;
+    final draggedIndex = notes.indexWhere((note) => note.localId == draggedId);
+    if (draggedIndex < 0) return notes;
+    final next = [...notes];
+    final dragged = next.removeAt(draggedIndex);
+    final targetIndex = _dropIndex;
+    if (targetIndex == null) return notes;
+    next.insert(targetIndex.clamp(0, next.length).toInt(), dragged);
+    return next;
+  }
+
+  int _dropIndexForCard({
+    required BuildContext context,
+    required Offset globalOffset,
+    required int cardIndex,
+    required bool wide,
+  }) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return cardIndex;
+    final local = box.globalToLocal(globalOffset);
+    final before =
+        wide ? local.dx < box.size.width / 2 : local.dy < box.size.height / 2;
+    return before ? cardIndex : cardIndex + 1;
+  }
+
+  void _commitReorder(String draggedId, int targetIndex, String bucket) {
+    ref.read(notesControllerProvider.notifier).reorderNotes(
+          draggedId: draggedId,
+          targetIndex: targetIndex,
+          bucket: bucket,
+        );
+    _clearDragPreview();
+  }
+
+  void _clearDragPreview() {
+    if (!mounted) return;
+    setState(() {
+      _draggedId = null;
+      _dropIndex = null;
+    });
   }
 
   List<PlainNote> get _filteredNotes {
@@ -417,6 +516,7 @@ class _QuickComposer extends ConsumerWidget {
 class _KeepNoteCard extends StatefulWidget {
   const _KeepNoteCard({
     required this.note,
+    this.dropHighlighted = false,
     required this.onTap,
     required this.onTogglePin,
     required this.onInvite,
@@ -427,6 +527,7 @@ class _KeepNoteCard extends StatefulWidget {
   });
 
   final PlainNote note;
+  final bool dropHighlighted;
   final VoidCallback onTap;
   final VoidCallback onTogglePin;
   final VoidCallback onInvite;
@@ -469,9 +570,12 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: _hovered
-                      ? scheme.outline
-                      : scheme.outlineVariant.withValues(alpha: 0.8),
+                  color: widget.dropHighlighted
+                      ? scheme.primary
+                      : _hovered
+                          ? scheme.outline
+                          : scheme.outlineVariant.withValues(alpha: 0.8),
+                  width: widget.dropHighlighted ? 2 : 1,
                 ),
               ),
               child: Column(
@@ -576,6 +680,51 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoteDragFeedback extends StatelessWidget {
+  const _NoteDragFeedback({required this.note});
+
+  final PlainNote note;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bg = _noteColorFor(context, note.color);
+    return Material(
+      color: note.color == 0xffffffff ? scheme.surface : bg,
+      elevation: 10,
+      shadowColor: Colors.black.withValues(alpha: 0.24),
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: SizedBox(
+        width: 260,
+        height: 170,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                note.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: note.checklist.isNotEmpty && note.body.trim().isEmpty
+                    ? _ChecklistPreview(items: note.checklist)
+                    : _FormattedPreview(text: note.body),
+              ),
+            ],
           ),
         ),
       ),
@@ -862,11 +1011,11 @@ class _AccountButton extends ConsumerWidget {
   }
 }
 
-void _showSettingsSheet(BuildContext context) {
-  showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: (_) => const SettingsSheet(),
+void _openSettings(BuildContext context) {
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => const SettingsScreen(),
+    ),
   );
 }
 
@@ -958,7 +1107,7 @@ class _NavigationSideSheet extends ConsumerWidget {
                 FilledButton.tonalIcon(
                   onPressed: () {
                     Navigator.of(context).pop();
-                    _showSettingsSheet(context);
+                    _openSettings(context);
                   },
                   icon: const Icon(Icons.settings_outlined),
                   label: Text(l10n.t('settings')),
@@ -1114,7 +1263,10 @@ class _AccountSideSheet extends ConsumerWidget {
                 ),
                 const Spacer(),
                 FilledButton.tonalIcon(
-                  onPressed: () => _showSettingsSheet(context),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _openSettings(context);
+                  },
                   icon: const Icon(Icons.settings_outlined),
                   label: const Text('Einstellungen'),
                 ),

@@ -153,3 +153,28 @@ class RecoveryStartSerializer(serializers.Serializer):
         user = User.objects.filter(email__iexact=attrs["email"]).first()
         attrs["user"] = user
         return attrs
+
+
+class RecoveryCompleteSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    code = serializers.CharField(min_length=6, max_length=12)
+    password = serializers.CharField(write_only=True, min_length=8)
+    kdf_algorithm = serializers.CharField(default="argon2id")
+    kdf_params = serializers.JSONField()
+    password_salt = serializers.CharField()
+    encrypted_master_key = EncryptedEnvelopeField()
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+    kdf_algorithm = serializers.CharField(default="argon2id")
+    kdf_params = serializers.JSONField()
+    password_salt = serializers.CharField()
+    encrypted_master_key = EncryptedEnvelopeField()
+
+    def validate_current_password(self, value):
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+        return value

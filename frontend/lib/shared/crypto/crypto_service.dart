@@ -97,6 +97,8 @@ class CryptoService {
     final masterKey = randomBytes(32);
     final passwordSalt = randomBytes(16);
     final passwordKey = await derivePasswordKey(password, passwordSalt);
+    final recoveryKeyBytes = randomBytes(32);
+    final recoveryKey = base64UrlNoPad(recoveryKeyBytes);
     final encryptionPair = await _x25519.newKeyPair();
     final signingPair = await _ed25519.newKeyPair();
     final encryptionPublic = await encryptionPair.extractPublicKey();
@@ -109,6 +111,7 @@ class CryptoService {
 
     return RegistrationKeyMaterial(
       masterKey: masterKey,
+      recoveryKey: recoveryKey,
       passwordSalt: base64UrlNoPad(passwordSalt),
       publicEncryptionKey: publicEncryptionKey,
       publicSigningKey: publicSigningKey,
@@ -123,6 +126,10 @@ class CryptoService {
       encryptedPrivateSigningKey: await encryptString(
         base64UrlNoPad(signingPrivate),
         masterKey,
+      ),
+      recoveryWrapper: await encryptString(
+        base64UrlNoPad(masterKey),
+        recoveryKeyBytes,
       ),
       deviceNameCiphertext: await encryptString(deviceName, masterKey),
       defaultTenantNameCiphertext: await encryptString(tenantName, masterKey),
@@ -140,6 +147,32 @@ class CryptoService {
     );
     final encodedMaster = await decryptString(encryptedMasterKey, passwordKey);
     return decodeBase64UrlNoPad(encodedMaster);
+  }
+
+  Future<List<int>> unlockMasterKeyWithRecovery({
+    required String recoveryKey,
+    required EncryptedEnvelope recoveryWrapper,
+  }) async {
+    final encodedMaster = await decryptString(
+      recoveryWrapper,
+      decodeBase64UrlNoPad(recoveryKey.trim()),
+    );
+    return decodeBase64UrlNoPad(encodedMaster);
+  }
+
+  Future<PasswordWrappedMasterKey> wrapMasterKeyWithPassword({
+    required List<int> masterKey,
+    required String password,
+  }) async {
+    final passwordSalt = randomBytes(16);
+    final passwordKey = await derivePasswordKey(password, passwordSalt);
+    return PasswordWrappedMasterKey(
+      passwordSalt: base64UrlNoPad(passwordSalt),
+      encryptedMasterKey: await encryptString(
+        base64UrlNoPad(masterKey),
+        passwordKey,
+      ),
+    );
   }
 
   Future<EncryptedEnvelope> encryptNotePayload({

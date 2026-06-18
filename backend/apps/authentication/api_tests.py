@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from django.contrib.sessions.middleware import SessionMiddleware
-from rest_framework.test import APIRequestFactory
+from datetime import timedelta
 
-from apps.authentication.views import LoginView, RegisterView
+from django.contrib.sessions.middleware import SessionMiddleware
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from apps.authentication.tokens import hash_token
+from apps.authentication.views import LoginView, PasswordChangeView, RecoveryCompleteView, RegisterView
 
 
 def encrypted_payload():
@@ -74,3 +77,85 @@ def test_login_view_returns_key_material(db, django_user_model):
 
     assert response.status_code == 200
     assert response.data["key_material"]["encrypted_master_key"]["ciphertext"] == "ciphertext"
+
+
+def test_recovery_complete_rewraps_master_key(db, django_user_model):
+    from django.utils import timezone
+
+    from apps.authentication.models import KeyMaterial, RecoveryCode
+
+    user = django_user_model.objects.create_user(email="recover@example.com", password="old-password")
+    KeyMaterial.objects.create(
+        user=user,
+        kdf_params={"m": 65536, "t": 3, "p": 1},
+        password_salt=b"old-salt",
+        public_encryption_key=b"public-encryption-key",
+        public_signing_key=b"public-signing-key",
+        encrypted_master_key=encrypted_payload(),
+        encrypted_private_encryption_key=encrypted_payload(),
+        encrypted_private_signing_key=encrypted_payload(),
+        recovery_wrapper=encrypted_payload(),
+    )
+    RecoveryCode.objects.create(
+        user=user,
+        code_hash=hash_token("123456"),
+        expires_at=timezone.now() + timedelta(minutes=15),
+    )
+    request = APIRequestFactory().post(
+        "/api/v1/auth/recovery/complete",
+        {
+            "email": "recover@example.com",
+            "code": "123456",
+            "password": "new-strong-password",
+            "kdf_algorithm": "pbkdf2-sha256",
+            "kdf_params": {"iterations": 210000, "bits": 256},
+            "password_salt": "new-salt",
+            "encrypted_master_key": {**encrypted_payload(), "ciphertext": "new-ciphertext"},
+        },
+        format="json",
+    )
+    attach_session(request)
+    response = RecoveryCompleteView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data["access_token"]
+    user.refresh_from_db()
+    assert user.check_password("new-strong-password")
+    user.key_material.refresh_from_db()
+    assert user.key_material.encrypted_master_key["ciphertext"] == "new-ciphertext"
+
+
+def test_password_change_rewraps_master_key(db, django_user_model):
+    from apps.authentication.models import KeyMaterial
+
+    user = django_user_model.objects.create_user(email="change@example.com", password="old-password")
+    KeyMaterial.objects.create(
+        user=user,
+        kdf_params={"m": 65536, "t": 3, "p": 1},
+        password_salt=b"old-salt",
+        public_encryption_key=b"public-encryption-key",
+        public_signing_key=b"public-signing-key",
+        encrypted_master_key=encrypted_payload(),
+        encrypted_private_encryption_key=encrypted_payload(),
+        encrypted_private_signing_key=encrypted_payload(),
+    )
+    request = APIRequestFactory().post(
+        "/api/v1/auth/password/change",
+        {
+            "current_password": "old-password",
+            "new_password": "new-strong-password",
+            "kdf_algorithm": "pbkdf2-sha256",
+            "kdf_params": {"iterations": 210000, "bits": 256},
+            "password_salt": "new-salt",
+            "encrypted_master_key": {**encrypted_payload(), "ciphertext": "changed-ciphertext"},
+        },
+        format="json",
+    )
+    force_authenticate(request, user=user)
+    response = PasswordChangeView.as_view()(request)
+
+    assert response.status_code == 200
+    user.refresh_from_db()
+    assert user.check_password("new-strong-password")
+    user.key_material.refresh_from_db()
+    assert user.key_material.encrypted_master_key["ciphertext"] == "changed-ciphertext"

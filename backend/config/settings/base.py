@@ -22,6 +22,8 @@ env = environ.Env(
     ATTACHMENT_UPLOAD_URL_TTL_SECONDS=(int, 900),
     ATTACHMENT_DOWNLOAD_URL_TTL_SECONDS=(int, 900),
     BILLING_WEBHOOK_SECRET=(str, ""),
+    EMAIL_BACKEND=(str, "django.core.mail.backends.console.EmailBackend"),
+    DEFAULT_FROM_EMAIL=(str, "ZK Notes <noreply@localhost>"),
 )
 
 if (ROOT_DIR / ".env").exists():
@@ -30,6 +32,8 @@ if (ROOT_DIR / ".env").exists():
 SECRET_KEY = env("SECRET_KEY")
 DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
+EMAIL_BACKEND = env("EMAIL_BACKEND")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 
 INSTALLED_APPS = [
     "django.contrib.auth",

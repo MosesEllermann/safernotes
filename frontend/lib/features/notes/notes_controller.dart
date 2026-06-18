@@ -48,6 +48,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       updatedAt: DateTime.now().toUtc(),
       pinned: false,
       color: 0xffffffff,
+      sortOrder: -DateTime.now().toUtc().microsecondsSinceEpoch,
       dirty: true,
       version: 1,
       state: 'active',
@@ -238,6 +239,45 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     );
   }
 
+  Future<void> reorderNotes({
+    required String draggedId,
+    required int targetIndex,
+    required String bucket,
+  }) async {
+    final existing =
+        state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
+    final bucketNotes = existing.where((note) => note.state == bucket).toList()
+      ..sort(_sortNotes);
+    final oldIndex =
+        bucketNotes.indexWhere((note) => note.localId == draggedId);
+    if (oldIndex < 0) return;
+
+    final moved = bucketNotes.removeAt(oldIndex);
+    final insertionIndex = targetIndex.clamp(0, bucketNotes.length).toInt();
+    if (insertionIndex == oldIndex) return;
+    bucketNotes.insert(insertionIndex, moved);
+    final now = DateTime.now().toUtc();
+    final reordered = <String, PlainNote>{};
+    for (var index = 0; index < bucketNotes.length; index += 1) {
+      final note = bucketNotes[index];
+      reordered[note.localId] = note.copyWith(
+        sortOrder: index * 1000,
+        updatedAt: now,
+        dirty: true,
+        conflicted: false,
+      );
+    }
+    final next = [
+      for (final note in existing) reordered[note.localId] ?? note,
+    ]..sort(_sortNotes);
+    await _persist(next);
+    ref.read(syncStatusProvider.notifier).state = SyncStatus.saving;
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 900), () {
+      unawaited(syncNow(pullAfterPush: true));
+    });
+  }
+
   Future<void> refreshPresence() async {
     final session = ref.read(authControllerProvider).valueOrNull;
     if (session == null) return;
@@ -281,5 +321,6 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
 
 int _sortNotes(PlainNote a, PlainNote b) {
   if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+  if (a.sortOrder != b.sortOrder) return a.sortOrder.compareTo(b.sortOrder);
   return b.updatedAt.compareTo(a.updatedAt);
 }

@@ -45,6 +45,7 @@ class ApiClient {
           material.encryptedPrivateEncryptionKey.toJson(),
       'encrypted_private_signing_key':
           material.encryptedPrivateSigningKey.toJson(),
+      'recovery_wrapper': material.recoveryWrapper.toJson(),
       'device_name_ciphertext': material.deviceNameCiphertext.toJson(),
       'device_public_signing_key': material.publicSigningKey,
       'default_tenant_name_ciphertext':
@@ -60,6 +61,51 @@ class ApiClient {
       'email': email,
       'password': password,
     });
+  }
+
+  Future<Map<String, dynamic>> startPasswordRecovery({
+    required String email,
+  }) {
+    return _post('/api/v1/auth/recovery/start', {
+      'email': email,
+    });
+  }
+
+  Future<Map<String, dynamic>> completePasswordRecovery({
+    required String email,
+    required String code,
+    required String password,
+    required PasswordWrappedMasterKey wrappedMasterKey,
+  }) {
+    return _post('/api/v1/auth/recovery/complete', {
+      'email': email,
+      'code': code,
+      'password': password,
+      'kdf_algorithm': 'pbkdf2-sha256',
+      'kdf_params': {'iterations': 210000, 'bits': 256},
+      'password_salt': wrappedMasterKey.passwordSalt,
+      'encrypted_master_key': wrappedMasterKey.encryptedMasterKey.toJson(),
+    });
+  }
+
+  Future<Map<String, dynamic>> changePassword({
+    required String accessToken,
+    required String currentPassword,
+    required String newPassword,
+    required PasswordWrappedMasterKey wrappedMasterKey,
+  }) {
+    return _post(
+      '/api/v1/auth/password/change',
+      {
+        'current_password': currentPassword,
+        'new_password': newPassword,
+        'kdf_algorithm': 'pbkdf2-sha256',
+        'kdf_params': {'iterations': 210000, 'bits': 256},
+        'password_salt': wrappedMasterKey.passwordSalt,
+        'encrypted_master_key': wrappedMasterKey.encryptedMasterKey.toJson(),
+      },
+      accessToken: accessToken,
+    );
   }
 
   Future<List<RemoteEncryptedNote>> fetchNotes(String accessToken) async {

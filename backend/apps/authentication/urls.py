@@ -6,6 +6,8 @@ from rest_framework.routers import DefaultRouter
 from apps.authentication.views import (
     LoginView,
     LogoutView,
+    PasswordChangeView,
+    RecoveryCompleteView,
     RecoveryStartView,
     RefreshView,
     RegisterView,
@@ -20,6 +22,8 @@ urlpatterns = [
     path("login", LoginView.as_view(), name="login"),
     path("refresh", RefreshView.as_view(), name="refresh"),
     path("logout", LogoutView.as_view(), name="logout"),
+    path("password/change", PasswordChangeView.as_view(), name="password-change"),
     path("recovery/start", RecoveryStartView.as_view(), name="recovery-start"),
+    path("recovery/complete", RecoveryCompleteView.as_view(), name="recovery-complete"),
     path("", include(router.urls)),
 ]

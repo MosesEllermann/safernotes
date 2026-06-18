@@ -46,3 +46,16 @@ class Session(TimeStampedUUIDModel):
     @property
     def is_active(self) -> bool:
         return self.revoked_at is None
+
+
+class RecoveryCode(TimeStampedUUIDModel):
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="recovery_codes")
+    code_hash = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["user", "expires_at", "used_at"]),
+        ]

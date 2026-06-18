@@ -1,20 +1,28 @@
 from __future__ import annotations
 
+import secrets
+from datetime import timedelta
+
 from django.contrib.auth import login, logout
+from django.core.mail import send_mail
+from django.db import models, transaction
 from django.utils import timezone
 from rest_framework import decorators, permissions, response, views, viewsets
 
 from apps.audit.events import record_audit_event
-from apps.authentication.models import Session
+from apps.authentication.models import RecoveryCode, Session
 from apps.authentication.serializers import (
     KeyMaterialSerializer,
     LoginSerializer,
+    PasswordChangeSerializer,
+    RecoveryCompleteSerializer,
     RecoveryStartSerializer,
     RefreshSerializer,
     RegistrationSerializer,
     SessionSerializer,
 )
-from apps.authentication.tokens import issue_session, rotate_refresh_token
+from apps.authentication.tokens import hash_token, issue_session, rotate_refresh_token
+from apps.users.models import User
 
 
 class RegisterView(views.APIView):
@@ -116,6 +124,39 @@ class LogoutView(views.APIView):
         return response.Response(status=204)
 
 
+class PasswordChangeView(views.APIView):
+    @transaction.atomic
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        material = request.user.key_material
+        material.kdf_algorithm = data["kdf_algorithm"]
+        material.kdf_params = data["kdf_params"]
+        material.password_salt = data["password_salt"].encode("utf-8")
+        material.encrypted_master_key = data["encrypted_master_key"]
+        material.key_version += 1
+        material.save(
+            update_fields=[
+                "kdf_algorithm",
+                "kdf_params",
+                "password_salt",
+                "encrypted_master_key",
+                "key_version",
+                "updated_at",
+            ]
+        )
+        request.user.set_password(data["new_password"])
+        request.user.save(update_fields=["password", "updated_at"])
+        record_audit_event(
+            event_type="auth.password_changed",
+            actor_user=request.user,
+            target_type="user",
+            target_id=request.user.id,
+        )
+        return response.Response({"key_material": KeyMaterialSerializer(material).data})
+
+
 class RecoveryStartView(views.APIView):
     permission_classes = [permissions.AllowAny]
     throttle_scope = "recovery"
@@ -127,6 +168,21 @@ class RecoveryStartView(views.APIView):
         if user is None or not hasattr(user, "key_material"):
             return response.Response({"recovery_available": False})
         material = user.key_material
+        if material.recovery_wrapper:
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            RecoveryCode.objects.create(
+                user=user,
+                code_hash=hash_token(code),
+                expires_at=timezone.now() + timedelta(minutes=15),
+            )
+            send_mail(
+                "Your ZK Notes recovery code",
+                f"Use this recovery code to reset your ZK Notes password: {code}\n\n"
+                "The code expires in 15 minutes. If you did not request it, you can ignore this email.",
+                None,
+                [user.email],
+                fail_silently=True,
+            )
         return response.Response(
             {
                 "recovery_available": bool(material.recovery_wrapper),
@@ -134,6 +190,83 @@ class RecoveryStartView(views.APIView):
                 "kdf_params": material.kdf_params,
                 "recovery_wrapper": material.recovery_wrapper,
                 "key_version": material.key_version,
+            }
+        )
+
+
+class RecoveryCompleteView(views.APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_scope = "recovery"
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = RecoveryCompleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        user = User.objects.select_for_update().filter(email__iexact=data["email"]).first()
+        if user is None or not hasattr(user, "key_material"):
+            return response.Response({"detail": "Invalid recovery code."}, status=400)
+
+        now = timezone.now()
+        recovery_code = (
+            RecoveryCode.objects.select_for_update()
+            .filter(
+                user=user,
+                code_hash=hash_token(data["code"]),
+                used_at__isnull=True,
+                expires_at__gt=now,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if recovery_code is None:
+            RecoveryCode.objects.filter(user=user, used_at__isnull=True, expires_at__gt=now).update(
+                attempts=models.F("attempts") + 1
+            )
+            return response.Response({"detail": "Invalid recovery code."}, status=400)
+        if recovery_code.attempts >= 5:
+            return response.Response({"detail": "Too many recovery attempts."}, status=429)
+
+        material = user.key_material
+        material.kdf_algorithm = data["kdf_algorithm"]
+        material.kdf_params = data["kdf_params"]
+        material.password_salt = data["password_salt"].encode("utf-8")
+        material.encrypted_master_key = data["encrypted_master_key"]
+        material.key_version += 1
+        material.save(
+            update_fields=[
+                "kdf_algorithm",
+                "kdf_params",
+                "password_salt",
+                "encrypted_master_key",
+                "key_version",
+                "updated_at",
+            ]
+        )
+        user.set_password(data["password"])
+        user.save(update_fields=["password", "updated_at"])
+        recovery_code.used_at = now
+        recovery_code.save(update_fields=["used_at", "updated_at"])
+        Session.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=now, updated_at=now)
+
+        login(request, user)
+        issued = issue_session(user, request=request)
+        record_audit_event(
+            event_type="auth.password_recovered",
+            actor_user=user,
+            target_type="user",
+            target_id=user.id,
+            metadata={"session_id": str(issued.session.id)},
+        )
+        return response.Response(
+            {
+                "id": str(user.id),
+                "email": user.email,
+                "access_token": issued.access_token,
+                "refresh_token": issued.refresh_token,
+                "session_id": str(issued.session.id),
+                "default_tenant": str(user.default_tenant_id) if user.default_tenant_id else None,
+                "key_material": KeyMaterialSerializer(material).data,
             }
         )
 

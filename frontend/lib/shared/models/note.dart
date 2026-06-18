@@ -53,6 +53,7 @@ class PlainNote {
     required this.updatedAt,
     required this.pinned,
     required this.color,
+    required this.sortOrder,
     required this.dirty,
     required this.version,
     this.state = 'active',
@@ -67,6 +68,7 @@ class PlainNote {
   final DateTime updatedAt;
   final bool pinned;
   final int color;
+  final int sortOrder;
   final bool dirty;
   final int version;
   final String state;
@@ -80,6 +82,7 @@ class PlainNote {
     DateTime? updatedAt,
     bool? pinned,
     int? color,
+    int? sortOrder,
     bool? dirty,
     int? version,
     String? state,
@@ -94,6 +97,7 @@ class PlainNote {
       updatedAt: updatedAt ?? this.updatedAt,
       pinned: pinned ?? this.pinned,
       color: color ?? this.color,
+      sortOrder: sortOrder ?? this.sortOrder,
       dirty: dirty ?? this.dirty,
       version: version ?? this.version,
       state: state ?? this.state,
@@ -107,6 +111,7 @@ class PlainNote {
         'body': body,
         'checklist': checklist.map((item) => item.toJson()).toList(),
         'color': color,
+        'sortOrder': sortOrder,
         'pinned': pinned,
         'updatedAt': updatedAt.toUtc().toIso8601String(),
       };
@@ -120,6 +125,7 @@ class PlainNote {
         'updatedAt': updatedAt.toIso8601String(),
         'pinned': pinned,
         'color': color,
+        'sortOrder': sortOrder,
         'dirty': dirty,
         'version': version,
         'state': state,
@@ -139,6 +145,8 @@ class PlainNote {
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       pinned: json['pinned'] as bool? ?? false,
       color: json['color'] as int? ?? 0xffffffff,
+      sortOrder: json['sortOrder'] as int? ??
+          -DateTime.parse(json['updatedAt'] as String).microsecondsSinceEpoch,
       dirty: json['dirty'] as bool? ?? false,
       version: json['version'] as int? ?? 1,
       state: json['state'] as String? ?? 'active',
@@ -166,6 +174,7 @@ class PlainNote {
           DateTime.tryParse(json['updatedAt'] as String? ?? '') ?? updatedAt,
       pinned: json['pinned'] as bool? ?? false,
       color: json['color'] as int? ?? 0xffffffff,
+      sortOrder: json['sortOrder'] as int? ?? -updatedAt.microsecondsSinceEpoch,
       dirty: false,
       version: version,
       state: json['state'] as String? ?? 'active',

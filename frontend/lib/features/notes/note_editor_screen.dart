@@ -538,6 +538,19 @@ class _ChecklistEditor extends ConsumerWidget {
                 final next = [...items]..removeAt(index);
                 onChanged(next);
               },
+              onInsertAfter: () {
+                final next = [...items];
+                next.insert(
+                  index + 1,
+                  ChecklistItem(
+                    id: const Uuid().v4(),
+                    text: '',
+                    done: false,
+                    indent: item.indent,
+                  ),
+                );
+                onChanged(next);
+              },
             );
           },
         ),
@@ -553,12 +566,14 @@ class _ChecklistRow extends StatelessWidget {
     required this.item,
     required this.onChanged,
     required this.onDelete,
+    required this.onInsertAfter,
   });
 
   final int index;
   final ChecklistItem item;
   final ValueChanged<ChecklistItem> onChanged;
   final VoidCallback onDelete;
+  final VoidCallback onInsertAfter;
 
   @override
   Widget build(BuildContext context) {
@@ -595,6 +610,7 @@ class _ChecklistRow extends StatelessWidget {
                         : null,
                   ),
               onChanged: (value) => onChanged(item.copyWith(text: value)),
+              onSubmitted: (_) => onInsertAfter(),
             ),
           ),
           AppIconButton(

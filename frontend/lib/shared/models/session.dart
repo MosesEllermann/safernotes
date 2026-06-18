@@ -27,6 +27,7 @@ class AppSession {
 class RegistrationKeyMaterial {
   const RegistrationKeyMaterial({
     required this.masterKey,
+    required this.recoveryKey,
     required this.passwordSalt,
     required this.publicEncryptionKey,
     required this.publicSigningKey,
@@ -35,11 +36,13 @@ class RegistrationKeyMaterial {
     required this.encryptedMasterKey,
     required this.encryptedPrivateEncryptionKey,
     required this.encryptedPrivateSigningKey,
+    required this.recoveryWrapper,
     required this.deviceNameCiphertext,
     required this.defaultTenantNameCiphertext,
   });
 
   final List<int> masterKey;
+  final String recoveryKey;
   final String passwordSalt;
   final String publicEncryptionKey;
   final String publicSigningKey;
@@ -48,6 +51,17 @@ class RegistrationKeyMaterial {
   final EncryptedEnvelope encryptedMasterKey;
   final EncryptedEnvelope encryptedPrivateEncryptionKey;
   final EncryptedEnvelope encryptedPrivateSigningKey;
+  final EncryptedEnvelope recoveryWrapper;
   final EncryptedEnvelope deviceNameCiphertext;
   final EncryptedEnvelope defaultTenantNameCiphertext;
+}
+
+class PasswordWrappedMasterKey {
+  const PasswordWrappedMasterKey({
+    required this.passwordSalt,
+    required this.encryptedMasterKey,
+  });
+
+  final String passwordSalt;
+  final EncryptedEnvelope encryptedMasterKey;
 }
