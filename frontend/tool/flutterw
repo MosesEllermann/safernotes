@@ -7,6 +7,8 @@ REPO_ROOT=$(CDPATH= cd -- "$FRONTEND_DIR/.." && pwd)
 
 if command -v flutter >/dev/null 2>&1; then
   FLUTTER_BIN="flutter"
+elif [ -x "/Users/moses/Dev/flutter/bin/flutter" ]; then
+  FLUTTER_BIN="/Users/moses/Dev/flutter/bin/flutter"
 elif [ -x "$REPO_ROOT/../flutter-sdk/bin/flutter" ]; then
   FLUTTER_BIN="$REPO_ROOT/../flutter-sdk/bin/flutter"
 elif [ -x "/Users/moses/Documents/Codex/flutter-sdk/bin/flutter" ]; then

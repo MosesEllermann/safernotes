@@ -58,6 +58,7 @@ Do not submit plaintext note titles, bodies, checklist items, labels, attachment
 
 ## More Context
 
+- [Start here](docs/START_HERE.md)
 - [Project context](docs/PROJECT_CONTEXT.md)
 - [Development guide](docs/DEVELOPMENT.md)
 - [Roadmap](docs/ROADMAP.md)

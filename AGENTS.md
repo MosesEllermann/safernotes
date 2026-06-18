@@ -26,6 +26,8 @@ Do not send plaintext note title/body/checklist data to backend note fields. The
 
 ## Commands
 
+Start from `docs/START_HERE.md` when entering this repo without prior thread context.
+
 Backend checks:
 
 ```sh
@@ -50,4 +52,3 @@ Flutter widget tests may fail inside restricted sandboxes because Flutter opens 
 - The prototype client currently uses PBKDF2-SHA256 for password-derived key wrapping. Replace with Argon2id before production.
 - Near-real-time collaboration is currently autosave plus polling/presence refresh. The backend has encrypted WebSocket collaboration primitives, but the Flutter client does not yet use a CRDT/WebSocket editor.
 - Share invitations require recipient user IDs in the current UI.
-
