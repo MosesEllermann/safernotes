@@ -46,27 +46,26 @@ class _AppIconButtonState extends State<AppIconButton> {
                   widget.onPressed?.call();
                 },
           child: AnimatedScale(
-            scale: _pressed ? 0.86 : (_hovered ? 1.12 : 1),
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutBack,
+            scale: _pressed ? 0.94 : (_hovered ? 1.04 : 1),
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutBack,
-              width: 34,
-              height: 34,
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOutCubic,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: active
-                    ? scheme.surfaceContainerHighest.withValues(alpha: 0.82)
+                    ? scheme.surfaceContainerHighest.withValues(alpha: 0.72)
                     : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(
                 widget.icon,
-                size: 17,
-                weight: 300,
+                size: 18,
                 color: widget.onPressed == null
                     ? scheme.onSurface.withValues(alpha: 0.28)
-                    : scheme.onSurface.withValues(alpha: 0.78),
+                    : scheme.onSurface.withValues(alpha: 0.72),
               ),
             ),
           ),

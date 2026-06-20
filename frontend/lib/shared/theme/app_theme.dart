@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 ThemeData buildAppTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
   final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xff2563eb),
+    seedColor: const Color(0xff475569),
     brightness: brightness,
   );
-  final surface = dark ? const Color(0xff111827) : const Color(0xfff6f7f9);
-  final field = dark ? const Color(0xff1f2937) : Colors.white;
+  final surface = dark ? const Color(0xff0f1115) : const Color(0xfff7f7f5);
+  final field = dark ? const Color(0xff181b20) : Colors.white;
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
@@ -40,16 +40,18 @@ ThemeData buildAppTheme(Brightness brightness) {
       filled: true,
       fillColor: field,
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(
+          color: scheme.outlineVariant.withValues(alpha: 0.45),
+        ),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.7)),
       ),
     ),
     filledButtonTheme: FilledButtonThemeData(

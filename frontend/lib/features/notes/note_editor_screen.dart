@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:uuid/uuid.dart';
 import 'package:zknotes_app/features/notes/notes_controller.dart';
 import 'package:zknotes_app/shared/app/app_l10n.dart';
 import 'package:zknotes_app/shared/models/note.dart';
+import 'package:zknotes_app/shared/notifications/reminder_notifications.dart';
 import 'package:zknotes_app/shared/widgets/animated_icon_button.dart';
 
 class NoteEditorScreen extends StatelessWidget {
@@ -34,6 +36,19 @@ class NoteEditorPanel extends ConsumerStatefulWidget {
   ConsumerState<NoteEditorPanel> createState() => _NoteEditorPanelState();
 }
 
+InputDecoration _borderlessInput(String hint) {
+  return InputDecoration(
+    hintText: hint,
+    filled: false,
+    isDense: true,
+    contentPadding: EdgeInsets.zero,
+    border: InputBorder.none,
+    enabledBorder: InputBorder.none,
+    focusedBorder: InputBorder.none,
+    disabledBorder: InputBorder.none,
+  );
+}
+
 class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   final _uuid = const Uuid();
   late TextEditingController _title;
@@ -42,6 +57,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   late bool _pinned;
   late int _color;
   late bool _checklistMode;
+  late DateTime? _reminderAt;
   Timer? _autosave;
 
   static const _colors = [
@@ -79,6 +95,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     _checklistMode = note.checklist.isNotEmpty && note.body.trim().isEmpty;
     _pinned = note.pinned;
     _color = note.color;
+    _reminderAt = note.reminderAt;
     _title.addListener(_scheduleSave);
     _body.addListener(_scheduleSave);
   }
@@ -144,7 +161,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                       if (!widget.embedded)
                         AppIconButton(
                           tooltip: l10n.t('close'),
-                          icon: Icons.chevron_left,
+                          icon: LucideIcons.chevronLeft,
                           onPressed: () {
                             _saveNow();
                             Navigator.of(context).maybePop();
@@ -153,8 +170,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                       Expanded(
                         child: TextField(
                           controller: _title,
-                          decoration: InputDecoration.collapsed(
-                              hintText: l10n.t('title')),
+                          decoration: _borderlessInput(l10n.t('title')),
                           style: Theme.of(context)
                               .textTheme
                               .headlineSmall
@@ -164,20 +180,36 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                       _PresenceDots(presence: presence),
                       AppIconButton(
                         tooltip: _pinned ? l10n.t('unpin') : l10n.t('pin'),
-                        icon:
-                            _pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                        icon: _pinned ? LucideIcons.pin : LucideIcons.pinOff,
                         selected: _pinned,
                         onPressed: () {
                           setState(() => _pinned = !_pinned);
                           _scheduleSave(immediate: true);
                         },
                       ),
+                      if (_reminderAt == null)
+                        AppIconButton(
+                          tooltip: 'Mitarbeiter einladen',
+                          icon: LucideIcons.userPlus,
+                          onPressed: () => _showShareSheet(note),
+                        ),
                       AppIconButton(
-                        tooltip: l10n.t('share'),
-                        icon: Icons.ios_share,
-                        onPressed: note.remoteId == null
-                            ? null
-                            : () => _showShareSheet(note),
+                        tooltip: 'Erinnerung',
+                        icon: _reminderAt == null
+                            ? LucideIcons.bell
+                            : LucideIcons.bellRing,
+                        selected: _reminderAt != null,
+                        onPressed: () => _showReminderSheet(),
+                      ),
+                      AppIconButton(
+                        tooltip: 'Archivieren',
+                        icon: LucideIcons.archive,
+                        onPressed: () => _changeNoteState('archived'),
+                      ),
+                      AppIconButton(
+                        tooltip: 'Papierkorb',
+                        icon: LucideIcons.trash,
+                        onPressed: () => _changeNoteState('trashed'),
                       ),
                     ],
                   ),
@@ -247,6 +279,8 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       checklist: _checklist,
       pinned: _pinned,
       color: _color,
+      reminderAt: _reminderAt,
+      clearReminder: _reminderAt == null,
     );
   }
 
@@ -262,6 +296,16 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
           draft: _draft(),
           syncImmediately: true,
         );
+  }
+
+  Future<void> _changeNoteState(String state) async {
+    await _saveNow();
+    await ref
+        .read(notesControllerProvider.notifier)
+        .changeState(_draft(), state);
+    if (mounted && !widget.embedded) {
+      Navigator.of(context).maybePop();
+    }
   }
 
   void _applyFormat(String action) {
@@ -314,8 +358,82 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   void _showShareSheet(PlainNote note) {
     showModalBottomSheet<void>(
       context: context,
-      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (_) => _ShareSheet(note: note),
+    );
+  }
+
+  Future<void> _showReminderSheet() async {
+    final draft = _draft();
+    var duplicateShared = false;
+    if (draft.shared && draft.reminderAt == null) {
+      duplicateShared = await _confirmDuplicateReminder(context) ?? false;
+      if (!duplicateShared) return;
+    }
+    if (!mounted) return;
+    final selection = await showModalBottomSheet<_ReminderSelection>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EditorReminderSheet(reminderAt: _reminderAt),
+    );
+    if (selection == null) return;
+    final selected = selection.value;
+    if (!mounted) return;
+    if (selected == _reminderAt) return;
+    if (selected != null) await requestReminderPermission();
+    if (duplicateShared && selected != null) {
+      await ref.read(notesControllerProvider.notifier).duplicateAsReminder(
+            source: draft,
+            reminderAt: selected,
+          );
+      if (!mounted) return;
+      _showReminderFeedback(true, duplicated: true);
+      return;
+    }
+    setState(() => _reminderAt = selected);
+    _scheduleSave(immediate: true);
+    _showReminderFeedback(selected != null);
+  }
+
+  Future<bool?> _confirmDuplicateReminder(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Geteilte Notiz'),
+          content: const Text(
+            'Erinnerungen sind lokal und koennen nicht mit Mitarbeitern geteilt werden. Du kannst abbrechen oder eine persoenliche Kopie als Erinnerung erstellen.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Als Erinnerung duplizieren'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showReminderFeedback(bool added, {bool duplicated = false}) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          added
+              ? duplicated
+                  ? 'Eine persoenliche Kopie wird jetzt unter Erinnerungen angezeigt.'
+                  : 'Die Notiz wird jetzt unter Erinnerungen angezeigt.'
+              : 'Die Erinnerung wurde entfernt.',
+        ),
+      ),
     );
   }
 }
@@ -336,17 +454,17 @@ class _Toolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final buttons = [
-      ('bold', Icons.format_bold),
-      ('italic', Icons.format_italic),
-      ('underline', Icons.format_underlined),
-      ('strike', Icons.format_strikethrough),
-      ('h1', Icons.title),
-      ('code', Icons.code),
-      ('codeblock', Icons.data_object),
-      ('quote', Icons.format_quote),
-      ('link', Icons.link),
-      ('check', Icons.check_box_outlined),
-      ('clear', Icons.format_clear),
+      ('bold', LucideIcons.bold),
+      ('italic', LucideIcons.italic),
+      ('underline', LucideIcons.underline),
+      ('strike', LucideIcons.strikethrough),
+      ('h1', LucideIcons.heading1),
+      ('code', LucideIcons.code),
+      ('codeblock', LucideIcons.squareCode),
+      ('quote', LucideIcons.quote),
+      ('link', LucideIcons.link),
+      ('check', LucideIcons.squareCheck),
+      ('clear', LucideIcons.removeFormatting),
     ];
     return Material(
       color: Colors.transparent,
@@ -391,6 +509,214 @@ class _Toolbar extends StatelessWidget {
   }
 }
 
+class _ReminderSelection {
+  const _ReminderSelection(this.value);
+
+  final DateTime? value;
+}
+
+class _EditorReminderSheet extends StatefulWidget {
+  const _EditorReminderSheet({required this.reminderAt});
+
+  final DateTime? reminderAt;
+
+  @override
+  State<_EditorReminderSheet> createState() => _EditorReminderSheetState();
+}
+
+class _EditorReminderSheetState extends State<_EditorReminderSheet> {
+  late DateTime _selected = widget.reminderAt?.toLocal() ??
+      DateTime.now().add(const Duration(hours: 1));
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 12,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Material(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Icon(
+                              LucideIcons.bell,
+                              size: 20,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Erinnerung',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          AppIconButton(
+                            tooltip: 'Schliessen',
+                            icon: LucideIcons.x,
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _EditorReminderPickTile(
+                        icon: LucideIcons.calendar,
+                        label: 'Datum',
+                        value:
+                            '${_selected.day.toString().padLeft(2, '0')}.${_selected.month.toString().padLeft(2, '0')}.${_selected.year}',
+                        onTap: _pickDate,
+                      ),
+                      const SizedBox(height: 10),
+                      _EditorReminderPickTile(
+                        icon: LucideIcons.clock3,
+                        label: 'Uhrzeit',
+                        value:
+                            '${_selected.hour.toString().padLeft(2, '0')}:${_selected.minute.toString().padLeft(2, '0')}',
+                        onTap: _pickTime,
+                      ),
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: () => Navigator.of(context)
+                            .pop(_ReminderSelection(_selected.toUtc())),
+                        icon: const Icon(LucideIcons.bellRing),
+                        label: const Text('Erinnerung setzen'),
+                      ),
+                      if (widget.reminderAt != null) ...[
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () => Navigator.of(context)
+                              .pop(const _ReminderSelection(null)),
+                          icon: const Icon(LucideIcons.bellOff),
+                          label: const Text('Erinnerung entfernen'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selected,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+    );
+    if (picked == null) return;
+    setState(() {
+      _selected = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        _selected.hour,
+        _selected.minute,
+      );
+    });
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_selected),
+    );
+    if (picked == null) return;
+    setState(() {
+      _selected = DateTime(
+        _selected.year,
+        _selected.month,
+        _selected.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
+  }
+}
+
+class _EditorReminderPickTile extends StatelessWidget {
+  const _EditorReminderPickTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _BodyEditor extends StatelessWidget {
   const _BodyEditor({required this.controller, required this.hint});
 
@@ -406,9 +732,7 @@ class _BodyEditor extends StatelessWidget {
       maxLines: null,
       keyboardType: TextInputType.multiline,
       textAlignVertical: TextAlignVertical.top,
-      decoration: InputDecoration.collapsed(
-        hintText: hint,
-      ),
+      decoration: _borderlessInput(hint),
       style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
     );
   }
@@ -476,7 +800,7 @@ class _MarkdownEditingController extends TextEditingController {
   }
 }
 
-class _ChecklistEditor extends ConsumerWidget {
+class _ChecklistEditor extends ConsumerStatefulWidget {
   const _ChecklistEditor({
     required this.items,
     required this.onChanged,
@@ -486,7 +810,14 @@ class _ChecklistEditor extends ConsumerWidget {
   final ValueChanged<List<ChecklistItem>> onChanged;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ChecklistEditor> createState() => _ChecklistEditorState();
+}
+
+class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
+  String? _focusItemId;
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -504,12 +835,13 @@ class _ChecklistEditor extends ConsumerWidget {
             ),
             AppIconButton(
               tooltip: l10n.t('addTask'),
-              icon: Icons.add,
-              onPressed: () => onChanged([
-                ...items,
-                ChecklistItem(
-                    id: const Uuid().v4(), text: '', done: false, indent: 0),
-              ]),
+              icon: LucideIcons.plus,
+              onPressed: () {
+                final item = ChecklistItem(
+                    id: const Uuid().v4(), text: '', done: false, indent: 0);
+                setState(() => _focusItemId = item.id);
+                widget.onChanged([...widget.items, item]);
+              },
             ),
           ],
         ),
@@ -517,39 +849,47 @@ class _ChecklistEditor extends ConsumerWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           buildDefaultDragHandles: false,
-          itemCount: items.length,
+          itemCount: widget.items.length,
           onReorderItem: (oldIndex, newIndex) {
-            final next = [...items];
+            final next = [...widget.items];
             final item = next.removeAt(oldIndex);
             next.insert(newIndex, item);
-            onChanged(next);
+            widget.onChanged(next);
           },
           itemBuilder: (context, index) {
-            final item = items[index];
+            final item = widget.items[index];
             return _ChecklistRow(
               key: ValueKey(item.id),
               index: index,
               item: item,
+              autofocus: item.id == _focusItemId,
               onChanged: (updated) {
-                final next = [...items]..[index] = updated;
-                onChanged(next);
+                final next = [...widget.items]..[index] = updated;
+                widget.onChanged(next);
               },
               onDelete: () {
-                final next = [...items]..removeAt(index);
-                onChanged(next);
+                final next = [...widget.items]..removeAt(index);
+                widget.onChanged(next);
               },
               onInsertAfter: () {
-                final next = [...items];
+                final next = [...widget.items];
+                final inserted = ChecklistItem(
+                  id: const Uuid().v4(),
+                  text: '',
+                  done: false,
+                  indent: item.indent,
+                );
                 next.insert(
                   index + 1,
-                  ChecklistItem(
-                    id: const Uuid().v4(),
-                    text: '',
-                    done: false,
-                    indent: item.indent,
-                  ),
+                  inserted,
                 );
-                onChanged(next);
+                setState(() => _focusItemId = inserted.id);
+                widget.onChanged(next);
+              },
+              onFocused: () {
+                if (_focusItemId == item.id) {
+                  setState(() => _focusItemId = null);
+                }
               },
             );
           },
@@ -564,16 +904,20 @@ class _ChecklistRow extends StatelessWidget {
     super.key,
     required this.index,
     required this.item,
+    required this.autofocus,
     required this.onChanged,
     required this.onDelete,
     required this.onInsertAfter,
+    required this.onFocused,
   });
 
   final int index;
   final ChecklistItem item;
+  final bool autofocus;
   final ValueChanged<ChecklistItem> onChanged;
   final VoidCallback onDelete;
   final VoidCallback onInsertAfter;
+  final VoidCallback onFocused;
 
   @override
   Widget build(BuildContext context) {
@@ -584,7 +928,7 @@ class _ChecklistRow extends StatelessWidget {
           ReorderableDragStartListener(
             index: index,
             child: Icon(
-              Icons.drag_indicator,
+              LucideIcons.gripVertical,
               size: 16,
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -597,9 +941,10 @@ class _ChecklistRow extends StatelessWidget {
           ),
           Expanded(
             child: TextField(
+              autofocus: autofocus,
               controller: TextEditingController(text: item.text)
                 ..selection = TextSelection.collapsed(offset: item.text.length),
-              decoration: const InputDecoration.collapsed(hintText: 'Task'),
+              decoration: _borderlessInput('Task'),
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     decoration: item.done ? TextDecoration.lineThrough : null,
                     color: item.done
@@ -611,24 +956,25 @@ class _ChecklistRow extends StatelessWidget {
                   ),
               onChanged: (value) => onChanged(item.copyWith(text: value)),
               onSubmitted: (_) => onInsertAfter(),
+              onTap: onFocused,
             ),
           ),
           AppIconButton(
             tooltip: 'Outdent',
-            icon: Icons.format_indent_decrease,
+            icon: LucideIcons.outdent,
             onPressed: item.indent == 0
                 ? null
                 : () => onChanged(item.copyWith(indent: item.indent - 1)),
           ),
           AppIconButton(
             tooltip: 'Indent',
-            icon: Icons.format_indent_increase,
+            icon: LucideIcons.indent,
             onPressed: () => onChanged(item.copyWith(
                 indent: item.indent + 1 > 4 ? 4 : item.indent + 1)),
           ),
           AppIconButton(
             tooltip: 'Delete',
-            icon: Icons.delete_outline,
+            icon: LucideIcons.trash,
             onPressed: onDelete,
           ),
         ],
@@ -697,82 +1043,272 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = ref.watch(l10nProvider);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          24, 12, 24, MediaQuery.viewInsetsOf(context).bottom + 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(l10n.t('share'),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _recipient,
-              decoration: InputDecoration(
-                  labelText: l10n.t('recipientId'),
-                  prefixIcon: const Icon(Icons.person_add_alt)),
-            ),
-            const SizedBox(height: 12),
-            SegmentedButton<String>(
-              selected: {_role},
-              segments: [
-                ButtonSegment(
-                    value: 'editor',
-                    label: Text(l10n.t('editor')),
-                    icon: const Icon(Icons.edit)),
-                ButtonSegment(
-                    value: 'viewer',
-                    label: Text(l10n.t('viewer')),
-                    icon: const Icon(Icons.visibility)),
-              ],
-              onSelectionChanged: (value) =>
-                  setState(() => _role = value.first),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
-            ],
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _busy ? null : _invite,
-              icon: _busy
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.send),
-              label: Text(l10n.t('invite')),
-            ),
-          ],
-        ),
-      ),
+    return _CollaboratorInviteSheet(
+      recipient: _recipient,
+      role: _role,
+      busy: _busy,
+      error: _error,
+      onRoleChanged: (value) => setState(() => _role = value),
+      onInvite: _busy ? null : _invite,
     );
   }
 
   Future<void> _invite() async {
+    final recipient = _recipient.text.trim();
+    if (recipient.isEmpty) {
+      setState(() => _error = 'Bitte gib eine E-Mail oder User-ID ein.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
+      final note =
+          await ref.read(notesControllerProvider.notifier).ensureSynced(
+                widget.note,
+              );
       await ref.read(notesControllerProvider.notifier).inviteCollaborator(
-            note: widget.note,
-            recipientUserId: _recipient.text.trim(),
+            note: note,
+            recipientUserId: recipient,
             role: _role,
           );
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
-      setState(() => _error = error.toString());
+      setState(() => _error = _friendlyInviteError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  String _friendlyInviteError(Object error) {
+    final text = error.toString();
+    if (text.contains('No user found')) {
+      return 'Kein Nutzer mit dieser E-Mail oder User-ID gefunden.';
+    }
+    if (text.contains('Only note owners')) {
+      return 'Nur Besitzer dieser Notiz koennen Mitarbeiter einladen.';
+    }
+    if (text.contains('recipient_user')) {
+      return 'Bitte pruefe die E-Mail oder User-ID.';
+    }
+    return 'Einladen ist fehlgeschlagen. Bitte versuche es erneut.';
+  }
+}
+
+class _CollaboratorInviteSheet extends StatelessWidget {
+  const _CollaboratorInviteSheet({
+    required this.recipient,
+    required this.role,
+    required this.busy,
+    required this.error,
+    required this.onRoleChanged,
+    required this.onInvite,
+  });
+
+  final TextEditingController recipient;
+  final String role;
+  final bool busy;
+  final String? error;
+  final ValueChanged<String> onRoleChanged;
+  final VoidCallback? onInvite;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 12,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Material(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Icon(
+                              LucideIcons.userPlus,
+                              size: 20,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Mitarbeiter einladen',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                          ),
+                          AppIconButton(
+                            tooltip: 'Schliessen',
+                            icon: LucideIcons.x,
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: recipient,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'User ID oder E-Mail',
+                          prefixIcon: const Icon(LucideIcons.atSign, size: 18),
+                          filled: true,
+                          fillColor: scheme.surfaceContainerHighest
+                              .withValues(alpha: 0.5),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(color: scheme.primary),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _InviteRoleTile(
+                              selected: role == 'editor',
+                              icon: LucideIcons.edit3,
+                              label: 'Bearbeiten',
+                              onTap: () => onRoleChanged('editor'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _InviteRoleTile(
+                              selected: role == 'viewer',
+                              icon: LucideIcons.eye,
+                              label: 'Nur lesen',
+                              onTap: () => onRoleChanged('viewer'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          error!,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(color: scheme.error),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: onInvite,
+                        icon: busy
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(LucideIcons.send),
+                        label: Text(busy ? 'Wird eingeladen' : 'Einladen'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InviteRoleTile extends StatelessWidget {
+  const _InviteRoleTile({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.surfaceContainerHighest
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.34),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected
+                ? scheme.onSurface.withValues(alpha: 0.28)
+                : Colors.transparent,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: scheme.onSurface),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    ),
+              ),
+            ),
+            AnimatedOpacity(
+              opacity: selected ? 1 : 0,
+              duration: const Duration(milliseconds: 120),
+              child: Icon(LucideIcons.check, size: 17, color: scheme.onSurface),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

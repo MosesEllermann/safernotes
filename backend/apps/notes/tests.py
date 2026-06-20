@@ -257,6 +257,36 @@ def test_share_invitation_rejects_owner_role(db, django_user_model):
     assert not serializer.is_valid()
 
 
+def test_share_invitation_accepts_recipient_email(db, django_user_model):
+    owner = django_user_model.objects.create_user(email="email-owner@example.com", password="strong-password")
+    recipient = django_user_model.objects.create_user(email="email-recipient@example.com", password="strong-password")
+    from apps.notes.models import Note
+    from apps.tenants.models import Organization
+
+    tenant = Organization.objects.create(name_ciphertext=encrypted_payload(), owner_user=owner)
+    note = Note.objects.create(
+        tenant=tenant,
+        owner_user=owner,
+        encrypted_payload=encrypted_payload(),
+        payload_hash=b"server-hash",
+        client_updated_at="2026-06-09T00:00:00Z",
+    )
+    request = type("Request", (), {"user": owner})()
+    serializer = ShareInvitationSerializer(
+        data={
+            "note": str(note.id),
+            "recipient_user": recipient.email,
+            "role": "viewer",
+            "encrypted_note_key": encrypted_payload(),
+            "invitation_signature": "signature",
+        },
+        context={"request": request},
+    )
+
+    assert serializer.is_valid(), serializer.errors
+    assert serializer.validated_data["recipient_user"] == recipient
+
+
 def test_ownership_transfer_rejects_plaintext_fields(db, django_user_model):
     user = django_user_model.objects.create_user(email="new-owner@example.com", password="strong-password")
     serializer = OwnershipTransferSerializer(

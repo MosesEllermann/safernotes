@@ -1,21 +1,50 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:zknotes_app/features/auth/auth_controller.dart';
 import 'package:zknotes_app/features/notes/note_editor_screen.dart';
 import 'package:zknotes_app/features/notes/notes_controller.dart';
 import 'package:zknotes_app/features/settings/settings_screen.dart';
 import 'package:zknotes_app/shared/app/app_l10n.dart';
 import 'package:zknotes_app/shared/models/note.dart';
+import 'package:zknotes_app/shared/notifications/reminder_notifications.dart';
 import 'package:zknotes_app/shared/widgets/animated_icon_button.dart';
 
 final noteSearchProvider = StateProvider<String>((ref) => '');
 final sideNavExpandedProvider = StateProvider<bool>((ref) => true);
 
-class NotesScreen extends ConsumerWidget {
+class NotesScreen extends ConsumerStatefulWidget {
   const NotesScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NotesScreen> createState() => _NotesScreenState();
+}
+
+class _NotesScreenState extends ConsumerState<NotesScreen> {
+  final Map<String, Timer> _reminderTimers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual(notesControllerProvider, (_, next) {
+      final notes = next.valueOrNull;
+      if (notes != null) _scheduleReminders(notes);
+    }, fireImmediately: true);
+  }
+
+  @override
+  void dispose() {
+    for (final timer in _reminderTimers.values) {
+      timer.cancel();
+    }
+    _reminderTimers.clear();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     final notes = ref.watch(notesControllerProvider);
     final session = ref.watch(authControllerProvider).valueOrNull;
@@ -24,60 +53,108 @@ class NotesScreen extends ConsumerWidget {
     final showLogoText = width >= 620;
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 72,
-        titleSpacing: 8,
-        title: Row(
-          children: [
-            AppIconButton(
-              tooltip: 'Menue',
-              icon: Icons.menu_rounded,
-              onPressed: () {
-                if (desktop) {
-                  final expanded = ref.read(sideNavExpandedProvider);
-                  ref.read(sideNavExpandedProvider.notifier).state = !expanded;
-                } else {
-                  _showNavigationSheet(context, ref);
-                }
-              },
-            ),
-            const SizedBox(width: 8),
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0xfffff4c2),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child:
-                  const Icon(Icons.lightbulb_outline, color: Color(0xfff9ab00)),
-            ),
-            if (showLogoText) ...[
-              const SizedBox(width: 12),
-              Text(
-                l10n.t('appName'),
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+        toolbarHeight: 76,
+        titleSpacing: desktop ? 12 : 14,
+        title: desktop
+            ? Row(
+                children: [
+                  AppIconButton(
+                    tooltip: 'Menue',
+                    icon: LucideIcons.panelLeft,
+                    onPressed: () {
+                      final expanded = ref.read(sideNavExpandedProvider);
+                      ref.read(sideNavExpandedProvider.notifier).state =
+                          !expanded;
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest
+                          .withValues(alpha: 0.78),
+                      borderRadius: BorderRadius.circular(12),
                     ),
+                    child: Icon(
+                      LucideIcons.notebookText,
+                      color: Theme.of(context).colorScheme.onSurface,
+                      size: 19,
+                    ),
+                  ),
+                  if (showLogoText) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      l10n.t('appName'),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                    const SizedBox(width: 24),
+                  ] else
+                    const SizedBox(width: 10),
+                  const Expanded(child: _SearchField()),
+                ],
+              )
+            : Row(
+                children: [
+                  SizedBox(
+                    width: 42,
+                    child: Center(
+                      child: AppIconButton(
+                        tooltip: 'Menue',
+                        icon: LucideIcons.panelLeft,
+                        onPressed: () => _showNavigationSheet(context, ref),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(child: _SearchField(compact: true)),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    width: 42,
+                    child: Center(
+                      child: _AccountButton(
+                        email: session?.email ?? '',
+                        compact: true,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 24),
-            ] else
-              const SizedBox(width: 10),
-            const Expanded(child: _SearchField()),
-          ],
-        ),
-        actions: [
-          if (desktop) ...[
-            const _SyncIndicator(),
-            AppIconButton(
-              tooltip: l10n.t('settings'),
-              icon: Icons.settings_outlined,
-              onPressed: () => _openSettings(context),
-            ),
-          ],
-          _AccountButton(email: session?.email ?? ''),
-          const SizedBox(width: 8),
-        ],
+        actions: desktop
+            ? [
+                const _SyncIndicator(),
+                AppIconButton(
+                  tooltip: l10n.t('settings'),
+                  icon: LucideIcons.settings,
+                  onPressed: () => _openSettings(context),
+                ),
+                _AccountButton(email: session?.email ?? ''),
+                const SizedBox(width: 8),
+              ]
+            : null,
       ),
+      floatingActionButton: _CreateNoteFab(
+        onNewNote: () => _openEditor(
+          context,
+          ref,
+          ref.read(notesControllerProvider.notifier).createEmptyNote(),
+        ),
+        onNewReminder: () => _openEditor(
+          context,
+          ref,
+          ref.read(notesControllerProvider.notifier).createReminderNote(),
+        ),
+        onNewList: () => _openEditor(
+          context,
+          ref,
+          ref.read(notesControllerProvider.notifier).createChecklistNote(),
+        ),
+      ),
+      bottomNavigationBar: desktop ? null : const _MobileBottomNav(),
       body: SafeArea(
         child: notes.when(
           data: (items) =>
@@ -91,6 +168,67 @@ class NotesScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  void _scheduleReminders(List<PlainNote> notes) {
+    final now = DateTime.now();
+    final nextIds = <String>{};
+    for (final note in notes) {
+      final reminderAt = note.reminderAt;
+      if (reminderAt == null || note.state == 'deleted') continue;
+      if (reminderAt.isBefore(now)) continue;
+      final key = '${note.localId}-${reminderAt.toIso8601String()}';
+      nextIds.add(key);
+      if (_reminderTimers.containsKey(key)) continue;
+      unawaited(scheduleReminderNotification(
+        reminderId: key,
+        title: note.title.trim().isEmpty ? 'Erinnerung' : note.title,
+        body: _reminderBody(note),
+        scheduledAt: reminderAt,
+      ));
+      _reminderTimers[key] = Timer(reminderAt.difference(now), () async {
+        _reminderTimers.remove(key);
+        final shown = await showReminderNotification(
+          title: note.title.trim().isEmpty ? 'Erinnerung' : note.title,
+          body: _reminderBody(note),
+        );
+        if (!shown && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                note.title.trim().isEmpty
+                    ? 'Erinnerung'
+                    : 'Erinnerung: ${note.title}',
+              ),
+              action: SnackBarAction(
+                label: 'Öffnen',
+                onPressed: () => _openEditor(context, ref, note),
+              ),
+            ),
+          );
+        }
+        await ref
+            .read(notesControllerProvider.notifier)
+            .setReminder(note, null);
+      });
+    }
+    for (final entry in [..._reminderTimers.entries]) {
+      if (!nextIds.contains(entry.key)) {
+        entry.value.cancel();
+        unawaited(cancelReminderNotification(entry.key));
+        _reminderTimers.remove(entry.key);
+      }
+    }
+  }
+
+  String _reminderBody(PlainNote note) {
+    if (note.body.trim().isNotEmpty) return note.body.trim();
+    final checklist = note.checklist
+        .where((item) => item.text.trim().isNotEmpty)
+        .map((item) => item.text.trim())
+        .take(3)
+        .join(', ');
+    return checklist.isEmpty ? 'Zeit fuer deine Notiz.' : checklist;
   }
 }
 
@@ -113,12 +251,15 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 900;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final wide = screenWidth >= 900;
+    final compact = screenWidth < 700;
     final bucket = ref.watch(noteBucketProvider);
     ref.watch(noteSearchProvider);
     final baseNotes = _filteredNotes;
     final filtered = _previewNotes(baseNotes);
     final dragging = _draggedId != null;
+    final noteColumnCount = compact ? 2 : _noteColumnCount(screenWidth, wide);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -127,115 +268,55 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
           child: CustomScrollView(
             slivers: [
               SliverToBoxAdapter(
-                child: Padding(
-                  padding:
-                      EdgeInsets.fromLTRB(wide ? 32 : 16, 8, wide ? 32 : 16, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (bucket == 'active')
-                        _QuickComposer(
-                          onTap: () => _openEditor(
-                            context,
-                            ref,
-                            ref
-                                .read(notesControllerProvider.notifier)
-                                .createEmptyNote(),
-                          ),
-                        ),
-                      SizedBox(height: bucket == 'active' ? 28 : 8),
-                    ],
-                  ),
-                ),
+                child: SizedBox(height: wide ? 12 : 8),
               ),
               if (filtered.isEmpty)
                 const SliverFillRemaining(
                     hasScrollBody: false, child: _EmptyState())
               else
                 SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                      wide ? 32 : 12, 0, wide ? 32 : 12, 48),
-                  sliver: SliverGrid.builder(
-                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: wide ? 290 : 460,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: wide ? 1.08 : 1.55,
+                  padding: compact
+                      ? const EdgeInsets.fromLTRB(12, 0, 12, 96)
+                      : EdgeInsets.fromLTRB(
+                          wide ? 32 : 12,
+                          0,
+                          wide ? 32 : 12,
+                          48,
+                        ),
+                  sliver: SliverToBoxAdapter(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (var column = 0;
+                            column < noteColumnCount;
+                            column += 1) ...[
+                          Expanded(
+                            child: _CompactNoteColumn(
+                              notes: [
+                                for (var i = column;
+                                    i < filtered.length;
+                                    i += noteColumnCount)
+                                  (index: i, note: filtered[i]),
+                              ],
+                              dragging: dragging,
+                              dropIndex: _dropIndex,
+                              onDropIndexChanged: (value) =>
+                                  setState(() => _dropIndex = value),
+                              onCommitReorder: (draggedId, targetIndex) =>
+                                  _commitReorder(
+                                      draggedId, targetIndex, bucket),
+                              onDragStarted: (note) => setState(() {
+                                _draggedId = note.localId;
+                                _dropIndex = null;
+                              }),
+                              onDragEnded: _clearDragPreview,
+                            ),
+                          ),
+                          if (column != noteColumnCount - 1)
+                            const SizedBox(width: 12),
+                        ],
+                      ],
                     ),
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final note = filtered[index];
-                      return DragTarget<PlainNote>(
-                        key: ValueKey('note-drop-${note.localId}'),
-                        onWillAcceptWithDetails: (_) => true,
-                        onMove: (details) {
-                          final nextIndex = _dropIndexForCard(
-                            context: context,
-                            globalOffset: details.offset,
-                            cardIndex: index,
-                            wide: wide,
-                          );
-                          if (_dropIndex == nextIndex) return;
-                          setState(() => _dropIndex = nextIndex);
-                        },
-                        onLeave: (_) {
-                          if (dragging) setState(() => _dropIndex = null);
-                        },
-                        onAcceptWithDetails: (details) {
-                          _commitReorder(
-                            details.data.localId,
-                            _dropIndex ??
-                                _dropIndexForCard(
-                                  context: context,
-                                  globalOffset: details.offset,
-                                  cardIndex: index,
-                                  wide: wide,
-                                ),
-                            bucket,
-                          );
-                        },
-                        builder: (context, candidateData, _) {
-                          final highlighted =
-                              _dropIndex == index || _dropIndex == index + 1;
-                          final card = _KeepNoteCard(
-                            note: note,
-                            dropHighlighted: highlighted,
-                            onTap: () => _openEditor(context, ref, note),
-                            onTogglePin: () => ref
-                                .read(notesControllerProvider.notifier)
-                                .togglePinned(note),
-                            onInvite: () =>
-                                _showInviteSheet(context, ref, note),
-                            onArchive: () => ref
-                                .read(notesControllerProvider.notifier)
-                                .changeState(note, 'archived'),
-                            onTrash: () => ref
-                                .read(notesControllerProvider.notifier)
-                                .changeState(note, 'trashed'),
-                            onRestore: () => ref
-                                .read(notesControllerProvider.notifier)
-                                .changeState(note, 'active'),
-                            onDeleteForever: () => ref
-                                .read(notesControllerProvider.notifier)
-                                .changeState(note, 'deleted'),
-                          );
-                          return LongPressDraggable<PlainNote>(
-                            data: note,
-                            feedback: _NoteDragFeedback(note: note),
-                            onDragStarted: () => setState(() {
-                              _draggedId = note.localId;
-                              _dropIndex = null;
-                            }),
-                            onDraggableCanceled: (_, __) => _clearDragPreview(),
-                            onDragEnd: (_) => _clearDragPreview(),
-                            onDragCompleted: _clearDragPreview,
-                            childWhenDragging:
-                                Opacity(opacity: 0.34, child: card),
-                            child: card,
-                          );
-                        },
-                      );
-                    },
                   ),
                 ),
             ],
@@ -243,6 +324,13 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
         ),
       ],
     );
+  }
+
+  int _noteColumnCount(double screenWidth, bool wide) {
+    if (!wide) return 2;
+    final contentWidth =
+        screenWidth - (ref.read(sideNavExpandedProvider) ? 212 : 78) - 64;
+    return (contentWidth / 290).floor().clamp(2, 5).toInt();
   }
 
   List<PlainNote> _previewNotes(List<PlainNote> notes) {
@@ -256,20 +344,6 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     if (targetIndex == null) return notes;
     next.insert(targetIndex.clamp(0, next.length).toInt(), dragged);
     return next;
-  }
-
-  int _dropIndexForCard({
-    required BuildContext context,
-    required Offset globalOffset,
-    required int cardIndex,
-    required bool wide,
-  }) {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return cardIndex;
-    final local = box.globalToLocal(globalOffset);
-    final before =
-        wide ? local.dx < box.size.width / 2 : local.dy < box.size.height / 2;
-    return before ? cardIndex : cardIndex + 1;
   }
 
   void _commitReorder(String draggedId, int targetIndex, String bucket) {
@@ -292,14 +366,123 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
   List<PlainNote> get _filteredNotes {
     final query = ref.read(noteSearchProvider).trim().toLowerCase();
     final bucket = ref.read(noteBucketProvider);
-    final bucketNotes = widget.notes.where((note) => note.state == bucket);
-    if (query.isEmpty) return bucketNotes.toList();
-    return bucketNotes.where((note) {
-      final checklist = note.checklist.map((item) => item.text).join(' ');
-      return '${note.title} ${note.body} $checklist'
-          .toLowerCase()
-          .contains(query);
-    }).toList();
+    final bucketNotes = switch (bucket) {
+      'reminders' => widget.notes.where((note) =>
+          note.reminderAt != null &&
+          note.state != 'deleted' &&
+          note.state != 'trashed'),
+      'trashed' => widget.notes.where((note) => note.state == 'trashed'),
+      _ => widget.notes
+          .where((note) => note.state == bucket && note.reminderAt == null),
+    };
+    final visible = query.isEmpty
+        ? bucketNotes.toList()
+        : bucketNotes.where((note) {
+            final checklist = note.checklist.map((item) => item.text).join(' ');
+            return '${note.title} ${note.body} $checklist'
+                .toLowerCase()
+                .contains(query);
+          }).toList();
+    if (bucket == 'reminders') {
+      visible.sort((a, b) => a.reminderAt!.compareTo(b.reminderAt!));
+    }
+    return visible;
+  }
+}
+
+class _CompactNoteColumn extends ConsumerWidget {
+  const _CompactNoteColumn({
+    required this.notes,
+    required this.dragging,
+    required this.dropIndex,
+    required this.onDropIndexChanged,
+    required this.onCommitReorder,
+    required this.onDragStarted,
+    required this.onDragEnded,
+  });
+
+  final List<({int index, PlainNote note})> notes;
+  final bool dragging;
+  final int? dropIndex;
+  final ValueChanged<int?> onDropIndexChanged;
+  final void Function(String draggedId, int targetIndex) onCommitReorder;
+  final ValueChanged<PlainNote> onDragStarted;
+  final VoidCallback onDragEnded;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      children: [
+        for (final entry in notes)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: DragTarget<PlainNote>(
+              key: ValueKey('compact-note-drop-${entry.note.localId}'),
+              onWillAcceptWithDetails: (_) => true,
+              onMove: (details) {
+                final box = context.findRenderObject() as RenderBox?;
+                if (box == null || !box.hasSize) return;
+                final local = box.globalToLocal(details.offset);
+                final nextIndex = local.dy < box.size.height / 2
+                    ? entry.index
+                    : entry.index + 1;
+                if (dropIndex != nextIndex) onDropIndexChanged(nextIndex);
+              },
+              onLeave: (_) {
+                if (dragging) onDropIndexChanged(null);
+              },
+              onAcceptWithDetails: (details) => onCommitReorder(
+                details.data.localId,
+                dropIndex ?? entry.index,
+              ),
+              builder: (context, _, __) {
+                final before = dropIndex == entry.index;
+                final after = dropIndex == entry.index + 1;
+                final card = _KeepNoteCard(
+                  note: entry.note,
+                  onTap: () => _openEditor(context, ref, entry.note),
+                  onTogglePin: () => ref
+                      .read(notesControllerProvider.notifier)
+                      .togglePinned(entry.note),
+                  onInvite: () => _showInviteSheet(context, ref, entry.note),
+                  onReminder: () =>
+                      _showReminderSheet(context, ref, entry.note),
+                  onArchive: () => ref
+                      .read(notesControllerProvider.notifier)
+                      .changeState(entry.note, 'archived'),
+                  onTrash: () => ref
+                      .read(notesControllerProvider.notifier)
+                      .changeState(entry.note, 'trashed'),
+                  onRestore: () => ref
+                      .read(notesControllerProvider.notifier)
+                      .changeState(entry.note, 'active'),
+                  onDeleteForever: () => ref
+                      .read(notesControllerProvider.notifier)
+                      .changeState(entry.note, 'deleted'),
+                );
+                return AnimatedPadding(
+                  duration: const Duration(milliseconds: 140),
+                  curve: Curves.easeOutCubic,
+                  padding: EdgeInsets.only(
+                    top: before ? 12 : 0,
+                    bottom: after ? 12 : 0,
+                  ),
+                  child: LongPressDraggable<PlainNote>(
+                    data: entry.note,
+                    feedback: _NoteDragFeedback(note: entry.note),
+                    onDragStarted: () => onDragStarted(entry.note),
+                    onDraggableCanceled: (_, __) => onDragEnded(),
+                    onDragEnd: (_) => onDragEnded(),
+                    onDragCompleted: onDragEnded,
+                    childWhenDragging: Opacity(opacity: 0.34, child: card),
+                    child: card,
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
   }
 }
 
@@ -313,29 +496,36 @@ class _SideRail extends ConsumerWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
-      width: expanded ? 224 : 88,
-      padding: EdgeInsets.fromLTRB(12, 12, expanded ? 16 : 12, 0),
+      width: expanded ? 212 : 78,
+      padding: EdgeInsets.fromLTRB(12, 10, expanded ? 12 : 10, 0),
       child: Column(
         crossAxisAlignment:
             expanded ? CrossAxisAlignment.stretch : CrossAxisAlignment.center,
         children: [
           _RailButton(
             bucket: 'active',
-            icon: Icons.lightbulb_outline,
+            icon: LucideIcons.notebookText,
             label: l10n.t('notes'),
             expanded: expanded,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
+          _RailButton(
+            bucket: 'reminders',
+            icon: LucideIcons.bell,
+            label: 'Erinnerungen',
+            expanded: expanded,
+          ),
+          const SizedBox(height: 6),
           _RailButton(
             bucket: 'archived',
-            icon: Icons.archive_outlined,
+            icon: LucideIcons.archive,
             label: 'Archiv',
             expanded: expanded,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _RailButton(
             bucket: 'trashed',
-            icon: Icons.delete_outline,
+            icon: LucideIcons.trash,
             label: 'Papierkorb',
             expanded: expanded,
           ),
@@ -367,14 +557,17 @@ class _RailButton extends ConsumerWidget {
         onTap: () => ref.read(noteBucketProvider.notifier).state = bucket,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
-          curve: Curves.easeOutBack,
-          height: 44,
-          padding: EdgeInsets.symmetric(horizontal: expanded ? 14 : 0),
+          curve: Curves.easeOutCubic,
+          height: 42,
+          padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
           decoration: BoxDecoration(
             color: selected
-                ? Theme.of(context).colorScheme.secondaryContainer
+                ? Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: 0.92)
                 : Colors.transparent,
-            borderRadius: BorderRadius.circular(expanded ? 999 : 18),
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
             mainAxisAlignment:
@@ -383,7 +576,7 @@ class _RailButton extends ConsumerWidget {
               Icon(icon,
                   size: 18,
                   color: selected
-                      ? Theme.of(context).colorScheme.onSecondaryContainer
+                      ? Theme.of(context).colorScheme.onSurface
                       : Theme.of(context).colorScheme.onSurfaceVariant),
               AnimatedSize(
                 duration: const Duration(milliseconds: 180),
@@ -396,19 +589,19 @@ class _RailButton extends ConsumerWidget {
                           maxLines: 1,
                           overflow: TextOverflow.fade,
                           softWrap: false,
-                          style:
-                              Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: selected
-                                        ? Theme.of(context)
-                                            .colorScheme
-                                            .onSecondaryContainer
-                                        : Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant,
-                                    fontWeight: selected
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                  ),
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(
+                                color: selected
+                                    ? Theme.of(context).colorScheme.onSurface
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                              ),
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -421,8 +614,68 @@ class _RailButton extends ConsumerWidget {
   }
 }
 
+class _MobileBottomNav extends ConsumerWidget {
+  const _MobileBottomNav();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
+    final bucket = ref.watch(noteBucketProvider);
+    final selectedIndex = switch (bucket) {
+      'reminders' => 1,
+      'trashed' => 2,
+      _ => 0,
+    };
+    return NavigationBar(
+      height: 68,
+      selectedIndex: selectedIndex,
+      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      indicatorColor: Theme.of(context)
+          .colorScheme
+          .surfaceContainerHighest
+          .withValues(alpha: 0.9),
+      destinations: [
+        NavigationDestination(
+          icon: const Icon(LucideIcons.notebookText),
+          selectedIcon: const Icon(LucideIcons.notebookText),
+          label: l10n.t('notes'),
+        ),
+        const NavigationDestination(
+          icon: Icon(LucideIcons.bell),
+          selectedIcon: Icon(LucideIcons.bell),
+          label: 'Erinnerungen',
+        ),
+        const NavigationDestination(
+          icon: Icon(LucideIcons.trash),
+          selectedIcon: Icon(LucideIcons.trash),
+          label: 'Papierkorb',
+        ),
+        NavigationDestination(
+          icon: const Icon(LucideIcons.settings),
+          selectedIcon: const Icon(LucideIcons.settings),
+          label: l10n.t('settings'),
+        ),
+      ],
+      onDestinationSelected: (index) {
+        if (index == 3) {
+          _openSettings(context);
+          return;
+        }
+        ref.read(noteBucketProvider.notifier).state = switch (index) {
+          1 => 'reminders',
+          2 => 'trashed',
+          _ => 'active',
+        };
+      },
+    );
+  }
+}
+
 class _SearchField extends ConsumerWidget {
-  const _SearchField();
+  const _SearchField({this.compact = false});
+
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -433,24 +686,37 @@ class _SearchField extends ConsumerWidget {
           onChanged: (value) =>
               ref.read(noteSearchProvider.notifier).state = value,
           decoration: InputDecoration(
-            hintText: 'Search',
-            prefixIcon: const Icon(Icons.search),
+            hintText: 'Search notes',
+            prefixIcon: Padding(
+              padding: EdgeInsets.only(left: compact ? 8 : 4),
+              child: const Icon(LucideIcons.search, size: 19),
+            ),
+            prefixIconConstraints: BoxConstraints(minWidth: compact ? 48 : 44),
             filled: true,
-            fillColor: Theme.of(context)
-                .colorScheme
-                .surfaceContainerHighest
-                .withValues(alpha: 0.68),
+            fillColor: Theme.of(context).colorScheme.surface,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.5),
+              ),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.5),
+              ),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(999),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: Theme.of(context).colorScheme.primary,
+              ),
             ),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
@@ -461,50 +727,194 @@ class _SearchField extends ConsumerWidget {
   }
 }
 
-class _QuickComposer extends ConsumerWidget {
-  const _QuickComposer({required this.onTap});
+class _CreateNoteFab extends StatefulWidget {
+  const _CreateNoteFab({
+    required this.onNewNote,
+    required this.onNewReminder,
+    required this.onNewList,
+  });
 
+  final VoidCallback onNewNote;
+  final VoidCallback onNewReminder;
+  final VoidCallback onNewList;
+
+  @override
+  State<_CreateNoteFab> createState() => _CreateNoteFabState();
+}
+
+class _CreateNoteFabState extends State<_CreateNoteFab>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _curve;
+  var _open = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+    _curve = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    setState(() => _open = !_open);
+    if (_open) {
+      _controller.forward();
+    } else {
+      _controller.reverse();
+    }
+  }
+
+  void _run(VoidCallback action) {
+    _toggle();
+    action();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      width: 270,
+      height: 216,
+      child: Stack(
+        alignment: Alignment.bottomRight,
+        children: [
+          if (_open)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _toggle,
+                child: const SizedBox.expand(),
+              ),
+            ),
+          _FabOption(
+            animation: _curve,
+            index: 2,
+            icon: LucideIcons.listChecks,
+            label: 'Neue Liste',
+            onTap: () => _run(widget.onNewList),
+          ),
+          _FabOption(
+            animation: _curve,
+            index: 1,
+            icon: LucideIcons.bellPlus,
+            label: 'Neue Erinnerung',
+            onTap: () => _run(widget.onNewReminder),
+          ),
+          _FabOption(
+            animation: _curve,
+            index: 0,
+            icon: LucideIcons.filePlus2,
+            label: 'Neue Notiz',
+            onTap: () => _run(widget.onNewNote),
+          ),
+          SizedBox(
+            width: 66,
+            height: 66,
+            child: FloatingActionButton(
+              tooltip: 'Erstellen',
+              elevation: _open ? 1 : 3,
+              backgroundColor: _open
+                  ? scheme.onSurface
+                  : dark
+                      ? scheme.surfaceContainerHighest
+                      : scheme.surfaceContainer,
+              foregroundColor: _open ? scheme.surface : scheme.onSurface,
+              shape: const CircleBorder(),
+              onPressed: _toggle,
+              child: AnimatedRotation(
+                turns: _open ? 0.125 : 0,
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                child: const Icon(LucideIcons.plus, size: 32),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FabOption extends StatelessWidget {
+  const _FabOption({
+    required this.animation,
+    required this.index,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final Animation<double> animation;
+  final int index;
+  final IconData icon;
+  final String label;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final l10n = ref.watch(l10nProvider);
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: Material(
-          elevation: 2,
-          shadowColor: Colors.black.withValues(alpha: 0.18),
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(8),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      l10n.t('writeNote'),
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color:
-                                Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                    ),
-                  ),
-                  AppIconButton(
-                    tooltip: l10n.t('checklist'),
-                    onPressed: onTap,
-                    icon: Icons.check_box_outlined,
-                  ),
-                  AppIconButton(
-                    tooltip: l10n.t('newNote'),
-                    onPressed: onTap,
-                    icon: Icons.brush_outlined,
-                  ),
-                ],
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final pillColor =
+        dark ? scheme.surfaceContainerHighest : scheme.surfaceContainerLow;
+    final textColor = scheme.onSurface;
+    final bottom = 76 + index * 48.0;
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final value = animation.value;
+        return Positioned(
+          right: 0,
+          bottom: 24 + (bottom - 24) * value,
+          child: IgnorePointer(
+            ignoring: value < 0.85,
+            child: Opacity(
+              opacity: value,
+              child: Transform.scale(
+                scale: 0.9 + 0.1 * value,
+                alignment: Alignment.centerRight,
+                child: child,
               ),
+            ),
+          ),
+        );
+      },
+      child: Material(
+        color: pillColor,
+        elevation: 2,
+        shadowColor: Colors.black.withValues(alpha: dark ? 0.22 : 0.1),
+        borderRadius: BorderRadius.circular(999),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 14, 26, 14),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 19, color: textColor),
+                const SizedBox(width: 12),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: textColor,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ],
             ),
           ),
         ),
@@ -516,10 +926,10 @@ class _QuickComposer extends ConsumerWidget {
 class _KeepNoteCard extends StatefulWidget {
   const _KeepNoteCard({
     required this.note,
-    this.dropHighlighted = false,
     required this.onTap,
     required this.onTogglePin,
     required this.onInvite,
+    required this.onReminder,
     required this.onArchive,
     required this.onTrash,
     required this.onRestore,
@@ -527,10 +937,10 @@ class _KeepNoteCard extends StatefulWidget {
   });
 
   final PlainNote note;
-  final bool dropHighlighted;
   final VoidCallback onTap;
   final VoidCallback onTogglePin;
   final VoidCallback onInvite;
+  final VoidCallback onReminder;
   final VoidCallback onArchive;
   final VoidCallback onTrash;
   final VoidCallback onRestore;
@@ -549,135 +959,154 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
     final scheme = Theme.of(context).colorScheme;
     final bg = _noteColorFor(context, note.color);
     final isPlainWhite = note.color == 0xffffffff;
+    final showHoverActions = MediaQuery.sizeOf(context).width >= 700;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedScale(
-        scale: _hovered ? 1.018 : 1,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutBack,
+        scale: 1,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
         child: Material(
           color: isPlainWhite ? scheme.surface : bg,
-          elevation: _hovered ? 4 : 0,
-          shadowColor: Colors.black.withValues(alpha: 0.18),
-          borderRadius: BorderRadius.circular(8),
+          elevation: _hovered ? 1 : 0,
+          shadowColor: Colors.black.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: widget.onTap,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: widget.dropHighlighted
-                      ? scheme.primary
-                      : _hovered
-                          ? scheme.outline
-                          : scheme.outlineVariant.withValues(alpha: 0.8),
-                  width: widget.dropHighlighted ? 2 : 1,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          note.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              Theme.of(context).textTheme.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                        ),
-                      ),
-                      AnimatedOpacity(
-                        opacity: _hovered || note.pinned ? 1 : 0,
-                        duration: const Duration(milliseconds: 120),
-                        child: AppIconButton(
-                          tooltip: note.pinned ? 'Losloesen' : 'Anheften',
-                          icon: note.pinned
-                              ? Icons.push_pin
-                              : Icons.push_pin_outlined,
-                          selected: note.pinned,
-                          onPressed: widget.onTogglePin,
-                        ),
-                      ),
-                    ],
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 132),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                padding: const EdgeInsets.fromLTRB(16, 15, 12, 10),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _hovered
+                        ? scheme.outline.withValues(alpha: 0.72)
+                        : scheme.outlineVariant.withValues(alpha: 0.58),
                   ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: note.checklist.isNotEmpty && note.body.trim().isEmpty
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            note.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                          ),
+                        ),
+                        AnimatedOpacity(
+                          opacity: _hovered || note.pinned ? 1 : 0,
+                          duration: const Duration(milliseconds: 120),
+                          child: AppIconButton(
+                            tooltip: note.pinned ? 'Losloesen' : 'Anheften',
+                            icon: note.pinned
+                                ? LucideIcons.pin
+                                : LucideIcons.pinOff,
+                            selected: note.pinned,
+                            onPressed: widget.onTogglePin,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    note.checklist.isNotEmpty && note.body.trim().isEmpty
                         ? _ChecklistPreview(items: note.checklist)
                         : _FormattedPreview(text: note.body),
-                  ),
-                  Row(
-                    children: [
-                      if (note.checklist.isNotEmpty)
-                        _MetaPill(
-                          icon: Icons.check_box_outlined,
-                          label:
-                              '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
-                        ),
-                      if (note.conflicted)
-                        _MetaPill(
-                          icon: Icons.error_outline,
-                          label: 'Conflict',
-                          color: scheme.error,
-                        ),
-                      if (note.dirty)
-                        _MetaPill(
-                          icon: Icons.cloud_upload_outlined,
-                          label: 'Saving',
-                          color: scheme.primary,
-                        ),
-                      const Spacer(),
-                      AnimatedOpacity(
-                        opacity: _hovered ? 1 : 0,
-                        duration: const Duration(milliseconds: 120),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (note.state != 'active')
-                              AppIconButton(
-                                tooltip: 'Wiederherstellen',
-                                icon: Icons.restore,
-                                onPressed: widget.onRestore,
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      height: 36,
+                      child: Row(
+                        children: [
+                          if (note.checklist.isNotEmpty)
+                            _MetaPill(
+                              icon: LucideIcons.squareCheck,
+                              label:
+                                  '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
+                            ),
+                          if (note.conflicted)
+                            _MetaPill(
+                              icon: LucideIcons.circleAlert,
+                              label: 'Conflict',
+                              color: scheme.error,
+                            ),
+                          if (note.dirty)
+                            _MetaPill(
+                              icon: LucideIcons.cloudUpload,
+                              label: 'Saving',
+                              color: scheme.primary,
+                            ),
+                          if (note.reminderAt != null)
+                            _MetaPill(
+                              icon: LucideIcons.bell,
+                              label: _formatReminder(note.reminderAt!),
+                              color: scheme.primary,
+                            ),
+                          const Spacer(),
+                          if (_hovered && showHoverActions)
+                            AnimatedOpacity(
+                              opacity: 1,
+                              duration: const Duration(milliseconds: 120),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (note.state != 'active')
+                                    AppIconButton(
+                                      tooltip: 'Wiederherstellen',
+                                      icon: LucideIcons.rotateCcw,
+                                      onPressed: widget.onRestore,
+                                    ),
+                                  if (note.state == 'active')
+                                    AppIconButton(
+                                      tooltip: 'Archivieren',
+                                      icon: LucideIcons.archive,
+                                      onPressed: widget.onArchive,
+                                    ),
+                                  if (note.state == 'active' &&
+                                      note.reminderAt == null)
+                                    AppIconButton(
+                                      tooltip: 'Mitarbeiter einladen',
+                                      icon: LucideIcons.userPlus,
+                                      onPressed: widget.onInvite,
+                                    ),
+                                  if (note.state != 'trashed')
+                                    AppIconButton(
+                                      tooltip: 'Erinnerung',
+                                      icon: LucideIcons.bell,
+                                      onPressed: widget.onReminder,
+                                    ),
+                                  if (note.state != 'trashed')
+                                    AppIconButton(
+                                      tooltip: 'Papierkorb',
+                                      icon: LucideIcons.trash,
+                                      onPressed: widget.onTrash,
+                                    )
+                                  else
+                                    AppIconButton(
+                                      tooltip: 'Endgueltig loeschen',
+                                      icon: LucideIcons.trash2,
+                                      onPressed: widget.onDeleteForever,
+                                    ),
+                                ],
                               ),
-                            if (note.state == 'active')
-                              AppIconButton(
-                                tooltip: 'Archivieren',
-                                icon: Icons.archive_outlined,
-                                onPressed: widget.onArchive,
-                              ),
-                            if (note.state == 'active')
-                              AppIconButton(
-                                tooltip: 'Mitarbeiter einladen',
-                                icon: Icons.person_add_alt,
-                                onPressed: widget.onInvite,
-                              ),
-                            if (note.state != 'trashed')
-                              AppIconButton(
-                                tooltip: 'Papierkorb',
-                                icon: Icons.delete_outline,
-                                onPressed: widget.onTrash,
-                              )
-                            else
-                              AppIconButton(
-                                tooltip: 'Endgueltig loeschen',
-                                icon: Icons.delete_forever_outlined,
-                                onPressed: widget.onDeleteForever,
-                              ),
-                          ],
-                        ),
+                            ),
+                        ],
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -698,9 +1127,9 @@ class _NoteDragFeedback extends StatelessWidget {
     final bg = _noteColorFor(context, note.color);
     return Material(
       color: note.color == 0xffffffff ? scheme.surface : bg,
-      elevation: 10,
-      shadowColor: Colors.black.withValues(alpha: 0.24),
-      borderRadius: BorderRadius.circular(8),
+      elevation: 8,
+      shadowColor: Colors.black.withValues(alpha: 0.16),
+      borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
         width: 260,
@@ -762,7 +1191,7 @@ class _ChecklistPreview extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  item.done ? Icons.check_box : Icons.check_box_outline_blank,
+                  item.done ? LucideIcons.squareCheck : LucideIcons.square,
                   size: 14,
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -890,6 +1319,20 @@ class _MetaPill extends StatelessWidget {
   }
 }
 
+String _formatReminder(DateTime value) {
+  final local = value.toLocal();
+  final now = DateTime.now();
+  final sameDay = local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day;
+  final date = sameDay
+      ? 'Heute'
+      : '${local.day.toString().padLeft(2, '0')}.${local.month.toString().padLeft(2, '0')}.';
+  final time =
+      '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  return '$date $time';
+}
+
 class _SyncIndicator extends ConsumerWidget {
   const _SyncIndicator({this.showLabel = false});
 
@@ -901,27 +1344,27 @@ class _SyncIndicator extends ConsumerWidget {
     final status = ref.watch(syncStatusProvider);
     final (icon, label, color) = switch (status) {
       SyncStatus.saved => (
-          Icons.cloud_done_outlined,
+          LucideIcons.cloudCheck,
           l10n.t('saved'),
           Theme.of(context).colorScheme.onSurfaceVariant
         ),
       SyncStatus.saving => (
-          Icons.pending_outlined,
+          LucideIcons.clock3,
           l10n.t('saving'),
           Theme.of(context).colorScheme.primary
         ),
       SyncStatus.syncing => (
-          Icons.sync,
+          LucideIcons.refreshCw,
           l10n.t('syncing'),
           Theme.of(context).colorScheme.primary
         ),
       SyncStatus.offline => (
-          Icons.cloud_off_outlined,
+          LucideIcons.cloudOff,
           l10n.t('offline'),
           Theme.of(context).colorScheme.error
         ),
       SyncStatus.conflict => (
-          Icons.error_outline,
+          LucideIcons.circleAlert,
           l10n.t('conflict'),
           Theme.of(context).colorScheme.error
         ),
@@ -958,10 +1401,10 @@ class _SyncIndicator extends ConsumerWidget {
       message: label,
       child: showLabel
           ? Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(999),
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
               ),
               child: content,
             )
@@ -974,9 +1417,13 @@ class _SyncIndicator extends ConsumerWidget {
 }
 
 class _AccountButton extends ConsumerWidget {
-  const _AccountButton({required this.email});
+  const _AccountButton({
+    required this.email,
+    this.compact = false,
+  });
 
   final String email;
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -986,21 +1433,21 @@ class _AccountButton extends ConsumerWidget {
       child: GestureDetector(
         onTap: () => _showAccountSideSheet(context, ref, email),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 8),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutBack,
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
             child: Text(
               initial,
               style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontWeight: FontWeight.w700,
                   ),
             ),
@@ -1046,9 +1493,10 @@ class _NavigationSideSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: Theme.of(context).colorScheme.surfaceContainer,
-      borderRadius: const BorderRadius.horizontal(right: Radius.circular(28)),
+      color: Theme.of(context).scaffoldBackgroundColor,
+      borderRadius: const BorderRadius.horizontal(right: Radius.circular(18)),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         child: SizedBox(
@@ -1064,11 +1512,16 @@ class _NavigationSideSheet extends ConsumerWidget {
                       width: 38,
                       height: 38,
                       decoration: BoxDecoration(
-                        color: const Color(0xfffff4c2),
-                        borderRadius: BorderRadius.circular(10),
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.lightbulb_outline,
-                          color: Color(0xfff9ab00), size: 20),
+                      child: Icon(
+                        LucideIcons.notebookText,
+                        color: Theme.of(context).colorScheme.onSurface,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -1080,37 +1533,51 @@ class _NavigationSideSheet extends ConsumerWidget {
                     const Spacer(),
                     AppIconButton(
                       tooltip: 'Schliessen',
-                      icon: Icons.close_rounded,
+                      icon: LucideIcons.x,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
                 const SizedBox(height: 22),
-                _MobileMenuButton(
-                  bucket: 'active',
-                  icon: Icons.lightbulb_outline,
-                  label: l10n.t('notes'),
+                Column(
+                  children: [
+                    _MobileMenuButton(
+                      bucket: 'active',
+                      icon: LucideIcons.notebookText,
+                      label: l10n.t('notes'),
+                    ),
+                    _MobileMenuButton(
+                      bucket: 'reminders',
+                      icon: LucideIcons.bell,
+                      label: 'Erinnerungen',
+                    ),
+                    _MobileMenuButton(
+                      bucket: 'archived',
+                      icon: LucideIcons.archive,
+                      label: 'Archiv',
+                    ),
+                    _MobileMenuButton(
+                      bucket: 'trashed',
+                      icon: LucideIcons.trash,
+                      label: 'Papierkorb',
+                    ),
+                  ],
                 ),
-                _MobileMenuButton(
-                  bucket: 'archived',
-                  icon: Icons.archive_outlined,
-                  label: 'Archiv',
-                ),
-                _MobileMenuButton(
-                  bucket: 'trashed',
-                  icon: Icons.delete_outline,
-                  label: 'Papierkorb',
+                const SizedBox(height: 18),
+                Divider(
+                  height: 1,
+                  color: scheme.outlineVariant.withValues(alpha: 0.28),
                 ),
                 const Spacer(),
                 const _SyncIndicator(showLabel: true),
-                const SizedBox(height: 8),
-                FilledButton.tonalIcon(
-                  onPressed: () {
+                const SizedBox(height: 4),
+                _MenuActionRow(
+                  icon: LucideIcons.settings,
+                  label: l10n.t('settings'),
+                  onTap: () {
                     Navigator.of(context).pop();
                     _openSettings(context);
                   },
-                  icon: const Icon(Icons.settings_outlined),
-                  label: Text(l10n.t('settings')),
                 ),
               ],
             ),
@@ -1135,25 +1602,98 @@ class _MobileMenuButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(noteBucketProvider) == bucket;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: FilledButton.tonalIcon(
-        style: FilledButton.styleFrom(
-          alignment: Alignment.centerLeft,
-          backgroundColor: selected
-              ? Theme.of(context).colorScheme.secondaryContainer
-              : Theme.of(context).colorScheme.surfaceContainerHighest,
-          foregroundColor: selected
-              ? Theme.of(context).colorScheme.onSecondaryContainer
-              : Theme.of(context).colorScheme.onSurfaceVariant,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+    return _MenuActionRow(
+      icon: icon,
+      label: label,
+      selected: selected,
+      onTap: () {
+        ref.read(noteBucketProvider.notifier).state = bucket;
+        Navigator.of(context).pop();
+      },
+    );
+  }
+}
+
+class _MenuActionRow extends StatefulWidget {
+  const _MenuActionRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.selected = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool selected;
+
+  @override
+  State<_MenuActionRow> createState() => _MenuActionRowState();
+}
+
+class _MenuActionRowState extends State<_MenuActionRow> {
+  var _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            color: widget.selected
+                ? scheme.surfaceContainerHighest.withValues(alpha: 0.92)
+                : _hovered
+                    ? scheme.surfaceContainerHighest.withValues(alpha: 0.32)
+                    : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                widget.icon,
+                size: 18,
+                color: widget.selected
+                    ? scheme.onSurface
+                    : scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  widget.label,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight:
+                            widget.selected ? FontWeight.w700 : FontWeight.w500,
+                        color: widget.selected
+                            ? scheme.onSurface
+                            : scheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+              AnimatedScale(
+                scale: widget.selected ? 1 : 0.76,
+                duration: const Duration(milliseconds: 140),
+                curve: Curves.easeOutCubic,
+                child: AnimatedOpacity(
+                  opacity: widget.selected ? 1 : 0,
+                  duration: const Duration(milliseconds: 120),
+                  child: Icon(
+                    LucideIcons.check,
+                    size: 18,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        onPressed: () {
-          ref.read(noteBucketProvider.notifier).state = bucket;
-          Navigator.of(context).pop();
-        },
-        icon: Icon(icon, size: 18),
-        label: Text(label),
       ),
     );
   }
@@ -1190,8 +1730,8 @@ class _AccountSideSheet extends ConsumerWidget {
     final initial = email.isEmpty ? '?' : email.substring(0, 1).toUpperCase();
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: scheme.surfaceContainer,
-      borderRadius: const BorderRadius.horizontal(left: Radius.circular(30)),
+      color: Theme.of(context).scaffoldBackgroundColor,
+      borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
       clipBehavior: Clip.antiAlias,
       child: SafeArea(
         child: SizedBox(
@@ -1203,88 +1743,164 @@ class _AccountSideSheet extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    Text(
-                      'Account',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
+                    Text('Profil',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            )),
                     const Spacer(),
                     AppIconButton(
                       tooltip: 'Schliessen',
-                      icon: Icons.close_rounded,
+                      icon: LucideIcons.x,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
                 const SizedBox(height: 28),
-                Center(
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutBack,
-                    width: 92,
-                    height: 92,
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: scheme.primary.withValues(alpha: 0.18),
-                          blurRadius: 28,
-                          offset: const Offset(0, 16),
-                        ),
-                      ],
+                Row(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOutCubic,
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        initial,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: scheme.onSurface,
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
                     ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      initial,
-                      style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                            color: scheme.onPrimaryContainer,
-                            fontWeight: FontWeight.w800,
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            email.isEmpty ? 'Lokaler Account' : email,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
                           ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Icon(LucideIcons.circleCheck,
+                                  size: 15, color: scheme.onSurfaceVariant),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Angemeldet',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
                 const SizedBox(height: 18),
-                Text(
-                  email,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                Divider(
+                  height: 1,
+                  color: scheme.outlineVariant.withValues(alpha: 0.28),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Angemeldet',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-                const Spacer(),
-                FilledButton.tonalIcon(
-                  onPressed: () {
+                const SizedBox(height: 12),
+                _AccountActionTile(
+                  icon: LucideIcons.settings,
+                  label: 'Einstellungen',
+                  onTap: () {
                     Navigator.of(context).pop();
                     _openSettings(context);
                   },
-                  icon: const Icon(Icons.settings_outlined),
-                  label: const Text('Einstellungen'),
                 ),
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: scheme.errorContainer,
-                    foregroundColor: scheme.onErrorContainer,
-                  ),
-                  onPressed: () {
+                _AccountActionTile(
+                  icon: LucideIcons.logOut,
+                  label: 'Logout',
+                  destructive: true,
+                  onTap: () {
                     Navigator.of(context).pop();
                     ref.read(authControllerProvider.notifier).signOut();
                   },
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Logout'),
                 ),
+                const Spacer(),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountActionTile extends StatefulWidget {
+  const _AccountActionTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.destructive = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool destructive;
+
+  @override
+  State<_AccountActionTile> createState() => _AccountActionTileState();
+}
+
+class _AccountActionTileState extends State<_AccountActionTile> {
+  var _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = widget.destructive ? scheme.error : scheme.onSurface;
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          decoration: BoxDecoration(
+            color: _hovered
+                ? scheme.surfaceContainerHighest.withValues(alpha: 0.32)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Icon(widget.icon, size: 18, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  widget.label,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: color,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              Icon(LucideIcons.chevronRight,
+                  size: 17, color: scheme.onSurfaceVariant),
+            ],
           ),
         ),
       ),
@@ -1295,7 +1911,8 @@ class _AccountSideSheet extends ConsumerWidget {
 void _showInviteSheet(BuildContext context, WidgetRef ref, PlainNote note) {
   showModalBottomSheet<void>(
     context: context,
-    showDragHandle: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
     builder: (_) => _InviteSheet(note: note),
   );
 }
@@ -1323,93 +1940,575 @@ class _InviteSheetState extends ConsumerState<_InviteSheet> {
 
   @override
   Widget build(BuildContext context) {
+    return _CollaboratorInviteSheet(
+      recipient: _recipient,
+      role: _role,
+      busy: _busy,
+      error: _error,
+      onRoleChanged: (value) => setState(() => _role = value),
+      onInvite: _busy ? null : _invite,
+    );
+  }
+
+  Future<void> _invite() async {
+    final recipient = _recipient.text.trim();
+    if (recipient.isEmpty) {
+      setState(() => _error = 'Bitte gib eine E-Mail oder User-ID ein.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final note =
+          await ref.read(notesControllerProvider.notifier).ensureSynced(
+                widget.note,
+              );
+      await ref.read(notesControllerProvider.notifier).inviteCollaborator(
+            note: note,
+            recipientUserId: recipient,
+            role: _role,
+          );
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      setState(() => _error = _friendlyInviteError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _friendlyInviteError(Object error) {
+    final text = error.toString();
+    if (text.contains('No user found')) {
+      return 'Kein Nutzer mit dieser E-Mail oder User-ID gefunden.';
+    }
+    if (text.contains('Only note owners')) {
+      return 'Nur Besitzer dieser Notiz koennen Mitarbeiter einladen.';
+    }
+    if (text.contains('recipient_user')) {
+      return 'Bitte pruefe die E-Mail oder User-ID.';
+    }
+    return 'Einladen ist fehlgeschlagen. Bitte versuche es erneut.';
+  }
+}
+
+class _CollaboratorInviteSheet extends StatelessWidget {
+  const _CollaboratorInviteSheet({
+    required this.recipient,
+    required this.role,
+    required this.busy,
+    required this.error,
+    required this.onRoleChanged,
+    required this.onInvite,
+  });
+
+  final TextEditingController recipient;
+  final String role;
+  final bool busy;
+  final String? error;
+  final ValueChanged<String> onRoleChanged;
+  final VoidCallback? onInvite;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        24,
-        12,
-        24,
-        MediaQuery.viewInsetsOf(context).bottom + 24,
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 12,
       ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Material(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Icon(
+                              LucideIcons.userPlus,
+                              size: 20,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Mitarbeiter einladen',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                            ),
+                          ),
+                          AppIconButton(
+                            tooltip: 'Schliessen',
+                            icon: LucideIcons.x,
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: recipient,
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'User ID oder E-Mail',
+                          prefixIcon: const Icon(LucideIcons.atSign, size: 18),
+                          filled: true,
+                          fillColor: scheme.surfaceContainerHighest
+                              .withValues(alpha: 0.5),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide(color: scheme.primary),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _InviteRoleTile(
+                              selected: role == 'editor',
+                              icon: LucideIcons.edit3,
+                              label: 'Bearbeiten',
+                              onTap: () => onRoleChanged('editor'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _InviteRoleTile(
+                              selected: role == 'viewer',
+                              icon: LucideIcons.eye,
+                              label: 'Nur lesen',
+                              onTap: () => onRoleChanged('viewer'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          error!,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(color: scheme.error),
+                        ),
+                      ],
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: onInvite,
+                        icon: busy
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(LucideIcons.send),
+                        label: Text(busy ? 'Wird eingeladen' : 'Einladen'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InviteRoleTile extends StatelessWidget {
+  const _InviteRoleTile({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: BoxDecoration(
+          color: selected
+              ? scheme.surfaceContainerHighest
+              : scheme.surfaceContainerHighest.withValues(alpha: 0.34),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected
+                ? scheme.onSurface.withValues(alpha: 0.28)
+                : Colors.transparent,
+          ),
+        ),
+        child: Row(
           children: [
-            Text(
-              'Mitarbeiter einladen',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _recipient,
-              decoration: const InputDecoration(
-                labelText: 'User ID',
-                prefixIcon: Icon(Icons.person_add_alt),
+            Icon(icon, size: 18, color: scheme.onSurface),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    ),
               ),
             ),
-            const SizedBox(height: 12),
-            SegmentedButton<String>(
-              selected: {_role},
-              segments: const [
-                ButtonSegment(
-                  value: 'editor',
-                  label: Text('Editor'),
-                  icon: Icon(Icons.edit),
-                ),
-                ButtonSegment(
-                  value: 'viewer',
-                  label: Text('Viewer'),
-                  icon: Icon(Icons.visibility),
-                ),
-              ],
-              onSelectionChanged: (value) =>
-                  setState(() => _role = value.first),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _busy || widget.note.remoteId == null ? null : _invite,
-              icon: _busy
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send),
-              label: const Text('Einladen'),
+            AnimatedOpacity(
+              opacity: selected ? 1 : 0,
+              duration: const Duration(milliseconds: 120),
+              child: Icon(LucideIcons.check, size: 17, color: scheme.onSurface),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Future<void> _invite() async {
+Future<void> _showReminderSheet(
+    BuildContext context, WidgetRef ref, PlainNote note) async {
+  var duplicateShared = false;
+  if (note.shared && note.reminderAt == null) {
+    duplicateShared = await _confirmDuplicateReminder(context) ?? false;
+    if (!duplicateShared) return;
+  }
+  if (!context.mounted) return;
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _ReminderSheet(
+      note: note,
+      duplicateShared: duplicateShared,
+    ),
+  );
+}
+
+Future<bool?> _confirmDuplicateReminder(BuildContext context) {
+  return showDialog<bool>(
+    context: context,
+    builder: (context) {
+      return AlertDialog(
+        title: const Text('Geteilte Notiz'),
+        content: const Text(
+          'Erinnerungen sind lokal und koennen nicht mit Mitarbeitern geteilt werden. Du kannst abbrechen oder eine persoenliche Kopie als Erinnerung erstellen.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Als Erinnerung duplizieren'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+class _ReminderSheet extends ConsumerStatefulWidget {
+  const _ReminderSheet({
+    required this.note,
+    required this.duplicateShared,
+  });
+
+  final PlainNote note;
+  final bool duplicateShared;
+
+  @override
+  ConsumerState<_ReminderSheet> createState() => _ReminderSheetState();
+}
+
+class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
+  late DateTime _selected = widget.note.reminderAt?.toLocal() ??
+      DateTime.now().add(const Duration(hours: 1));
+  var _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 12,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Material(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Icon(
+                              LucideIcons.bell,
+                              size: 20,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Erinnerung',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          AppIconButton(
+                            tooltip: 'Schliessen',
+                            icon: LucideIcons.x,
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _ReminderPickTile(
+                        icon: LucideIcons.calendar,
+                        label: 'Datum',
+                        value:
+                            '${_selected.day.toString().padLeft(2, '0')}.${_selected.month.toString().padLeft(2, '0')}.${_selected.year}',
+                        onTap: _pickDate,
+                      ),
+                      const SizedBox(height: 10),
+                      _ReminderPickTile(
+                        icon: LucideIcons.clock3,
+                        label: 'Uhrzeit',
+                        value:
+                            '${_selected.hour.toString().padLeft(2, '0')}:${_selected.minute.toString().padLeft(2, '0')}',
+                        onTap: _pickTime,
+                      ),
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: _busy ? null : () => _save(_selected),
+                        icon: _busy
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(LucideIcons.bellRing),
+                        label: const Text('Erinnerung setzen'),
+                      ),
+                      if (widget.note.reminderAt != null) ...[
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: _busy ? null : () => _save(null),
+                          icon: const Icon(LucideIcons.bellOff),
+                          label: const Text('Erinnerung entfernen'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selected,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+    );
+    if (picked == null) return;
     setState(() {
-      _busy = true;
-      _error = null;
+      _selected = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        _selected.hour,
+        _selected.minute,
+      );
     });
-    try {
-      await ref.read(notesControllerProvider.notifier).inviteCollaborator(
-            note: widget.note,
-            recipientUserId: _recipient.text.trim(),
-            role: _role,
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_selected),
+    );
+    if (picked == null) return;
+    setState(() {
+      _selected = DateTime(
+        _selected.year,
+        _selected.month,
+        _selected.day,
+        picked.hour,
+        picked.minute,
+      );
+    });
+  }
+
+  Future<void> _save(DateTime? reminderAt) async {
+    setState(() => _busy = true);
+    if (reminderAt != null) await requestReminderPermission();
+    if (widget.duplicateShared && reminderAt != null) {
+      await ref.read(notesControllerProvider.notifier).duplicateAsReminder(
+            source: widget.note,
+            reminderAt: reminderAt.toUtc(),
           );
-      if (mounted) Navigator.of(context).pop();
-    } catch (error) {
-      setState(() => _error = error.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
+    } else {
+      await ref.read(notesControllerProvider.notifier).setReminder(
+            widget.note,
+            reminderAt?.toUtc(),
+          );
     }
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    _showReminderFeedback(
+      context,
+      ref,
+      reminderAt != null,
+      duplicated: widget.duplicateShared && reminderAt != null,
+    );
+  }
+}
+
+void _showReminderFeedback(BuildContext context, WidgetRef ref, bool added,
+    {bool duplicated = false}) {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.clearSnackBars();
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(
+        added
+            ? duplicated
+                ? 'Eine persoenliche Kopie wird jetzt unter Erinnerungen angezeigt.'
+                : 'Die Notiz wird jetzt unter Erinnerungen angezeigt.'
+            : 'Die Erinnerung wurde entfernt.',
+      ),
+      action: added
+          ? SnackBarAction(
+              label: 'Ansehen',
+              onPressed: () {
+                ref.read(noteBucketProvider.notifier).state = 'reminders';
+              },
+            )
+          : null,
+    ),
+  );
+}
+
+class _ReminderPickTile extends StatelessWidget {
+  const _ReminderPickTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+            Text(
+              value,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1426,7 +2525,7 @@ class _EmptyState extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.lightbulb_outline,
+              LucideIcons.notebookText,
               size: 86,
               color: Theme.of(context).colorScheme.outlineVariant,
             ),
@@ -1458,14 +2557,14 @@ class _ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline,
+            Icon(LucideIcons.circleAlert,
                 color: Theme.of(context).colorScheme.error, size: 40),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             OutlinedButton.icon(
                 onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(LucideIcons.refreshCw),
                 label: const Text('Retry')),
           ],
         ),

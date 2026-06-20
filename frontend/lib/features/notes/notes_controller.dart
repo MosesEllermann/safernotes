@@ -40,11 +40,32 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
   }
 
   PlainNote createEmptyNote() {
+    return _createNote();
+  }
+
+  PlainNote createReminderNote() {
+    return _createNote(
+      reminderAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+    );
+  }
+
+  PlainNote createChecklistNote() {
+    return _createNote(
+      checklist: [
+        ChecklistItem(id: _uuid.v4(), text: '', done: false, indent: 0),
+      ],
+    );
+  }
+
+  PlainNote _createNote({
+    DateTime? reminderAt,
+    List<ChecklistItem> checklist = const [],
+  }) {
     return PlainNote(
       localId: _uuid.v4(),
       title: '',
       body: '',
-      checklist: const [],
+      checklist: checklist,
       updatedAt: DateTime.now().toUtc(),
       pinned: false,
       color: 0xffffffff,
@@ -52,6 +73,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       dirty: true,
       version: 1,
       state: 'active',
+      reminderAt: reminderAt,
     );
   }
 
@@ -81,6 +103,22 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     });
   }
 
+  Future<PlainNote> ensureSynced(PlainNote draft) async {
+    await saveDraft(draft: draft, syncImmediately: false);
+    _debounce?.cancel();
+    await syncNow(pullAfterPush: true);
+    final notes =
+        state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
+    final synced = notes.firstWhere(
+      (note) => note.localId == draft.localId,
+      orElse: () => draft,
+    );
+    if (synced.remoteId == null) {
+      throw StateError('Die Notiz konnte noch nicht synchronisiert werden.');
+    }
+    return synced;
+  }
+
   Future<void> pullRemote() async {
     final session = ref.read(authControllerProvider).valueOrNull;
     if (session == null) return;
@@ -101,13 +139,18 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
                 session.masterKey,
               );
           final plain = Map<String, dynamic>.from(jsonDecode(decoded) as Map);
-          merged[item.id] = PlainNote.fromEncryptedPayload(
+          final remoteNote = PlainNote.fromEncryptedPayload(
             localId: localMatch?.localId ?? item.id,
             remoteId: item.id,
             updatedAt: item.updatedAt,
             version: item.version,
             json: plain,
-          ).copyWith(state: item.state);
+          ).copyWith(
+            state: item.state,
+            reminderAt: localMatch?.reminderAt,
+            shared: localMatch?.shared,
+          );
+          merged[item.id] = remoteNote;
         } catch (_) {
           if (localMatch != null) merged[item.id] = localMatch;
         }
@@ -239,6 +282,51 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     );
   }
 
+  Future<void> setReminder(PlainNote note, DateTime? reminderAt) {
+    return saveDraft(
+      draft: note.copyWith(
+        reminderAt: reminderAt,
+        clearReminder: reminderAt == null,
+      ),
+      syncImmediately: true,
+    );
+  }
+
+  Future<PlainNote> duplicateAsReminder({
+    required PlainNote source,
+    required DateTime reminderAt,
+  }) async {
+    final duplicate = source.copyWith(
+      remoteId: null,
+      title: source.title,
+      updatedAt: DateTime.now().toUtc(),
+      sortOrder: -DateTime.now().toUtc().microsecondsSinceEpoch,
+      dirty: true,
+      version: 1,
+      state: 'active',
+      reminderAt: reminderAt,
+      shared: false,
+    );
+    final personal = PlainNote(
+      localId: _uuid.v4(),
+      remoteId: null,
+      title: duplicate.title,
+      body: duplicate.body,
+      checklist: duplicate.checklist,
+      updatedAt: duplicate.updatedAt,
+      pinned: duplicate.pinned,
+      color: duplicate.color,
+      sortOrder: duplicate.sortOrder,
+      dirty: true,
+      version: 1,
+      state: 'active',
+      reminderAt: reminderAt,
+      shared: false,
+    );
+    await saveDraft(draft: personal, syncImmediately: false);
+    return personal;
+  }
+
   Future<void> reorderNotes({
     required String draggedId,
     required int targetIndex,
@@ -311,6 +399,10 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
               .read(cryptoServiceProvider)
               .sha256Text('${note.remoteId}:$recipientUserId:$role'),
         );
+    await saveDraft(
+      draft: note.copyWith(shared: true),
+      syncImmediately: true,
+    );
   }
 
   Future<void> _persist(List<PlainNote> notes) async {

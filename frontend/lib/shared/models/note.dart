@@ -58,6 +58,8 @@ class PlainNote {
     required this.version,
     this.state = 'active',
     this.conflicted = false,
+    this.reminderAt,
+    this.shared = false,
   });
 
   final String localId;
@@ -73,6 +75,8 @@ class PlainNote {
   final int version;
   final String state;
   final bool conflicted;
+  final DateTime? reminderAt;
+  final bool shared;
 
   PlainNote copyWith({
     String? remoteId,
@@ -87,6 +91,9 @@ class PlainNote {
     int? version,
     String? state,
     bool? conflicted,
+    DateTime? reminderAt,
+    bool clearReminder = false,
+    bool? shared,
   }) {
     return PlainNote(
       localId: localId,
@@ -102,6 +109,8 @@ class PlainNote {
       version: version ?? this.version,
       state: state ?? this.state,
       conflicted: conflicted ?? this.conflicted,
+      reminderAt: clearReminder ? null : reminderAt ?? this.reminderAt,
+      shared: shared ?? this.shared,
     );
   }
 
@@ -113,6 +122,7 @@ class PlainNote {
         'color': color,
         'sortOrder': sortOrder,
         'pinned': pinned,
+        'shared': shared,
         'updatedAt': updatedAt.toUtc().toIso8601String(),
       };
 
@@ -130,6 +140,8 @@ class PlainNote {
         'version': version,
         'state': state,
         'conflicted': conflicted,
+        'reminderAt': reminderAt?.toUtc().toIso8601String(),
+        'shared': shared,
       };
 
   factory PlainNote.fromPlainJson(Map<String, dynamic> json) {
@@ -151,6 +163,8 @@ class PlainNote {
       version: json['version'] as int? ?? 1,
       state: json['state'] as String? ?? 'active',
       conflicted: json['conflicted'] as bool? ?? false,
+      reminderAt: DateTime.tryParse(json['reminderAt'] as String? ?? ''),
+      shared: json['shared'] as bool? ?? false,
     );
   }
 
@@ -178,6 +192,7 @@ class PlainNote {
       dirty: false,
       version: version,
       state: json['state'] as String? ?? 'active',
+      shared: json['shared'] as bool? ?? false,
     );
   }
 }

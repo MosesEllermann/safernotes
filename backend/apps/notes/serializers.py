@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from rest_framework import serializers
 
 from apps.core.serializers import BinaryTextField, EncryptedEnvelopeField, RejectPlaintextMixin
@@ -101,7 +103,28 @@ class NoteKeyGrantSerializer(RejectPlaintextMixin, serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+class UserIdentifierField(serializers.PrimaryKeyRelatedField):
+    default_error_messages = {
+        "does_not_exist": "No user found for this ID or email.",
+        "incorrect_type": "Expected a user ID or email address.",
+    }
+
+    def to_internal_value(self, data):
+        if not isinstance(data, str):
+            self.fail("incorrect_type")
+        value = data.strip()
+        try:
+            UUID(value)
+        except ValueError:
+            try:
+                return self.get_queryset().get(email__iexact=value)
+            except User.DoesNotExist:
+                self.fail("does_not_exist")
+        return super().to_internal_value(value)
+
+
 class ShareInvitationSerializer(RejectPlaintextMixin, serializers.ModelSerializer):
+    recipient_user = UserIdentifierField(queryset=User.objects.all())
     encrypted_note_key = EncryptedEnvelopeField()
     invitation_signature = BinaryTextField()
     encrypted_notification_payload = EncryptedEnvelopeField(write_only=True, required=False)
