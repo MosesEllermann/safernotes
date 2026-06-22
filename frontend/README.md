@@ -59,9 +59,8 @@ cd /Users/moses/Documents/Codex/2026-06-09/files-mentioned-by-the-user-eingef-2/
 ../.venv/bin/python manage.py runserver 127.0.0.1:8000 --noreload
 ```
 
-## Prototype note
+## Crypto note
 
-The crypto wrapper uses AES-256-GCM and client-held key material. The password key
-derivation is PBKDF2-SHA256 in this prototype client so it can run cleanly with a
-stable Flutter package set; switch this to Argon2id before treating the client as
-production cryptography.
+The crypto wrapper uses AES-256-GCM and client-held key material. New password
+key wrapping uses Argon2id; older PBKDF2-SHA256 wrapped test accounts can still
+be unlocked for compatibility.

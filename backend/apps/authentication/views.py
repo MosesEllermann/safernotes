@@ -12,6 +12,7 @@ from rest_framework import decorators, permissions, response, views, viewsets
 from apps.audit.events import record_audit_event
 from apps.authentication.models import RecoveryCode, Session
 from apps.authentication.serializers import (
+    EmailVerificationConfirmSerializer,
     KeyMaterialSerializer,
     LoginSerializer,
     PasswordChangeSerializer,
@@ -25,6 +26,25 @@ from apps.authentication.tokens import hash_token, issue_session, rotate_refresh
 from apps.users.models import User
 
 
+def send_email_verification_code(user: User) -> None:
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    from apps.authentication.models import EmailVerificationCode
+
+    EmailVerificationCode.objects.create(
+        user=user,
+        code_hash=hash_token(code),
+        expires_at=timezone.now() + timedelta(minutes=30),
+    )
+    send_mail(
+        "Verify your ZK Notes email",
+        f"Use this verification code to confirm your ZK Notes email: {code}\n\n"
+        "The code expires in 30 minutes. If you did not create this account, you can ignore this email.",
+        None,
+        [user.email],
+        fail_silently=True,
+    )
+
+
 class RegisterView(views.APIView):
     permission_classes = [permissions.AllowAny]
     throttle_scope = "register"
@@ -33,6 +53,7 @@ class RegisterView(views.APIView):
         serializer = RegistrationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        send_email_verification_code(user)
         login(request, user)
         issued = issue_session(user, device=getattr(serializer, "device", None), request=request)
         record_audit_event(
@@ -50,6 +71,7 @@ class RegisterView(views.APIView):
                 "refresh_token": issued.refresh_token,
                 "session_id": str(issued.session.id),
                 "default_tenant": str(user.default_tenant_id),
+                "email_verified": user.email_verified_at is not None,
             },
             status=201,
         )
@@ -81,6 +103,7 @@ class LoginView(views.APIView):
                 "refresh_token": issued.refresh_token,
                 "session_id": str(issued.session.id),
                 "default_tenant": str(user.default_tenant_id) if user.default_tenant_id else None,
+                "email_verified": user.email_verified_at is not None,
                 "key_material": KeyMaterialSerializer(user.key_material).data,
             }
         )
@@ -266,9 +289,69 @@ class RecoveryCompleteView(views.APIView):
                 "refresh_token": issued.refresh_token,
                 "session_id": str(issued.session.id),
                 "default_tenant": str(user.default_tenant_id) if user.default_tenant_id else None,
+                "email_verified": user.email_verified_at is not None,
                 "key_material": KeyMaterialSerializer(material).data,
             }
         )
+
+
+class EmailVerificationResendView(views.APIView):
+    throttle_scope = "email_verification"
+
+    def post(self, request):
+        if request.user.email_verified_at is None:
+            send_email_verification_code(request.user)
+        return response.Response(
+            {
+                "email": request.user.email,
+                "email_verified": request.user.email_verified_at is not None,
+            }
+        )
+
+
+class EmailVerificationConfirmView(views.APIView):
+    throttle_scope = "email_verification"
+
+    @transaction.atomic
+    def post(self, request):
+        from apps.authentication.models import EmailVerificationCode
+
+        serializer = EmailVerificationConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        now = timezone.now()
+        verification_code = (
+            EmailVerificationCode.objects.select_for_update()
+            .filter(
+                user=request.user,
+                code_hash=hash_token(serializer.validated_data["code"]),
+                used_at__isnull=True,
+                expires_at__gt=now,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if verification_code is None:
+            EmailVerificationCode.objects.filter(
+                user=request.user,
+                used_at__isnull=True,
+                expires_at__gt=now,
+            ).update(attempts=models.F("attempts") + 1)
+            return response.Response({"detail": "Invalid verification code."}, status=400)
+        if verification_code.attempts >= 5:
+            return response.Response({"detail": "Too many verification attempts."}, status=429)
+
+        verification_code.used_at = now
+        verification_code.save(update_fields=["used_at", "updated_at"])
+        if request.user.email_verified_at is None:
+            request.user.email_verified_at = now
+            request.user.save(update_fields=["email_verified_at", "updated_at"])
+        record_audit_event(
+            event_type="auth.email_verified",
+            actor_user=request.user,
+            target_type="user",
+            target_id=request.user.id,
+        )
+        return response.Response({"email": request.user.email, "email_verified": True})
 
 
 class SessionViewSet(viewsets.ReadOnlyModelViewSet):

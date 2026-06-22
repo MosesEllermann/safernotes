@@ -404,7 +404,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
         return AlertDialog(
           title: const Text('Geteilte Notiz'),
           content: const Text(
-            'Erinnerungen sind lokal und koennen nicht mit Mitarbeitern geteilt werden. Du kannst abbrechen oder eine persoenliche Kopie als Erinnerung erstellen.',
+            'Erinnerungen sind lokal und können nicht mit Mitarbeitern geteilt werden. Du kannst abbrechen oder eine persönliche Kopie als Erinnerung erstellen.',
           ),
           actions: [
             TextButton(
@@ -429,7 +429,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
         content: Text(
           added
               ? duplicated
-                  ? 'Eine persoenliche Kopie wird jetzt unter Erinnerungen angezeigt.'
+                  ? 'Eine persönliche Kopie wird jetzt unter Erinnerungen angezeigt.'
                   : 'Die Notiz wird jetzt unter Erinnerungen angezeigt.'
               : 'Die Erinnerung wurde entfernt.',
         ),
@@ -580,7 +580,7 @@ class _EditorReminderSheetState extends State<_EditorReminderSheet> {
                             ),
                           ),
                           AppIconButton(
-                            tooltip: 'Schliessen',
+                            tooltip: 'Schließen',
                             icon: LucideIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
@@ -1087,10 +1087,10 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
       return 'Kein Nutzer mit dieser E-Mail oder User-ID gefunden.';
     }
     if (text.contains('Only note owners')) {
-      return 'Nur Besitzer dieser Notiz koennen Mitarbeiter einladen.';
+      return 'Nur Besitzer dieser Notiz können Mitarbeiter einladen.';
     }
     if (text.contains('recipient_user')) {
-      return 'Bitte pruefe die E-Mail oder User-ID.';
+      return 'Bitte prüfe die E-Mail oder User-ID.';
     }
     return 'Einladen ist fehlgeschlagen. Bitte versuche es erneut.';
   }
@@ -1167,7 +1167,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                             ),
                           ),
                           AppIconButton(
-                            tooltip: 'Schliessen',
+                            tooltip: 'Schließen',
                             icon: LucideIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),

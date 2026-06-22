@@ -103,6 +103,7 @@ REST_FRAMEWORK = {
         "register": "5/hour",
         "refresh": "30/minute",
         "recovery": "5/hour",
+        "email_verification": "5/hour",
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.CursorPagination",
     "PAGE_SIZE": 100,

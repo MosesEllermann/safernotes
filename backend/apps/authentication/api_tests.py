@@ -6,7 +6,13 @@ from django.contrib.sessions.middleware import SessionMiddleware
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from apps.authentication.tokens import hash_token
-from apps.authentication.views import LoginView, PasswordChangeView, RecoveryCompleteView, RegisterView
+from apps.authentication.views import (
+    EmailVerificationConfirmView,
+    LoginView,
+    PasswordChangeView,
+    RecoveryCompleteView,
+    RegisterView,
+)
 
 
 def encrypted_payload():
@@ -43,6 +49,8 @@ def attach_session(request):
 
 
 def test_register_view_returns_tokens(db):
+    from apps.authentication.models import EmailVerificationCode
+
     request = APIRequestFactory().post("/api/v1/auth/register", registration_payload(), format="json")
     attach_session(request)
     response = RegisterView.as_view()(request)
@@ -51,6 +59,8 @@ def test_register_view_returns_tokens(db):
     assert response.data["access_token"]
     assert response.data["refresh_token"]
     assert response.data["default_tenant"]
+    assert response.data["email_verified"] is False
+    assert EmailVerificationCode.objects.filter(user__email="new@example.com").exists()
 
 
 def test_login_view_returns_key_material(db, django_user_model):
@@ -159,3 +169,54 @@ def test_password_change_rewraps_master_key(db, django_user_model):
     assert user.check_password("new-strong-password")
     user.key_material.refresh_from_db()
     assert user.key_material.encrypted_master_key["ciphertext"] == "changed-ciphertext"
+
+
+def test_email_verification_confirm_marks_user_verified(db, django_user_model):
+    from django.utils import timezone
+
+    from apps.authentication.models import EmailVerificationCode
+
+    user = django_user_model.objects.create_user(email="verify@example.com", password="password")
+    EmailVerificationCode.objects.create(
+        user=user,
+        code_hash=hash_token("654321"),
+        expires_at=timezone.now() + timedelta(minutes=30),
+    )
+    request = APIRequestFactory().post(
+        "/api/v1/auth/email/verification/confirm",
+        {"code": "654321"},
+        format="json",
+    )
+    force_authenticate(request, user=user)
+    response = EmailVerificationConfirmView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data["email_verified"] is True
+    user.refresh_from_db()
+    assert user.email_verified_at is not None
+
+
+def test_email_verification_confirm_rejects_bad_code(db, django_user_model):
+    from django.utils import timezone
+
+    from apps.authentication.models import EmailVerificationCode
+
+    user = django_user_model.objects.create_user(email="bad-code@example.com", password="password")
+    code = EmailVerificationCode.objects.create(
+        user=user,
+        code_hash=hash_token("654321"),
+        expires_at=timezone.now() + timedelta(minutes=30),
+    )
+    request = APIRequestFactory().post(
+        "/api/v1/auth/email/verification/confirm",
+        {"code": "111111"},
+        format="json",
+    )
+    force_authenticate(request, user=user)
+    response = EmailVerificationConfirmView.as_view()(request)
+
+    assert response.status_code == 400
+    user.refresh_from_db()
+    assert user.email_verified_at is None
+    code.refresh_from_db()
+    assert code.attempts == 1

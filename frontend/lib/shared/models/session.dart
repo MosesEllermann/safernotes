@@ -7,6 +7,7 @@ class AppSession {
     required this.refreshToken,
     required this.defaultTenant,
     required this.masterKey,
+    this.emailVerified = true,
   });
 
   final String email;
@@ -14,6 +15,7 @@ class AppSession {
   final String refreshToken;
   final String defaultTenant;
   final List<int> masterKey;
+  final bool emailVerified;
 
   Map<String, dynamic> toJson() => {
         'email': email,
@@ -21,13 +23,34 @@ class AppSession {
         'refreshToken': refreshToken,
         'defaultTenant': defaultTenant,
         'masterKey': masterKey,
+        'emailVerified': emailVerified,
       };
+
+  AppSession copyWith({
+    String? email,
+    String? accessToken,
+    String? refreshToken,
+    String? defaultTenant,
+    List<int>? masterKey,
+    bool? emailVerified,
+  }) {
+    return AppSession(
+      email: email ?? this.email,
+      accessToken: accessToken ?? this.accessToken,
+      refreshToken: refreshToken ?? this.refreshToken,
+      defaultTenant: defaultTenant ?? this.defaultTenant,
+      masterKey: masterKey ?? this.masterKey,
+      emailVerified: emailVerified ?? this.emailVerified,
+    );
+  }
 }
 
 class RegistrationKeyMaterial {
   const RegistrationKeyMaterial({
     required this.masterKey,
     required this.recoveryKey,
+    required this.kdfAlgorithm,
+    required this.kdfParams,
     required this.passwordSalt,
     required this.publicEncryptionKey,
     required this.publicSigningKey,
@@ -43,6 +66,8 @@ class RegistrationKeyMaterial {
 
   final List<int> masterKey;
   final String recoveryKey;
+  final String kdfAlgorithm;
+  final Map<String, Object> kdfParams;
   final String passwordSalt;
   final String publicEncryptionKey;
   final String publicSigningKey;
@@ -58,10 +83,14 @@ class RegistrationKeyMaterial {
 
 class PasswordWrappedMasterKey {
   const PasswordWrappedMasterKey({
+    required this.kdfAlgorithm,
+    required this.kdfParams,
     required this.passwordSalt,
     required this.encryptedMasterKey,
   });
 
+  final String kdfAlgorithm;
+  final Map<String, Object> kdfParams;
   final String passwordSalt;
   final EncryptedEnvelope encryptedMasterKey;
 }

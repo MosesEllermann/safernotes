@@ -27,6 +27,7 @@ class AuthController extends AsyncNotifier<AppSession?> {
       refreshToken: saved['refreshToken'] as String,
       defaultTenant: saved['defaultTenant'] as String,
       masterKey: (saved['masterKey'] as List).cast<int>(),
+      emailVerified: saved['emailVerified'] as bool? ?? true,
     );
   }
 
@@ -56,6 +57,7 @@ class AuthController extends AsyncNotifier<AppSession?> {
         refreshToken: response['refresh_token'] as String,
         defaultTenant: response['default_tenant'] as String,
         masterKey: material.masterKey,
+        emailVerified: response['email_verified'] as bool? ?? false,
       );
       await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
       return session;
@@ -78,6 +80,11 @@ class AuthController extends AsyncNotifier<AppSession?> {
       final masterKey = await ref.read(cryptoServiceProvider).unlockMasterKey(
             password: password,
             passwordSalt: keyMaterial['password_salt'] as String,
+            kdfAlgorithm:
+                keyMaterial['kdf_algorithm'] as String? ?? 'pbkdf2-sha256',
+            kdfParams: Map<String, dynamic>.from(
+              (keyMaterial['kdf_params'] as Map?) ?? const {},
+            ),
             encryptedMasterKey: EncryptedEnvelope.fromJson(
               Map<String, dynamic>.from(
                   keyMaterial['encrypted_master_key'] as Map),
@@ -89,6 +96,7 @@ class AuthController extends AsyncNotifier<AppSession?> {
         refreshToken: response['refresh_token'] as String,
         defaultTenant: response['default_tenant'] as String,
         masterKey: masterKey,
+        emailVerified: response['email_verified'] as bool? ?? true,
       );
       await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
       return session;
@@ -140,6 +148,7 @@ class AuthController extends AsyncNotifier<AppSession?> {
         refreshToken: response['refresh_token'] as String,
         defaultTenant: response['default_tenant'] as String? ?? '',
         masterKey: masterKey,
+        emailVerified: response['email_verified'] as bool? ?? true,
       );
       await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
       return session;
@@ -165,6 +174,33 @@ class AuthController extends AsyncNotifier<AppSession?> {
           newPassword: newPassword,
           wrappedMasterKey: wrappedMasterKey,
         );
+  }
+
+  Future<void> resendEmailVerification() async {
+    final session = state.valueOrNull;
+    if (session == null) throw Exception('Not signed in.');
+    final response = await ref.read(apiClientProvider).resendEmailVerification(
+          accessToken: session.accessToken,
+        );
+    final next = session.copyWith(
+      emailVerified: response['email_verified'] as bool? ?? false,
+    );
+    await ref.read(offlineStoreProvider).saveSessionJson(next.toJson());
+    state = AsyncData(next);
+  }
+
+  Future<void> confirmEmailVerification(String code) async {
+    final session = state.valueOrNull;
+    if (session == null) throw Exception('Not signed in.');
+    final response = await ref.read(apiClientProvider).confirmEmailVerification(
+          accessToken: session.accessToken,
+          code: code,
+        );
+    final next = session.copyWith(
+      emailVerified: response['email_verified'] as bool? ?? true,
+    );
+    await ref.read(offlineStoreProvider).saveSessionJson(next.toJson());
+    state = AsyncData(next);
   }
 
   Future<void> signOut() async {

@@ -32,8 +32,8 @@ class ApiClient {
     return _post('/api/v1/auth/register', {
       'email': email,
       'password': password,
-      'kdf_algorithm': 'pbkdf2-sha256',
-      'kdf_params': {'iterations': 210000, 'bits': 256},
+      'kdf_algorithm': material.kdfAlgorithm,
+      'kdf_params': material.kdfParams,
       'password_salt': material.passwordSalt,
       'public_encryption_key': material.publicEncryptionKey,
       'public_signing_key': material.publicSigningKey,
@@ -71,6 +71,27 @@ class ApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> resendEmailVerification({
+    required String accessToken,
+  }) {
+    return _post(
+      '/api/v1/auth/email/verification/resend',
+      {},
+      accessToken: accessToken,
+    );
+  }
+
+  Future<Map<String, dynamic>> confirmEmailVerification({
+    required String accessToken,
+    required String code,
+  }) {
+    return _post(
+      '/api/v1/auth/email/verification/confirm',
+      {'code': code},
+      accessToken: accessToken,
+    );
+  }
+
   Future<Map<String, dynamic>> completePasswordRecovery({
     required String email,
     required String code,
@@ -81,8 +102,8 @@ class ApiClient {
       'email': email,
       'code': code,
       'password': password,
-      'kdf_algorithm': 'pbkdf2-sha256',
-      'kdf_params': {'iterations': 210000, 'bits': 256},
+      'kdf_algorithm': wrappedMasterKey.kdfAlgorithm,
+      'kdf_params': wrappedMasterKey.kdfParams,
       'password_salt': wrappedMasterKey.passwordSalt,
       'encrypted_master_key': wrappedMasterKey.encryptedMasterKey.toJson(),
     });
@@ -99,8 +120,8 @@ class ApiClient {
       {
         'current_password': currentPassword,
         'new_password': newPassword,
-        'kdf_algorithm': 'pbkdf2-sha256',
-        'kdf_params': {'iterations': 210000, 'bits': 256},
+        'kdf_algorithm': wrappedMasterKey.kdfAlgorithm,
+        'kdf_params': wrappedMasterKey.kdfParams,
         'password_salt': wrappedMasterKey.passwordSalt,
         'encrypted_master_key': wrappedMasterKey.encryptedMasterKey.toJson(),
       },

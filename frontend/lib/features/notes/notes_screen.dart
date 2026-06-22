@@ -59,7 +59,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             ? Row(
                 children: [
                   AppIconButton(
-                    tooltip: 'Menue',
+                    tooltip: 'Menü',
                     icon: LucideIcons.panelLeft,
                     onPressed: () {
                       final expanded = ref.read(sideNavExpandedProvider);
@@ -104,7 +104,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     width: 42,
                     child: Center(
                       child: AppIconButton(
-                        tooltip: 'Menue',
+                        tooltip: 'Menü',
                         icon: LucideIcons.panelLeft,
                         onPressed: () => _showNavigationSheet(context, ref),
                       ),
@@ -137,28 +137,31 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
               ]
             : null,
       ),
-      floatingActionButton: _CreateNoteFab(
-        onNewNote: () => _openEditor(
-          context,
-          ref,
-          ref.read(notesControllerProvider.notifier).createEmptyNote(),
-        ),
-        onNewReminder: () => _openEditor(
-          context,
-          ref,
-          ref.read(notesControllerProvider.notifier).createReminderNote(),
-        ),
-        onNewList: () => _openEditor(
-          context,
-          ref,
-          ref.read(notesControllerProvider.notifier).createChecklistNote(),
-        ),
-      ),
+      floatingActionButton: desktop
+          ? null
+          : _CreateNoteFab(
+              onNewNote: () =>
+                  _createNoteFromAction(context, ref, _CreateAction.note),
+              onNewReminder: () =>
+                  _createNoteFromAction(context, ref, _CreateAction.reminder),
+              onNewList: () =>
+                  _createNoteFromAction(context, ref, _CreateAction.list),
+            ),
       bottomNavigationBar: desktop ? null : const _MobileBottomNav(),
       body: SafeArea(
         child: notes.when(
-          data: (items) =>
-              _KeepWorkspace(notes: items, email: session?.email ?? ''),
+          data: (items) => Column(
+            children: [
+              if (session != null && !session.emailVerified)
+                _EmailVerificationBanner(email: session.email),
+              Expanded(
+                child: _KeepWorkspace(
+                  notes: items,
+                  email: session?.email ?? '',
+                ),
+              ),
+            ],
+          ),
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => _ErrorState(
             message: error.toString(),
@@ -228,7 +231,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         .map((item) => item.text.trim())
         .take(3)
         .join(', ');
-    return checklist.isEmpty ? 'Zeit fuer deine Notiz.' : checklist;
+    return checklist.isEmpty ? 'Zeit für deine Notiz.' : checklist;
   }
 }
 
@@ -248,6 +251,22 @@ class _KeepWorkspace extends ConsumerStatefulWidget {
 class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
   String? _draggedId;
   int? _dropIndex;
+  late final ProviderSubscription<String> _bucketSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _bucketSubscription = ref.listenManual<String>(
+      noteBucketProvider,
+      (_, __) => _clearDragPreview(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _bucketSubscription.close();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -300,15 +319,11 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
                               ],
                               dragging: dragging,
                               dropIndex: _dropIndex,
-                              onDropIndexChanged: (value) =>
-                                  setState(() => _dropIndex = value),
+                              onDropIndexChanged: _setDropIndex,
                               onCommitReorder: (draggedId, targetIndex) =>
                                   _commitReorder(
                                       draggedId, targetIndex, bucket),
-                              onDragStarted: (note) => setState(() {
-                                _draggedId = note.localId;
-                                _dropIndex = null;
-                              }),
+                              onDragStarted: _startDrag,
                               onDragEnded: _clearDragPreview,
                             ),
                           ),
@@ -355,8 +370,22 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     _clearDragPreview();
   }
 
+  void _setDropIndex(int? value) {
+    if (!mounted || _dropIndex == value) return;
+    setState(() => _dropIndex = value);
+  }
+
+  void _startDrag(PlainNote note) {
+    if (!mounted) return;
+    setState(() {
+      _draggedId = note.localId;
+      _dropIndex = null;
+    });
+  }
+
   void _clearDragPreview() {
     if (!mounted) return;
+    if (_draggedId == null && _dropIndex == null) return;
     setState(() {
       _draggedId = null;
       _dropIndex = null;
@@ -493,6 +522,8 @@ class _SideRail extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
     final expanded = ref.watch(sideNavExpandedProvider);
+    final bucket = ref.watch(noteBucketProvider);
+    final canCreate = bucket == 'active' || bucket == 'reminders';
     return AnimatedContainer(
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
@@ -502,6 +533,10 @@ class _SideRail extends ConsumerWidget {
         crossAxisAlignment:
             expanded ? CrossAxisAlignment.stretch : CrossAxisAlignment.center,
         children: [
+          if (canCreate) ...[
+            _RailCreateButton(expanded: expanded),
+            const SizedBox(height: 18),
+          ],
           _RailButton(
             bucket: 'active',
             icon: LucideIcons.notebookText,
@@ -530,6 +565,58 @@ class _SideRail extends ConsumerWidget {
             expanded: expanded,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RailCreateButton extends ConsumerWidget {
+  const _RailCreateButton({required this.expanded});
+
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final create = _createIntentFor(ref.watch(noteBucketProvider));
+    if (create == null) return const SizedBox.shrink();
+    return Tooltip(
+      message: create.label,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(expanded ? 16 : 18),
+        onTap: () => _createNoteForCurrentBucket(context, ref),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          height: expanded ? 50 : 46,
+          width: expanded ? null : 46,
+          padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 0),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(expanded ? 16 : 18),
+          ),
+          child: Row(
+            mainAxisAlignment:
+                expanded ? MainAxisAlignment.start : MainAxisAlignment.center,
+            children: [
+              Icon(create.icon, size: 21, color: scheme.onSurface),
+              if (expanded) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    create.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: scheme.onSurface,
+                          fontWeight: FontWeight.w800,
+                        ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -727,6 +814,251 @@ class _SearchField extends ConsumerWidget {
   }
 }
 
+class _EmailVerificationBanner extends ConsumerWidget {
+  const _EmailVerificationBanner({required this.email});
+
+  final String email;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      child: Material(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _showEmailVerificationDialog(context, ref, email),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(LucideIcons.mailWarning,
+                    size: 18, color: scheme.onSurface),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Bitte bestätige deine E-Mail-Adresse.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'Code eingeben',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void _showEmailVerificationDialog(
+  BuildContext context,
+  WidgetRef ref,
+  String email,
+) {
+  showDialog<void>(
+    context: context,
+    builder: (_) => _EmailVerificationDialog(email: email),
+  );
+}
+
+class _EmailVerificationDialog extends ConsumerStatefulWidget {
+  const _EmailVerificationDialog({required this.email});
+
+  final String email;
+
+  @override
+  ConsumerState<_EmailVerificationDialog> createState() =>
+      _EmailVerificationDialogState();
+}
+
+class _EmailVerificationDialogState
+    extends ConsumerState<_EmailVerificationDialog> {
+  final _code = TextEditingController();
+  var _busy = false;
+  String? _message;
+  String? _error;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Material(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: BorderRadius.circular(24),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(LucideIcons.mailCheck,
+                          size: 21, color: scheme.onSurface),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'E-Mail bestätigen',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    AppIconButton(
+                      tooltip: 'Schließen',
+                      icon: LucideIcons.x,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Gib den sechsstelligen Code ein, den wir an ${widget.email} gesendet haben.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _code,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  maxLength: 6,
+                  decoration: InputDecoration(
+                    counterText: '',
+                    hintText: '123456',
+                    prefixIcon: const Icon(LucideIcons.keyRound, size: 18),
+                    filled: true,
+                    fillColor:
+                        scheme.surfaceContainerHighest.withValues(alpha: 0.46),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                  onSubmitted: (_) => _confirm(),
+                ),
+                if (_message != null || _error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _error ?? _message!,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: _error == null ? scheme.primary : scheme.error,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _busy ? null : _resend,
+                        icon: const Icon(LucideIcons.send),
+                        label: const Text('Neu senden'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: _busy ? null : _confirm,
+                        icon: _busy
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(LucideIcons.circleCheck),
+                        label: const Text('Bestätigen'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _resend() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      await ref.read(authControllerProvider.notifier).resendEmailVerification();
+      if (mounted) setState(() => _message = 'Code wurde erneut gesendet.');
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Code konnte nicht gesendet werden.');
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _confirm() async {
+    final code = _code.text.trim();
+    if (code.length < 6) {
+      setState(() => _error = 'Bitte gib den vollständigen Code ein.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      await ref
+          .read(authControllerProvider.notifier)
+          .confirmEmailVerification(code);
+      if (mounted) Navigator.of(context).pop();
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Der Code ist ungültig.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+}
+
 class _CreateNoteFab extends StatefulWidget {
   const _CreateNoteFab({
     required this.onNewNote,
@@ -788,9 +1120,10 @@ class _CreateNoteFabState extends State<_CreateNoteFab>
     final dark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
       width: 270,
-      height: 216,
+      height: 286,
       child: Stack(
         alignment: Alignment.bottomRight,
+        clipBehavior: Clip.none,
         children: [
           if (_open)
             Positioned.fill(
@@ -871,7 +1204,7 @@ class _FabOption extends StatelessWidget {
     final pillColor =
         dark ? scheme.surfaceContainerHighest : scheme.surfaceContainerLow;
     final textColor = scheme.onSurface;
-    final bottom = 76 + index * 48.0;
+    final bottom = 74 + index * 56.0;
     return AnimatedBuilder(
       animation: animation,
       builder: (context, child) {
@@ -961,8 +1294,12 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
     final isPlainWhite = note.color == 0xffffffff;
     final showHoverActions = MediaQuery.sizeOf(context).width >= 700;
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) {
+        if (mounted) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hovered = false);
+      },
       child: AnimatedScale(
         scale: 1,
         duration: const Duration(milliseconds: 150),
@@ -1011,7 +1348,7 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                           opacity: _hovered || note.pinned ? 1 : 0,
                           duration: const Duration(milliseconds: 120),
                           child: AppIconButton(
-                            tooltip: note.pinned ? 'Losloesen' : 'Anheften',
+                            tooltip: note.pinned ? 'Loslösen' : 'Anheften',
                             icon: note.pinned
                                 ? LucideIcons.pin
                                 : LucideIcons.pinOff,
@@ -1095,7 +1432,7 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                                     )
                                   else
                                     AppIconButton(
-                                      tooltip: 'Endgueltig loeschen',
+                                      tooltip: 'Endgültig löschen',
                                       icon: LucideIcons.trash2,
                                       onPressed: widget.onDeleteForever,
                                     ),
@@ -1470,7 +1807,7 @@ void _showNavigationSheet(BuildContext context, WidgetRef ref) {
   showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Menue schliessen',
+    barrierLabel: 'Menü schließen',
     barrierColor: Colors.black.withValues(alpha: 0.32),
     transitionDuration: const Duration(milliseconds: 260),
     pageBuilder: (context, _, __) => Align(
@@ -1532,7 +1869,7 @@ class _NavigationSideSheet extends ConsumerWidget {
                     ),
                     const Spacer(),
                     AppIconButton(
-                      tooltip: 'Schliessen',
+                      tooltip: 'Schließen',
                       icon: LucideIcons.x,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
@@ -1638,8 +1975,12 @@ class _MenuActionRowState extends State<_MenuActionRow> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) {
+        if (mounted) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hovered = false);
+      },
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: widget.onTap,
@@ -1749,7 +2090,7 @@ class _AccountSideSheet extends ConsumerWidget {
                             )),
                     const Spacer(),
                     AppIconButton(
-                      tooltip: 'Schliessen',
+                      tooltip: 'Schließen',
                       icon: LucideIcons.x,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
@@ -1870,8 +2211,12 @@ class _AccountActionTileState extends State<_AccountActionTile> {
     final scheme = Theme.of(context).colorScheme;
     final color = widget.destructive ? scheme.error : scheme.onSurface;
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) {
+        if (mounted) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (mounted) setState(() => _hovered = false);
+      },
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: widget.onTap,
@@ -1984,10 +2329,10 @@ class _InviteSheetState extends ConsumerState<_InviteSheet> {
       return 'Kein Nutzer mit dieser E-Mail oder User-ID gefunden.';
     }
     if (text.contains('Only note owners')) {
-      return 'Nur Besitzer dieser Notiz koennen Mitarbeiter einladen.';
+      return 'Nur Besitzer dieser Notiz können Mitarbeiter einladen.';
     }
     if (text.contains('recipient_user')) {
-      return 'Bitte pruefe die E-Mail oder User-ID.';
+      return 'Bitte prüfe die E-Mail oder User-ID.';
     }
     return 'Einladen ist fehlgeschlagen. Bitte versuche es erneut.';
   }
@@ -2064,7 +2409,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                             ),
                           ),
                           AppIconButton(
-                            tooltip: 'Schliessen',
+                            tooltip: 'Schließen',
                             icon: LucideIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
@@ -2235,7 +2580,7 @@ Future<bool?> _confirmDuplicateReminder(BuildContext context) {
       return AlertDialog(
         title: const Text('Geteilte Notiz'),
         content: const Text(
-          'Erinnerungen sind lokal und koennen nicht mit Mitarbeitern geteilt werden. Du kannst abbrechen oder eine persoenliche Kopie als Erinnerung erstellen.',
+          'Erinnerungen sind lokal und können nicht mit Mitarbeitern geteilt werden. Du kannst abbrechen oder eine persönliche Kopie als Erinnerung erstellen.',
         ),
         actions: [
           TextButton(
@@ -2322,7 +2667,7 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
                             ),
                           ),
                           AppIconButton(
-                            tooltip: 'Schliessen',
+                            tooltip: 'Schließen',
                             icon: LucideIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
@@ -2445,7 +2790,7 @@ void _showReminderFeedback(BuildContext context, WidgetRef ref, bool added,
       content: Text(
         added
             ? duplicated
-                ? 'Eine persoenliche Kopie wird jetzt unter Erinnerungen angezeigt.'
+                ? 'Eine persönliche Kopie wird jetzt unter Erinnerungen angezeigt.'
                 : 'Die Notiz wird jetzt unter Erinnerungen angezeigt.'
             : 'Die Erinnerung wurde entfernt.',
       ),
@@ -2571,6 +2916,54 @@ class _ErrorState extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CreateIntent {
+  const _CreateIntent({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+}
+
+_CreateIntent? _createIntentFor(String bucket) {
+  return switch (bucket) {
+    'active' => const _CreateIntent(
+        icon: LucideIcons.filePlus2,
+        label: 'Neue Notiz',
+      ),
+    'reminders' => const _CreateIntent(
+        icon: LucideIcons.bellPlus,
+        label: 'Neue Erinnerung',
+      ),
+    _ => null,
+  };
+}
+
+enum _CreateAction { note, reminder, list }
+
+void _createNoteFromAction(
+  BuildContext context,
+  WidgetRef ref,
+  _CreateAction action,
+) {
+  final controller = ref.read(notesControllerProvider.notifier);
+  final note = switch (action) {
+    _CreateAction.note => controller.createEmptyNote(),
+    _CreateAction.reminder => controller.createReminderNote(),
+    _CreateAction.list => controller.createChecklistNote(),
+  };
+  _openEditor(context, ref, note);
+}
+
+void _createNoteForCurrentBucket(BuildContext context, WidgetRef ref) {
+  final controller = ref.read(notesControllerProvider.notifier);
+  final note = switch (ref.read(noteBucketProvider)) {
+    'reminders' => controller.createReminderNote(),
+    'active' => controller.createEmptyNote(),
+    _ => null,
+  };
+  if (note == null) return;
+  _openEditor(context, ref, note);
 }
 
 void _openEditor(BuildContext context, WidgetRef ref, PlainNote note) {

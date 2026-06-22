@@ -49,6 +49,6 @@ Flutter widget tests may fail inside restricted sandboxes because Flutter opens 
 
 ## Important Caveats
 
-- The prototype client currently uses PBKDF2-SHA256 for password-derived key wrapping. Replace with Argon2id before production.
+- New password-derived key wrapping uses Argon2id. The client keeps PBKDF2-SHA256 unlock support for older test accounts.
 - Near-real-time collaboration is currently autosave plus polling/presence refresh. The backend has encrypted WebSocket collaboration primitives, but the Flutter client does not yet use a CRDT/WebSocket editor.
 - Share invitations require recipient user IDs in the current UI.

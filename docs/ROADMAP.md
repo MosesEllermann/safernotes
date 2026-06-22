@@ -2,7 +2,6 @@
 
 ## Before Production
 
-- Replace PBKDF2 password key wrapping with Argon2id in Flutter.
 - Add a real collaborative editor model, preferably CRDT-backed.
 - Connect Flutter to backend encrypted WebSocket collaboration.
 - Improve share invitation flow so users can invite by email, not only user ID.
@@ -20,4 +19,3 @@
 - Add label/tag UI.
 - Add color picker polish and dark-mode palette tuning.
 - Add command palette and keyboard navigation.
-

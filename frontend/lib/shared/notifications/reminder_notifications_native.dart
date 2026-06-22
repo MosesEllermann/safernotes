@@ -56,7 +56,7 @@ Future<void> scheduleReminderNotification({
       android: AndroidNotificationDetails(
         'note_reminders',
         'Erinnerungen',
-        channelDescription: 'Lokale Erinnerungen fuer Notizen',
+        channelDescription: 'Lokale Erinnerungen für Notizen',
         importance: Importance.high,
         priority: Priority.high,
       ),

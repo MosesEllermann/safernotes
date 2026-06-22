@@ -2,19 +2,29 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:hashlib/hashlib.dart' as hashlib;
 import 'package:uuid/uuid.dart';
 import 'package:zknotes_app/shared/models/encrypted_envelope.dart';
 import 'package:zknotes_app/shared/models/note.dart';
 import 'package:zknotes_app/shared/models/session.dart';
 
 class CryptoService {
+  static const passwordKdfAlgorithm = 'argon2id';
+  static const passwordKdfParams = <String, Object>{
+    'version': 19,
+    'memory': 65536,
+    'iterations': 3,
+    'parallelism': 1,
+    'bits': 256,
+  };
+
   CryptoService({
     AesGcm? aead,
-    Pbkdf2? kdf,
+    Pbkdf2? legacyPbkdf2,
     X25519? x25519,
     Ed25519? ed25519,
   })  : _aead = aead ?? AesGcm.with256bits(),
-        _kdf = kdf ??
+        _legacyPbkdf2 = legacyPbkdf2 ??
             Pbkdf2(
               macAlgorithm: Hmac.sha256(),
               iterations: 210000,
@@ -24,7 +34,7 @@ class CryptoService {
         _ed25519 = ed25519 ?? Ed25519();
 
   final AesGcm _aead;
-  final Pbkdf2 _kdf;
+  final Pbkdf2 _legacyPbkdf2;
   final X25519 _x25519;
   final Ed25519 _ed25519;
   final _uuid = const Uuid();
@@ -43,8 +53,57 @@ class CryptoService {
     return base64Url.decode('$value$padding');
   }
 
-  Future<List<int>> derivePasswordKey(String password, List<int> salt) async {
-    final key = await _kdf.deriveKey(
+  Future<List<int>> derivePasswordKey(
+    String password,
+    List<int> salt, {
+    String algorithm = passwordKdfAlgorithm,
+    Map<String, dynamic>? params,
+  }) async {
+    if (algorithm == 'argon2id') {
+      return _deriveArgon2idPasswordKey(password, salt, params);
+    }
+    if (algorithm == 'pbkdf2-sha256') {
+      return _deriveLegacyPbkdf2PasswordKey(password, salt, params);
+    }
+    throw UnsupportedError('Unsupported password KDF: $algorithm');
+  }
+
+  List<int> _deriveArgon2idPasswordKey(
+    String password,
+    List<int> salt,
+    Map<String, dynamic>? params,
+  ) {
+    final merged = {...passwordKdfParams, ...?params};
+    final bits = (merged['bits'] as num?)?.toInt() ?? 256;
+    final version = (merged['version'] as num?)?.toInt() ?? 19;
+    final argon2 = hashlib.Argon2(
+      type: hashlib.Argon2Type.argon2id,
+      version:
+          version == 16 ? hashlib.Argon2Version.v10 : hashlib.Argon2Version.v13,
+      hashLength: bits ~/ 8,
+      salt: salt,
+      iterations: (merged['iterations'] as num?)?.toInt() ?? 3,
+      memorySizeKB: (merged['memory'] as num?)?.toInt() ?? 65536,
+      parallelism: (merged['parallelism'] as num?)?.toInt() ?? 1,
+    );
+    return argon2.convert(utf8.encode(password)).bytes;
+  }
+
+  Future<List<int>> _deriveLegacyPbkdf2PasswordKey(
+    String password,
+    List<int> salt,
+    Map<String, dynamic>? params,
+  ) async {
+    final iterations = (params?['iterations'] as num?)?.toInt();
+    final bits = (params?['bits'] as num?)?.toInt();
+    final kdf = iterations == null && bits == null
+        ? _legacyPbkdf2
+        : Pbkdf2(
+            macAlgorithm: Hmac.sha256(),
+            iterations: iterations ?? 210000,
+            bits: bits ?? 256,
+          );
+    final key = await kdf.deriveKey(
       secretKey: SecretKey(utf8.encode(password)),
       nonce: salt,
     );
@@ -112,6 +171,8 @@ class CryptoService {
     return RegistrationKeyMaterial(
       masterKey: masterKey,
       recoveryKey: recoveryKey,
+      kdfAlgorithm: passwordKdfAlgorithm,
+      kdfParams: passwordKdfParams,
       passwordSalt: base64UrlNoPad(passwordSalt),
       publicEncryptionKey: publicEncryptionKey,
       publicSigningKey: publicSigningKey,
@@ -139,11 +200,15 @@ class CryptoService {
   Future<List<int>> unlockMasterKey({
     required String password,
     required String passwordSalt,
+    required String kdfAlgorithm,
+    required Map<String, dynamic> kdfParams,
     required EncryptedEnvelope encryptedMasterKey,
   }) async {
     final passwordKey = await derivePasswordKey(
       password,
       decodeBase64UrlNoPad(passwordSalt),
+      algorithm: kdfAlgorithm,
+      params: kdfParams,
     );
     final encodedMaster = await decryptString(encryptedMasterKey, passwordKey);
     return decodeBase64UrlNoPad(encodedMaster);
@@ -167,6 +232,8 @@ class CryptoService {
     final passwordSalt = randomBytes(16);
     final passwordKey = await derivePasswordKey(password, passwordSalt);
     return PasswordWrappedMasterKey(
+      kdfAlgorithm: passwordKdfAlgorithm,
+      kdfParams: passwordKdfParams,
       passwordSalt: base64UrlNoPad(passwordSalt),
       encryptedMasterKey: await encryptString(
         base64UrlNoPad(masterKey),
