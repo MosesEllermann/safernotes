@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:zknotes_app/features/auth/auth_controller.dart';
+import 'package:zknotes_app/shared/api/api_client.dart';
 import 'package:zknotes_app/shared/app/app_l10n.dart';
 import 'package:zknotes_app/shared/app/app_preferences.dart';
+import 'package:zknotes_app/shared/providers.dart';
 import 'package:zknotes_app/shared/widgets/animated_icon_button.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -106,6 +109,12 @@ class SettingsScreen extends ConsumerWidget {
                           ),
                           if (!wide) ...[
                             const SizedBox(height: 18),
+                            _BillingPanel(
+                              accessToken: session?.accessToken ?? '',
+                              tenant: session?.defaultTenant ?? '',
+                              inset: EdgeInsets.zero,
+                            ),
+                            const SizedBox(height: 18),
                             _SecurityPanel(
                               email: session?.email ?? '',
                               inset: EdgeInsets.zero,
@@ -121,13 +130,304 @@ class SettingsScreen extends ConsumerWidget {
             if (wide)
               SizedBox(
                 width: 390,
-                child: _SecurityPanel(
-                  email: session?.email ?? '',
-                  inset: const EdgeInsets.fromLTRB(0, 20, 24, 28),
+                child: CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: _BillingPanel(
+                        accessToken: session?.accessToken ?? '',
+                        tenant: session?.defaultTenant ?? '',
+                        inset: const EdgeInsets.fromLTRB(0, 20, 24, 18),
+                      ),
+                    ),
+                    SliverToBoxAdapter(
+                      child: _SecurityPanel(
+                        email: session?.email ?? '',
+                        inset: const EdgeInsets.fromLTRB(0, 0, 24, 28),
+                      ),
+                    ),
+                  ],
                 ),
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _BillingPanel extends ConsumerStatefulWidget {
+  const _BillingPanel({
+    required this.accessToken,
+    required this.tenant,
+    required this.inset,
+  });
+
+  final String accessToken;
+  final String tenant;
+  final EdgeInsets inset;
+
+  @override
+  ConsumerState<_BillingPanel> createState() => _BillingPanelState();
+}
+
+class _BillingPanelState extends ConsumerState<_BillingPanel> {
+  late Future<SubscriptionInfo?> _subscriptionFuture;
+  String? _busyPlan;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscriptionFuture = _loadSubscription();
+  }
+
+  @override
+  void didUpdateWidget(covariant _BillingPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.accessToken != widget.accessToken ||
+        oldWidget.tenant != widget.tenant) {
+      _subscriptionFuture = _loadSubscription();
+    }
+  }
+
+  Future<SubscriptionInfo?> _loadSubscription() async {
+    if (widget.accessToken.isEmpty || widget.tenant.isEmpty) return null;
+    return ref.read(apiClientProvider).fetchSubscription(
+          accessToken: widget.accessToken,
+          tenant: widget.tenant,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: widget.inset,
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surface.withValues(alpha: 0.78),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: scheme.outlineVariant.withValues(alpha: 0.56),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
+        child: FutureBuilder<SubscriptionInfo?>(
+          future: _subscriptionFuture,
+          builder: (context, snapshot) {
+            final subscription = snapshot.data;
+            final plan = subscription?.plan ?? 'free';
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(LucideIcons.sparkles,
+                        color: scheme.onSurfaceVariant, size: 19),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Plan',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    if (snapshot.connectionState == ConnectionState.waiting)
+                      SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  _planTitle(plan),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 18),
+                _PlanOptionCard(
+                  title: 'Essential',
+                  price: '18 €/Jahr',
+                  description: '1,50 €/Monat, jährlich abgerechnet',
+                  icon: LucideIcons.badgeCheck,
+                  selected: plan == 'essential',
+                  busy: _busyPlan == 'essential',
+                  onPressed: plan == 'essential'
+                      ? null
+                      : () => _startCheckout('essential'),
+                ),
+                const SizedBox(height: 10),
+                _PlanOptionCard(
+                  title: 'Pro',
+                  price: '60 €/Jahr',
+                  description: '5 €/Monat, mehr Speicher und Kollaboration',
+                  icon: LucideIcons.crown,
+                  selected: plan == 'pro',
+                  busy: _busyPlan == 'pro',
+                  onPressed: plan == 'pro' ? null : () => _startCheckout('pro'),
+                ),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: TextStyle(color: scheme.error)),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  String _planTitle(String plan) {
+    return switch (plan) {
+      'essential' => 'Aktuell: Essential',
+      'pro' => 'Aktuell: Pro',
+      'team' => 'Aktuell: Team',
+      'enterprise' => 'Aktuell: Enterprise',
+      _ => 'Aktuell: Free',
+    };
+  }
+
+  Future<void> _startCheckout(String plan) async {
+    setState(() {
+      _busyPlan = plan;
+      _error = null;
+    });
+    try {
+      final session = await ref.read(apiClientProvider).createCheckout(
+            accessToken: widget.accessToken,
+            tenant: widget.tenant,
+            plan: plan,
+          );
+      if (!mounted) return;
+      if (session.checkoutUrl == null || session.checkoutUrl!.isEmpty) {
+        setState(() {
+          _error = 'Checkout ist noch nicht konfiguriert (${session.status}).';
+        });
+        return;
+      }
+      await _showCheckoutDialog(session.checkoutUrl!);
+    } catch (error) {
+      if (mounted) {
+        setState(
+            () => _error = error.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _busyPlan = null);
+    }
+  }
+
+  Future<void> _showCheckoutDialog(String checkoutUrl) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        final scheme = Theme.of(context).colorScheme;
+        return AlertDialog(
+          title: const Text('Checkout öffnen'),
+          content: SelectableText(
+            checkoutUrl,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Schließen'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: checkoutUrl));
+                if (context.mounted) Navigator.of(context).pop();
+              },
+              icon: const Icon(LucideIcons.copy, size: 16),
+              label: const Text('Link kopieren'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _PlanOptionCard extends StatelessWidget {
+  const _PlanOptionCard({
+    required this.title,
+    required this.price,
+    required this.description,
+    required this.icon,
+    required this.selected,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String title;
+  final String price;
+  final String description;
+  final IconData icon;
+  final bool selected;
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: selected
+            ? scheme.surfaceContainerHighest.withValues(alpha: 0.82)
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.38),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: scheme.onSurface),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+              Text(
+                price,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            description,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 12),
+          _SettingsActionButton(
+            label: selected ? 'Aktiver Plan' : 'Auswählen',
+            icon: selected ? LucideIcons.check : LucideIcons.arrowUpRight,
+            busy: busy,
+            onPressed: selected ? null : onPressed,
+          ),
+        ],
       ),
     );
   }

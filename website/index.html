@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ZK Notizen - Verschlüsselte Notizen für klare Gedanken</title>
+    <meta
+      name="description"
+      content="ZK Notizen ist eine moderne, zero-knowledge verschlüsselte Notizen-App für Notizen, Checklisten, Erinnerungen und persönliche Organisation."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./menu.js" defer></script>
+  </head>
+  <body>
+    <div class="launch-note" role="note">
+      <span>Livegang-TODO</span>
+      App-Link, Kontakt-E-Mail und Rechtstexte vor Veröffentlichung finalisieren.
+    </div>
+
+    <header class="site-header">
+      <a class="brand" href="./index.html" aria-label="ZK Notizen Startseite">
+        <span class="brand-mark">ZK</span>
+        <span class="brand-name">ZK Notizen</span>
+      </a>
+      <nav class="site-nav" aria-label="Hauptnavigation">
+        <a href="#security">Zero Knowledge</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#pricing">Preise</a>
+        <a href="./privacy.html">Datenschutz</a>
+      </nav>
+      <a class="header-cta todo-link" href="http://localhost:3000/">App öffnen</a>
+      <button class="menu-button" type="button" aria-controls="mobile-menu" aria-expanded="false" data-menu-open>
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </header>
+
+    <div class="menu-scrim" data-menu-close></div>
+    <aside class="menu-panel" id="mobile-menu" aria-hidden="true">
+      <button class="menu-close" type="button" aria-label="Menü schließen" data-menu-close>×</button>
+      <nav aria-label="Mobile Navigation">
+        <a href="#security">Zero Knowledge</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#pricing">Preise</a>
+        <a href="./privacy.html">Datenschutz</a>
+        <a href="./impressum.html">Impressum</a>
+      </nav>
+    </aside>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Private notes, calm workflow</p>
+          <h1 id="hero-title">Notizen, die niemand mitliest.</h1>
+          <p class="hero-lead">
+            ZK Notizen verbindet schnelle Notizen, Checklisten und Erinnerungen
+            mit einer Zero-Knowledge-Architektur. Deine Inhalte werden
+            clientseitig verschlüsselt, bevor sie synchronisiert werden.
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary todo-link" href="http://localhost:3000/">
+              App öffnen
+            </a>
+            <a class="button button-secondary" href="#pricing">Preise ansehen</a>
+          </div>
+          <dl class="hero-metrics" aria-label="Produktdaten">
+            <div>
+              <dt>18 €</dt>
+              <dd>Essential pro Jahr</dd>
+            </div>
+            <div>
+              <dt>0 Klartext</dt>
+              <dd>Notizinhalte am Server</dd>
+            </div>
+            <div>
+              <dt>3 Modi</dt>
+              <dd>Notizen, Listen, Erinnerungen</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div class="hero-visual" aria-label="Produktvorschau">
+          <div class="device-frame">
+            <div class="app-window">
+              <div class="app-toolbar">
+                <span class="app-title">Notes</span>
+                <span class="encrypted-pill">E2E encrypted</span>
+              </div>
+              <div class="app-search">
+                <span class="search-icon"></span>
+                <p>Search private notes</p>
+              </div>
+              <div class="notes-masonry">
+                <article class="mock-note mock-note-large">
+                  <div class="note-label">Meeting Notes</div>
+                  <p>Discuss timeline, assign tasks, prepare release checklist.</p>
+                  <small>Edited 2m ago</small>
+                </article>
+                <article class="mock-note mock-note-list">
+                  <div class="note-label">Grocery List</div>
+                  <ul>
+                    <li class="checked">Milk</li>
+                    <li class="checked">Eggs</li>
+                    <li>Bread</li>
+                  </ul>
+                </article>
+                <article class="mock-note mock-note-accent">
+                  <div class="note-label">Reminder</div>
+                  <p>Review PRs at 10:00.</p>
+                </article>
+                <article class="mock-note">
+                  <div class="note-label">Design Ideas</div>
+                  <p>Cleaner palette, calmer typography, faster capture.</p>
+                </article>
+              </div>
+            </div>
+          </div>
+          <div class="security-card">
+            <span class="security-icon">ZK</span>
+            <div>
+              <strong>Zero-Knowledge-Grenze</strong>
+              <p>Der Server speichert verschlüsselte Umschläge, keine lesbaren Notizen.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="proof-row" aria-label="Produktversprechen">
+        <article>
+          <span>01</span>
+          <strong>Clientseitige Verschlüsselung</strong>
+          <p>Titel, Text und Checklisten werden vor der Synchronisierung geschützt.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <strong>Jahrespreise ab 18 €</strong>
+          <p>Ein günstiger Einstieg ohne Geschäftsmodell über Werbe-Tracking.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <strong>Alltagsnahes Produkt</strong>
+          <p>Notizen, Listen, Erinnerungen, Archiv und Zusammenarbeit in einem Flow.</p>
+        </article>
+      </section>
+
+      <section class="section split-section" id="security">
+        <div class="section-copy">
+          <p class="eyebrow">Zero Knowledge</p>
+          <h2>Privatsphäre ist kein Premium-Add-on.</h2>
+          <p>
+            Die App ist um eine klare Grenze gebaut: Nutzerinhalte werden lokal
+            verschlüsselt. Das Backend synchronisiert, versioniert und schützt
+            Daten, ohne den Klartext deiner Notizen zu benötigen.
+          </p>
+        </div>
+        <div class="security-grid">
+          <article class="feature-card">
+            <span class="card-kicker">Verschlüsselte Payloads</span>
+            <h3>Keine Klartext-Notizen im Backend</h3>
+            <p>
+              Nutzerinhalte werden als verschlüsselte Umschläge gespeichert. Das
+              reduziert Risiko und schafft eine glaubwürdige Datenschutzbasis.
+            </p>
+          </article>
+          <article class="feature-card">
+            <span class="card-kicker">Lokale Kontrolle</span>
+            <h3>Erinnerungen bleiben persönlich</h3>
+            <p>
+              Erinnerungen sind lokale Benachrichtigungen und werden nicht
+              automatisch mit Mitarbeitenden geteilt.
+            </p>
+          </article>
+          <article class="feature-card wide-card">
+            <span class="card-kicker">Bewusste Zusammenarbeit</span>
+            <h3>Teilen bleibt eine explizite Entscheidung</h3>
+            <p>
+              Kollaboration wird als klarer Nutzerwunsch behandelt, nicht als
+              stiller Standard. Das passt zu persönlichen Notizen und Teams.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section workflow-section" id="workflow">
+        <div class="workflow-panel">
+          <p class="eyebrow">Workflow</p>
+          <h2>Schnell erfassen. Ruhig organisieren.</h2>
+          <p>
+            Die Oberfläche bleibt reduziert: keine überladene Projektmanagement-
+            Suite, sondern ein fokussierter Ort für Gedanken, Aufgaben und
+            Erinnerungen.
+          </p>
+        </div>
+        <div class="timeline">
+          <article>
+            <span>Notiz</span>
+            <h3>Gedanken sofort festhalten</h3>
+            <p>Eine kurze Idee, Meeting-Notizen oder ein längerer Entwurf.</p>
+          </article>
+          <article>
+            <span>Liste</span>
+            <h3>Checklisten ohne Reibung</h3>
+            <p>Neue Punkte entstehen direkt beim Schreiben und bleiben scannbar.</p>
+          </article>
+          <article>
+            <span>Erinnerung</span>
+            <h3>Wichtige Notizen wiederfinden</h3>
+            <p>Eine Notiz kann zur Erinnerung werden, ohne ihre Privatsphäre zu verlieren.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section pricing-section" id="pricing">
+        <div class="section-heading">
+          <p class="eyebrow">Preise</p>
+          <h2>Ein transparenter Einstieg für private Organisation.</h2>
+          <p>
+            Jahrespreise halten Zahlungskosten niedrig und machen Essential
+            bewusst günstiger als viele etablierte verschlüsselte Notizen-Apps.
+          </p>
+        </div>
+        <div class="pricing-grid">
+          <article class="price-card">
+            <div class="plan-top">
+              <h3>Free</h3>
+              <span>Start</span>
+            </div>
+            <p class="price">0 €</p>
+            <p class="price-note">Für den privaten Einstieg</p>
+            <ul>
+              <li>Bis zu 500 Notizen</li>
+              <li>100 MB Speicher</li>
+              <li>Basis-Synchronisierung</li>
+            </ul>
+            <a class="button button-plan todo-link" href="http://localhost:3000/">
+              Kostenlos starten
+            </a>
+          </article>
+
+          <article class="price-card featured-plan">
+            <div class="plan-badge">Empfohlen</div>
+            <div class="plan-top">
+              <h3>Essential</h3>
+              <span>Privat</span>
+            </div>
+            <p class="price">18 € <em>/ Jahr</em></p>
+            <p class="price-note">1,50 € pro Monat, jährlich abgerechnet</p>
+            <ul>
+              <li>Bis zu 5.000 Notizen</li>
+              <li>1 GB Speicher</li>
+              <li>Erweiterte Historie</li>
+            </ul>
+            <a class="button button-primary todo-link" href="http://localhost:3000/">
+              Essential wählen
+            </a>
+          </article>
+
+          <article class="price-card">
+            <div class="plan-top">
+              <h3>Pro</h3>
+              <span>Power</span>
+            </div>
+            <p class="price">60 € <em>/ Jahr</em></p>
+            <p class="price-note">5 € pro Monat, jährlich abgerechnet</p>
+            <ul>
+              <li>Unbegrenzte Notizen</li>
+              <li>10 GB Speicher</li>
+              <li>Mehr Kollaboration</li>
+            </ul>
+            <a class="button button-plan todo-link" href="http://localhost:3000/">
+              Pro wählen
+            </a>
+          </article>
+        </div>
+      </section>
+
+      <section class="section closing-section">
+        <div>
+          <p class="eyebrow">Launch-ready foundation</p>
+          <h2>Eine Notizen-App, die Vertrauen nicht nur behauptet.</h2>
+          <p>
+            Zero-Knowledge-Architektur, klare Preise und ein Interface, das sich
+            eher wie ein Werkzeug als wie eine Werbefläche anfühlt.
+          </p>
+        </div>
+        <a class="button button-primary todo-link" href="http://localhost:3000/">
+          App öffnen
+        </a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <a class="brand footer-brand" href="./index.html">
+          <span class="brand-mark">ZK</span>
+          <span class="brand-name">ZK Notizen</span>
+        </a>
+        <p>Verschlüsselte Notizen für klare Gedanken.</p>
+      </div>
+      <nav aria-label="Footer Navigation">
+        <a href="./privacy.html">Datenschutz</a>
+        <a href="./impressum.html">Impressum</a>
+        <a class="todo-link" href="mailto:hello@example.com">Kontakt</a>
+      </nav>
+    </footer>
+  </body>
+</html>

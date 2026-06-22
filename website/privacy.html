@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Datenschutz - ZK Notizen</title>
+    <meta
+      name="description"
+      content="Professionell strukturierter Datenschutz-Platzhalter für ZK Notizen."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./menu.js" defer></script>
+  </head>
+  <body class="legal-page">
+    <div class="launch-note" role="note">
+      <span>Livegang-TODO</span>
+      Datenschutztext vor Veröffentlichung rechtlich finalisieren.
+    </div>
+
+    <header class="site-header">
+      <a class="brand" href="./index.html" aria-label="ZK Notizen Startseite">
+        <span class="brand-mark">ZK</span>
+        <span class="brand-name">ZK Notizen</span>
+      </a>
+      <nav class="site-nav" aria-label="Hauptnavigation">
+        <a href="./index.html#security">Zero Knowledge</a>
+        <a href="./index.html#workflow">Workflow</a>
+        <a href="./index.html#pricing">Preise</a>
+        <a href="./impressum.html">Impressum</a>
+      </nav>
+      <a class="header-cta todo-link" href="http://localhost:3000/">App öffnen</a>
+      <button class="menu-button" type="button" aria-controls="mobile-menu" aria-expanded="false" data-menu-open>
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </header>
+
+    <div class="menu-scrim" data-menu-close></div>
+    <aside class="menu-panel" id="mobile-menu" aria-hidden="true">
+      <button class="menu-close" type="button" aria-label="Menü schließen" data-menu-close>×</button>
+      <nav aria-label="Mobile Navigation">
+        <a href="./index.html#security">Zero Knowledge</a>
+        <a href="./index.html#workflow">Workflow</a>
+        <a href="./index.html#pricing">Preise</a>
+        <a href="./privacy.html">Datenschutz</a>
+        <a href="./impressum.html">Impressum</a>
+      </nav>
+    </aside>
+
+    <main>
+      <section class="legal-hero">
+        <p class="eyebrow">Datenschutz</p>
+        <h1>Datenschutz mit klarer Zero-Knowledge-Grenze.</h1>
+        <p>
+          Diese Seite beschreibt professionell, welche Datenschutzinformationen
+          vor dem Livegang benötigt werden. Rechtliche Platzhalter sind bewusst
+          markiert und müssen final geprüft werden.
+        </p>
+      </section>
+
+      <div class="legal-shell">
+        <aside class="legal-aside" aria-label="Inhaltsnavigation">
+          <strong>Auf dieser Seite</strong>
+          <a href="#status">Status</a>
+          <a href="#controller">Verantwortlicher</a>
+          <a href="#zero-knowledge">Zero Knowledge</a>
+          <a href="#data">Datenarten</a>
+          <a href="#payments">Zahlungen</a>
+          <a href="#providers">Dienstleister</a>
+          <a href="#rights">Rechte</a>
+        </aside>
+
+        <article class="legal-content">
+          <div class="placeholder-box" id="status">
+            <strong>Platzhalter, nicht veröffentlichungsfertig</strong>
+            Diese Struktur ersetzt keine Rechtsberatung. Vor Veröffentlichung
+            müssen Anbieter, Rechtsgrundlagen, Speicherorte und Kontaktdaten
+            ergänzt und geprüft werden.
+          </div>
+
+          <section id="controller">
+            <h2>Verantwortlicher</h2>
+            <div class="data-table">
+              <div class="data-row">
+                <strong>Name/Firma</strong>
+                <span>[Name/Firma einsetzen]</span>
+              </div>
+              <div class="data-row">
+                <strong>Adresse</strong>
+                <span>[Straße, PLZ, Ort, Land einsetzen]</span>
+              </div>
+              <div class="data-row">
+                <strong>Kontakt</strong>
+                <span>[E-Mail einsetzen]</span>
+              </div>
+            </div>
+          </section>
+
+          <section id="zero-knowledge">
+            <h2>Zero-Knowledge-Verarbeitung</h2>
+            <p>
+              ZK Notizen ist darauf ausgelegt, Notizinhalte clientseitig zu
+              verschlüsseln. Titel, Text, Checklisten und nutzerseitige Inhalte
+              werden vor der Synchronisierung verschlüsselt. Der Server
+              verarbeitet diese Inhalte grundsätzlich als verschlüsselte Daten.
+            </p>
+            <p>
+              Diese Aussage muss vor Livegang technisch und rechtlich mit der
+              tatsächlichen Implementierung abgeglichen werden.
+            </p>
+          </section>
+
+          <section id="data">
+            <h2>Verarbeitete Daten</h2>
+            <ul>
+              <li>Accountdaten wie E-Mail-Adresse und Authentifizierungsdaten</li>
+              <li>verschlüsselte Notizdaten und Synchronisierungsmetadaten</li>
+              <li>technische Protokolldaten zur Sicherheit und Fehleranalyse</li>
+              <li>Billing-Statusdaten bei kostenpflichtigen Plänen</li>
+            </ul>
+          </section>
+
+          <section id="payments">
+            <h2>Zahlungen</h2>
+            <p>
+              Zahlungen sollen über Paddle als Merchant of Record abgewickelt
+              werden. Zahlungsdaten werden dabei von Paddle verarbeitet. ZK
+              Notizen speichert nur notwendige Subscription-Statusdaten, z. B.
+              Plan, Status, Customer-ID und Subscription-ID.
+            </p>
+          </section>
+
+          <section id="providers">
+            <h2>Hosting und E-Mail</h2>
+            <p>
+              [Hosting-Anbieter einsetzen]. Für transaktionale E-Mails wie
+              E-Mail-Verifizierung und Passwort-Wiederherstellung wird
+              [Mail-Anbieter einsetzen] genutzt.
+            </p>
+          </section>
+
+          <section id="rights">
+            <h2>Rechte betroffener Personen</h2>
+            <p>
+              Nutzer können Auskunft, Berichtigung, Löschung, Einschränkung,
+              Datenübertragbarkeit und Widerspruch nach den gesetzlichen
+              Vorgaben verlangen. Kontakt: [E-Mail einsetzen].
+            </p>
+          </section>
+        </article>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <a class="brand footer-brand" href="./index.html">
+          <span class="brand-mark">ZK</span>
+          <span class="brand-name">ZK Notizen</span>
+        </a>
+        <p>Verschlüsselte Notizen für klare Gedanken.</p>
+      </div>
+      <nav aria-label="Footer Navigation">
+        <a href="./privacy.html">Datenschutz</a>
+        <a href="./impressum.html">Impressum</a>
+        <a class="todo-link" href="mailto:hello@example.com">Kontakt</a>
+      </nav>
+    </footer>
+  </body>
+</html>

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from django.urls import include, path
 
+from apps.core.views import HealthLiveView, HealthReadyView
+
 urlpatterns = [
+    path("api/v1/health/live", HealthLiveView.as_view(), name="health-live"),
+    path("api/v1/health/ready", HealthReadyView.as_view(), name="health-ready"),
     path("api/v1/auth/", include("apps.authentication.urls")),
     path("api/v1/users/", include("apps.users.urls")),
     path("api/v1/devices/", include("apps.devices.urls")),

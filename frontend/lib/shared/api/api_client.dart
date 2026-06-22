@@ -179,6 +179,32 @@ class ApiClient {
     );
   }
 
+  Future<SubscriptionInfo> fetchSubscription({
+    required String accessToken,
+    required String tenant,
+  }) async {
+    final response = await _http.get(
+      Uri.parse('$baseUrl/api/v1/subscription').replace(
+        queryParameters: {'tenant': tenant},
+      ),
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+    return SubscriptionInfo.fromJson(_decode(response));
+  }
+
+  Future<CheckoutSession> createCheckout({
+    required String accessToken,
+    required String tenant,
+    required String plan,
+  }) async {
+    final json = await _post(
+      '/api/v1/subscription/checkout',
+      {'tenant': tenant, 'plan': plan},
+      accessToken: accessToken,
+    );
+    return CheckoutSession.fromJson(json);
+  }
+
   Future<Map<String, dynamic>> _get(String path, String accessToken) async {
     final response = await _http.get(
       Uri.parse('$baseUrl$path'),
@@ -211,6 +237,52 @@ class ApiClient {
     }
     if (body is Map<String, dynamic>) return body;
     return {'results': body};
+  }
+}
+
+class SubscriptionInfo {
+  const SubscriptionInfo({
+    required this.plan,
+    required this.status,
+    this.billingProvider = '',
+    this.policy = const {},
+  });
+
+  final String plan;
+  final String status;
+  final String billingProvider;
+  final Map<String, dynamic> policy;
+
+  factory SubscriptionInfo.fromJson(Map<String, dynamic> json) {
+    return SubscriptionInfo(
+      plan: json['plan'] as String? ?? 'free',
+      status: json['status'] as String? ?? 'active',
+      billingProvider: json['billing_provider'] as String? ?? '',
+      policy: Map<String, dynamic>.from(json['policy'] as Map? ?? const {}),
+    );
+  }
+}
+
+class CheckoutSession {
+  const CheckoutSession({
+    required this.status,
+    required this.provider,
+    required this.targetPlan,
+    this.checkoutUrl,
+  });
+
+  final String status;
+  final String provider;
+  final String targetPlan;
+  final String? checkoutUrl;
+
+  factory CheckoutSession.fromJson(Map<String, dynamic> json) {
+    return CheckoutSession(
+      status: json['status'] as String? ?? 'unknown',
+      provider: json['provider'] as String? ?? 'unconfigured',
+      targetPlan: json['target_plan'] as String? ?? '',
+      checkoutUrl: json['checkout_url'] as String?,
+    );
   }
 }
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import environ
@@ -21,6 +22,15 @@ env = environ.Env(
     ATTACHMENT_REGION=(str, "auto"),
     ATTACHMENT_UPLOAD_URL_TTL_SECONDS=(int, 900),
     ATTACHMENT_DOWNLOAD_URL_TTL_SECONDS=(int, 900),
+    BILLING_PROVIDER=(str, "manual"),
+    BILLING_API_KEY=(str, ""),
+    BILLING_API_BASE_URL=(str, "https://sandbox-api.paddle.com"),
+    BILLING_PRICE_IDS=(str, "{}"),
+    BILLING_STORE_ID=(str, ""),
+    BILLING_VARIANT_IDS=(str, "{}"),
+    BILLING_CHECKOUT_URLS=(str, "{}"),
+    BILLING_PORTAL_URL=(str, ""),
+    BILLING_SUCCESS_URL=(str, ""),
     BILLING_WEBHOOK_SECRET=(str, ""),
     EMAIL_BACKEND=(str, "django.core.mail.backends.console.EmailBackend"),
     DEFAULT_FROM_EMAIL=(str, "ZK Notes <noreply@localhost>"),
@@ -163,4 +173,13 @@ ATTACHMENT_STORAGE = {
     "download_url_ttl_seconds": env("ATTACHMENT_DOWNLOAD_URL_TTL_SECONDS"),
 }
 
+BILLING_PROVIDER = env("BILLING_PROVIDER")
+BILLING_API_KEY = env("BILLING_API_KEY")
+BILLING_API_BASE_URL = env("BILLING_API_BASE_URL")
+BILLING_PRICE_IDS = json.loads(env("BILLING_PRICE_IDS") or "{}")
+BILLING_STORE_ID = env("BILLING_STORE_ID")
+BILLING_VARIANT_IDS = json.loads(env("BILLING_VARIANT_IDS") or "{}")
+BILLING_CHECKOUT_URLS = json.loads(env("BILLING_CHECKOUT_URLS") or "{}")
+BILLING_PORTAL_URL = env("BILLING_PORTAL_URL")
+BILLING_SUCCESS_URL = env("BILLING_SUCCESS_URL")
 BILLING_WEBHOOK_SECRET = env("BILLING_WEBHOOK_SECRET")
