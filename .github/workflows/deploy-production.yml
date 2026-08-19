@@ -89,6 +89,7 @@ jobs:
           sudo apt-get install -y rsync openssh-client
 
       - name: Deploy static sites to SPanel
+        if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
         env:
           SPANEL_HOST: ${{ secrets.SPANEL_HOST }}
           SPANEL_PORT: ${{ secrets.SPANEL_PORT }}
@@ -112,6 +113,7 @@ jobs:
           rsync -az --delete -e "ssh -p ${SPANEL_PORT:-22} -i ~/.ssh/spanel_deploy_key" frontend/build/web/ "$SPANEL_USER@$SPANEL_HOST:$SPANEL_APP_PATH/"
 
       - name: Deploy backend to Ubuntu host
+        if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
         env:
           API_HOST: ${{ secrets.API_HOST }}
           API_PORT: ${{ secrets.API_PORT }}
@@ -133,5 +135,11 @@ jobs:
             "cd '$API_PROJECT_PATH' && bash deploy/scripts/deploy_backend.sh '$API_PROJECT_PATH'"
 
       - name: Verify production API
+        if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
         run: |
           curl -fsS "$API_BASE_URL/api/v1/health/live"
+
+      - name: Skip production deploy until configured
+        if: ${{ vars.ENABLE_PRODUCTION_DEPLOY != 'true' }}
+        run: |
+          echo "Production deploy is disabled. Set repository variable ENABLE_PRODUCTION_DEPLOY=true after DNS, servers, and secrets are configured."

@@ -172,7 +172,10 @@ Optional als GitHub Variable:
 
 ```text
 SAFERNOTES_API_BASE_URL=https://api.safernotes.com
+ENABLE_PRODUCTION_DEPLOY=true
 ```
+
+Lasse `ENABLE_PRODUCTION_DEPLOY` weg oder setze es nicht auf `true`, solange DNS, Server und SSH-Secrets noch nicht fertig sind. Der Workflow testet und baut dann weiter, ueberspringt aber den echten Produktions-Deploy.
 
 ## 8. Automatisches Deployment
 
