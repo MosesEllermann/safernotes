@@ -83,10 +83,22 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
   }) async {
     final existing =
         state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
+    PlainNote? previous;
+    for (final item in existing) {
+      if (item.localId == draft.localId) {
+        previous = item;
+        break;
+      }
+    }
+    final remoteId = draft.remoteId ?? previous?.remoteId;
     final nextDraft = draft.copyWith(
+      remoteId: remoteId,
       title: draft.title.trim().isEmpty ? 'Untitled note' : draft.title.trim(),
       updatedAt: DateTime.now().toUtc(),
       dirty: true,
+      version: draft.remoteId == null && previous?.remoteId != null
+          ? previous!.version
+          : draft.version,
       conflicted: false,
     );
     final next = [

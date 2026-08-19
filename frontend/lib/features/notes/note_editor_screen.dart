@@ -117,8 +117,8 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
         : _noteColorFor(context, _color);
     final presence = ref
         .watch(presenceProvider)
-        .where((item) =>
-            item.noteId == widget.note.remoteId && item.status == 'online')
+        .where(
+            (item) => item.noteId == note.remoteId && item.status == 'online')
         .toList();
 
     return Shortcuts(
@@ -273,7 +273,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   }
 
   PlainNote _draft() {
-    return widget.note.copyWith(
+    return _currentNote().copyWith(
       title: _title.text.trim().isEmpty ? 'Untitled note' : _title.text.trim(),
       body: _checklistMode ? '' : _body.text,
       checklist: _checklist,
@@ -282,6 +282,15 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       reminderAt: _reminderAt,
       clearReminder: _reminderAt == null,
     );
+  }
+
+  PlainNote _currentNote() {
+    final notes = ref.read(notesControllerProvider).valueOrNull;
+    if (notes == null) return widget.note;
+    for (final note in notes) {
+      if (note.localId == widget.note.localId) return note;
+    }
+    return widget.note;
   }
 
   void _scheduleSave({bool immediate = false}) {
