@@ -40,6 +40,19 @@ def test_health_live_is_public():
     assert response.data == {"status": "ok"}
 
 
+def test_health_live_renders_json_for_browser_accept_header():
+    request = APIRequestFactory().get(
+        "/api/v1/health/live",
+        HTTP_ACCEPT="text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    )
+    response = HealthLiveView.as_view()(request)
+    response.render()
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == "application/json"
+    assert response.content == b'{"status":"ok"}'
+
+
 def test_health_ready_checks_database(db):
     request = APIRequestFactory().get("/api/v1/health/ready")
     response = HealthReadyView.as_view()(request)
