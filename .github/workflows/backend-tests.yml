@@ -12,13 +12,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: zknotes
-          POSTGRES_USER: zknotes
-          POSTGRES_PASSWORD: zknotes
+          POSTGRES_DB: safernotes
+          POSTGRES_USER: safernotes
+          POSTGRES_PASSWORD: safernotes
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U zknotes -d zknotes"
+          --health-cmd "pg_isready -U safernotes -d safernotes"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -37,7 +37,7 @@ jobs:
     env:
       DJANGO_SETTINGS_MODULE: config.settings.test
       SECRET_KEY: ci-secret
-      DATABASE_URL: postgres://zknotes:zknotes@localhost:5432/zknotes
+      DATABASE_URL: postgres://safernotes:safernotes@localhost:5432/safernotes
       REDIS_URL: redis://localhost:6379/0
       ALLOWED_HOSTS: localhost,127.0.0.1
       CORS_ALLOWED_ORIGINS: http://localhost:3000
@@ -53,4 +53,3 @@ jobs:
       - run: python manage.py migrate --noinput
       - run: pytest
       - run: ruff check .
-
