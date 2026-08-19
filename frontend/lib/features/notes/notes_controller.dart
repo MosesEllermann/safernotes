@@ -164,7 +164,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       ref.read(syncStatusProvider.notifier).state =
           error is ApiException && error.statusCode == 409
               ? SyncStatus.conflict
-              : SyncStatus.saved;
+              : SyncStatus.offline;
     }
   }
 
