@@ -24,6 +24,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   var _recovering = false;
   var _recoveryRequested = false;
   var _recoveryBusy = false;
+  var _submitBusy = false;
   var _obscure = true;
   RecoveryChallenge? _challenge;
   String? _localError;
@@ -43,7 +44,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     final auth = ref.watch(authControllerProvider);
-    final busy = auth.isLoading || _recoveryBusy;
+    final busy = auth.isLoading || _recoveryBusy || _submitBusy;
     final error = _localError ?? auth.asError?.error.toString();
     final title = _registering
         ? l10n.t('createVault')
@@ -143,29 +144,38 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_recovering) {
-      if (_recoveryRequested) {
-        await _completeRecovery();
+    setState(() {
+      _submitBusy = true;
+      _localError = null;
+    });
+    await WidgetsBinding.instance.endOfFrame;
+    try {
+      if (_recovering) {
+        if (_recoveryRequested) {
+          await _completeRecovery();
+        } else {
+          await _requestRecovery();
+        }
+        return;
+      }
+      final controller = ref.read(authControllerProvider.notifier);
+      if (_registering) {
+        final recoveryKey = await controller.register(
+          email: _email.text.trim(),
+          password: _password.text,
+          workspaceName: _workspace.text.trim(),
+        );
+        if (mounted && recoveryKey != null) {
+          await _showRecoveryKeyDialog(recoveryKey);
+        }
       } else {
-        await _requestRecovery();
+        await controller.login(
+          email: _email.text.trim(),
+          password: _password.text,
+        );
       }
-      return;
-    }
-    final controller = ref.read(authControllerProvider.notifier);
-    if (_registering) {
-      final recoveryKey = await controller.register(
-        email: _email.text.trim(),
-        password: _password.text,
-        workspaceName: _workspace.text.trim(),
-      );
-      if (mounted && recoveryKey != null) {
-        await _showRecoveryKeyDialog(recoveryKey);
-      }
-    } else {
-      await controller.login(
-        email: _email.text.trim(),
-        password: _password.text,
-      );
+    } finally {
+      if (mounted) setState(() => _submitBusy = false);
     }
   }
 
@@ -594,21 +604,38 @@ class _AuthPanel extends StatelessWidget {
                 _AuthError(message: error!),
               ],
               const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: busy ? null : onSubmit,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(52),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: FilledButton.icon(
+                  key: ValueKey(busy),
+                  onPressed: busy ? null : onSubmit,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
+                  icon: busy
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(actionIcon),
+                  label: Text(actionLabel),
                 ),
-                icon: busy
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                child: busy
+                    ? Padding(
+                        key: const ValueKey('auth-progress'),
+                        padding: const EdgeInsets.only(top: 12),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: const LinearProgressIndicator(minHeight: 3),
+                        ),
                       )
-                    : Icon(actionIcon),
-                label: Text(actionLabel),
+                    : const SizedBox.shrink(key: ValueKey('auth-idle')),
               ),
               if (!registering) ...[
                 const SizedBox(height: 10),
