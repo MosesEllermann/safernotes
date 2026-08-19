@@ -7,7 +7,7 @@ on:
 
 concurrency:
   group: production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   API_BASE_URL: ${{ vars.SAFERNOTES_API_BASE_URL || 'https://api.safernotes.com' }}
@@ -85,8 +85,18 @@ jobs:
 
       - name: Install deploy tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y rsync openssh-client
+          if command -v rsync >/dev/null && command -v ssh >/dev/null; then
+            echo "rsync and ssh are already available."
+            exit 0
+          fi
+
+          for attempt in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y rsync openssh-client && exit 0
+            echo "apt install failed on attempt $attempt; retrying..."
+            sleep 10
+          done
+
+          exit 1
 
       - name: Deploy static sites to SPanel
         if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
