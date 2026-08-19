@@ -218,7 +218,7 @@ Cron-Beispiel:
 Wenn die Dumps zusätzlich in einen privaten SPanel-Backup-Ordner kopiert werden sollen:
 
 ```cron
-15 3 * * * PROJECT_DIR=/opt/safernotes/app SAFERNOTES_ENV_FILE=/opt/safernotes/.env.production SAFERNOTES_BACKUP_DIR=/opt/safernotes/backups/db SAFERNOTES_BACKUP_REMOTE_TARGET=<spanel-user>@<spanel-host>:/home/<spanel-user>/private/safernotes-backups/db /opt/safernotes/app/deploy/scripts/backup_postgres.sh
+15 3 * * * PROJECT_DIR=/opt/safernotes/app SAFERNOTES_ENV_FILE=/opt/safernotes/.env.production SAFERNOTES_BACKUP_DIR=/opt/safernotes/backups/db SAFERNOTES_BACKUP_REMOTE_TARGET=<spanel-user>@<spanel-host>:/home/<spanel-user>/backups/db SAFERNOTES_BACKUP_SSH_PORT=6543 SAFERNOTES_BACKUP_SSH_KEY=/root/.ssh/safernotes_spanel_backup /opt/safernotes/app/deploy/scripts/backup_postgres.sh
 ```
 
 Der Zielordner muss außerhalb von `public_html` liegen.
