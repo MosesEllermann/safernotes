@@ -12,6 +12,7 @@ __pycache__/
 
 # Local databases and generated backend artifacts
 backend/db.sqlite3
+backend/build/
 backend/media/
 backend/staticfiles/
 backend/zknotes_backend.egg-info/

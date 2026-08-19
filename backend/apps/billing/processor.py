@@ -6,7 +6,6 @@ from apps.subscriptions.models import Subscription
 from apps.subscriptions.plans import PLAN_POLICIES
 from apps.tenants.models import Organization
 
-
 LEMONSQUEEZY_EVENT_TYPES = {
     "subscription_created": "subscription.created",
     "subscription_updated": "subscription.updated",

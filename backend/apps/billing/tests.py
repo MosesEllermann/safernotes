@@ -4,7 +4,11 @@ from django.test import override_settings
 
 from apps.billing.models import BillingEvent
 from apps.billing.processor import process_billing_event
-from apps.billing.signatures import expected_paddle_signature, expected_signature, verify_webhook_signature
+from apps.billing.signatures import (
+    expected_paddle_signature,
+    expected_signature,
+    verify_webhook_signature,
+)
 
 
 @override_settings(BILLING_WEBHOOK_SECRET="secret")
