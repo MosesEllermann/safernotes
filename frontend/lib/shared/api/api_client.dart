@@ -12,7 +12,7 @@ class ApiException implements Exception {
   final int statusCode;
 
   @override
-  String toString() => 'ApiException($statusCode): $message';
+  String toString() => 'Error: $message';
 }
 
 class ApiClient {
@@ -230,13 +230,37 @@ class ApiClient {
   }
 
   Map<String, dynamic> _decode(http.Response response) {
-    final body =
+    final dynamic body =
         response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
     if (response.statusCode >= 400) {
-      throw ApiException(body.toString(), response.statusCode);
+      throw ApiException(_friendlyErrorMessage(body), response.statusCode);
     }
     if (body is Map<String, dynamic>) return body;
     return {'results': body};
+  }
+
+  String _friendlyErrorMessage(dynamic body) {
+    if (body is Map<String, dynamic>) {
+      final directMessage = body['detail'] ?? body['error'] ?? body['message'];
+      if (directMessage != null) return _stringifyError(directMessage);
+
+      for (final entry in body.entries) {
+        final message = _stringifyError(entry.value);
+        if (message.isNotEmpty) return message;
+      }
+    }
+    return _stringifyError(body);
+  }
+
+  String _stringifyError(dynamic value) {
+    if (value is String) return value;
+    if (value is List && value.isNotEmpty) {
+      return _stringifyError(value.first);
+    }
+    if (value is Map && value.isNotEmpty) {
+      return _stringifyError(value.values.first);
+    }
+    return 'Request failed. Please try again.';
   }
 }
 
