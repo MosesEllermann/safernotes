@@ -76,7 +76,7 @@ Required backend environment:
 
 ```env
 EMAIL_BACKEND=...
-DEFAULT_FROM_EMAIL=ZK Notes <hello@example.com>
+DEFAULT_FROM_EMAIL=Safernotes <hello@example.com>
 ```
 
 ## 4. Legal and GDPR

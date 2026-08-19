@@ -10,7 +10,7 @@ Open this exact folder as the workspace in Codex, GitHub Desktop, VS Code, or a 
 
 ## What This Project Is
 
-ZK Notes is a zero-knowledge encrypted notes prototype:
+Safernotes is a zero-knowledge encrypted notes prototype:
 
 - `backend/`: Django REST API.
 - `frontend/`: Flutter app for web, Android, and iOS.

@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:zknotes_app/shared/models/encrypted_envelope.dart';
-import 'package:zknotes_app/shared/models/note.dart';
-import 'package:zknotes_app/shared/models/session.dart';
+import 'package:safernotes_app/shared/models/encrypted_envelope.dart';
+import 'package:safernotes_app/shared/models/note.dart';
+import 'package:safernotes_app/shared/models/session.dart';
 
 class ApiException implements Exception {
   ApiException(this.message, this.statusCode);

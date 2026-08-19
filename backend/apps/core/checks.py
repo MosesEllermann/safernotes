@@ -12,7 +12,7 @@ def production_configuration_check(app_configs, **kwargs):
         issues.append(
             Error(
                 "Production SECRET_KEY must not use the development default.",
-                id="zknotes.E001",
+                id="safernotes.E001",
             )
         )
 
@@ -21,7 +21,7 @@ def production_configuration_check(app_configs, **kwargs):
         issues.append(
             Error(
                 "Production must use Postgres, not SQLite.",
-                id="zknotes.E002",
+                id="safernotes.E002",
             )
         )
 
@@ -29,7 +29,7 @@ def production_configuration_check(app_configs, **kwargs):
         issues.append(
             Error(
                 "Production must use a real transactional email backend.",
-                id="zknotes.E003",
+                id="safernotes.E003",
             )
         )
 
@@ -47,7 +47,7 @@ def production_configuration_check(app_configs, **kwargs):
                 Error(
                     "Paddle billing is enabled but required settings are missing: "
                     + ", ".join(missing),
-                    id="zknotes.E004",
+                    id="safernotes.E004",
                 )
             )
 
@@ -55,7 +55,7 @@ def production_configuration_check(app_configs, **kwargs):
         issues.append(
             Warning(
                 "Production CORS_ALLOWED_ORIGINS should not include localhost origins.",
-                id="zknotes.W001",
+                id="safernotes.W001",
             )
         )
 

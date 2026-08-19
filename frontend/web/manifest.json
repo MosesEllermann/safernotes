@@ -1,11 +1,11 @@
 {
-    "name": "zknotes_app",
-    "short_name": "zknotes_app",
+    "name": "Safernotes",
+    "short_name": "Safernotes",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Private encrypted notes, lists, and reminders.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

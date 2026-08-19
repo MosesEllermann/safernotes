@@ -1,7 +1,7 @@
 replicaCount: 2
 
 image:
-  repository: zknotes-api
+  repository: safernotes-api
   tag: latest
   pullPolicy: IfNotPresent
 

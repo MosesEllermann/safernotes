@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:zknotes_app/features/auth/auth_controller.dart';
-import 'package:zknotes_app/features/notes/note_editor_screen.dart';
-import 'package:zknotes_app/features/notes/notes_controller.dart';
-import 'package:zknotes_app/features/settings/settings_screen.dart';
-import 'package:zknotes_app/shared/app/app_l10n.dart';
-import 'package:zknotes_app/shared/models/note.dart';
-import 'package:zknotes_app/shared/notifications/reminder_notifications.dart';
-import 'package:zknotes_app/shared/widgets/animated_icon_button.dart';
+import 'package:safernotes_app/features/auth/auth_controller.dart';
+import 'package:safernotes_app/features/notes/note_editor_screen.dart';
+import 'package:safernotes_app/features/notes/notes_controller.dart';
+import 'package:safernotes_app/features/settings/settings_screen.dart';
+import 'package:safernotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/shared/models/note.dart';
+import 'package:safernotes_app/shared/notifications/reminder_notifications.dart';
+import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 final noteSearchProvider = StateProvider<String>((ref) => '');
 final sideNavExpandedProvider = StateProvider<bool>((ref) => true);
@@ -105,7 +105,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     child: Center(
                       child: AppIconButton(
                         tooltip: 'Menü',
-                        icon: LucideIcons.panelLeft,
+                        icon: LucideIcons.menu,
                         onPressed: () => _showNavigationSheet(context, ref),
                       ),
                     ),

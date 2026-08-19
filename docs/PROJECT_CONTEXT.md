@@ -2,7 +2,7 @@
 
 ## Summary
 
-ZK Notes is a zero-knowledge encrypted note-taking application. The backend stores encrypted envelopes and rejects plaintext note content. The frontend is a Flutter app targeting web, Android, and iOS.
+Safernotes is a zero-knowledge encrypted note-taking application. The backend stores encrypted envelopes and rejects plaintext note content. The frontend is a Flutter app targeting web, Android, and iOS.
 
 ## Repository Layout
 

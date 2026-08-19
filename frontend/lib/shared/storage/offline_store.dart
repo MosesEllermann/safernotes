@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:zknotes_app/shared/crypto/crypto_service.dart';
-import 'package:zknotes_app/shared/models/encrypted_envelope.dart';
-import 'package:zknotes_app/shared/models/note.dart';
+import 'package:safernotes_app/shared/crypto/crypto_service.dart';
+import 'package:safernotes_app/shared/models/encrypted_envelope.dart';
+import 'package:safernotes_app/shared/models/note.dart';
 
 class OfflineStore {
   OfflineStore(this._crypto);

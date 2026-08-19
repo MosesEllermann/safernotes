@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zknotes_app/shared/app/app_l10n.dart';
-import 'package:zknotes_app/shared/app/app_preferences.dart';
+import 'package:safernotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/shared/app/app_preferences.dart';
 
 class SettingsSheet extends ConsumerWidget {
   const SettingsSheet({super.key});

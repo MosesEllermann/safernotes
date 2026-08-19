@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:zknotes_app/features/auth/auth_controller.dart';
-import 'package:zknotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/features/auth/auth_controller.dart';
+import 'package:safernotes_app/shared/app/app_l10n.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zknotes_app/shared/models/encrypted_envelope.dart';
-import 'package:zknotes_app/shared/models/session.dart';
-import 'package:zknotes_app/shared/providers.dart';
+import 'package:safernotes_app/shared/models/encrypted_envelope.dart';
+import 'package:safernotes_app/shared/models/session.dart';
+import 'package:safernotes_app/shared/providers.dart';
 
 final authControllerProvider =
     AsyncNotifierProvider<AuthController, AppSession?>(

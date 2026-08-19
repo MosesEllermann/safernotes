@@ -1,4 +1,4 @@
-import 'package:zknotes_app/shared/models/encrypted_envelope.dart';
+import 'package:safernotes_app/shared/models/encrypted_envelope.dart';
 
 class AppSession {
   const AppSession({

@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zknotes_app/shared/api/api_client.dart';
-import 'package:zknotes_app/shared/crypto/crypto_service.dart';
-import 'package:zknotes_app/shared/storage/offline_store.dart';
+import 'package:safernotes_app/shared/api/api_client.dart';
+import 'package:safernotes_app/shared/crypto/crypto_service.dart';
+import 'package:safernotes_app/shared/storage/offline_store.dart';
 
 const apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',

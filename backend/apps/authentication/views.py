@@ -36,8 +36,8 @@ def send_email_verification_code(user: User) -> None:
         expires_at=timezone.now() + timedelta(minutes=30),
     )
     send_mail(
-        "Verify your ZK Notes email",
-        f"Use this verification code to confirm your ZK Notes email: {code}\n\n"
+        "Verify your Safernotes email",
+        f"Use this verification code to confirm your Safernotes email: {code}\n\n"
         "The code expires in 30 minutes. If you did not create this account, you can ignore this email.",
         None,
         [user.email],
@@ -199,8 +199,8 @@ class RecoveryStartView(views.APIView):
                 expires_at=timezone.now() + timedelta(minutes=15),
             )
             send_mail(
-                "Your ZK Notes recovery code",
-                f"Use this recovery code to reset your ZK Notes password: {code}\n\n"
+                "Your Safernotes recovery code",
+                f"Use this recovery code to reset your Safernotes password: {code}\n\n"
                 "The code expires in 15 minutes. If you did not request it, you can ignore this email.",
                 None,
                 [user.email],

@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zknotes_app/shared/app/app_preferences.dart';
+import 'package:safernotes_app/shared/app/app_preferences.dart';
 
 final l10nProvider = Provider<AppL10n>((ref) {
   final prefs = ref.watch(appPreferencesProvider).valueOrNull;
@@ -24,7 +24,7 @@ class AppL10n {
 
 const _strings = {
   'en': {
-    'appName': 'ZK Notes',
+    'appName': 'Safernotes',
     'welcomeBack': 'Welcome back',
     'createVault': 'Create your vault',
     'login': 'Login',
@@ -107,7 +107,7 @@ const _strings = {
     'link': 'Link',
   },
   'de': {
-    'appName': 'ZK Notizen',
+    'appName': 'Safernotes',
     'welcomeBack': 'Willkommen zurück',
     'createVault': 'Tresor erstellen',
     'login': 'Anmelden',

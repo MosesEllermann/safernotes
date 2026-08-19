@@ -6,7 +6,7 @@ FRONTEND_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 cd "$FRONTEND_DIR"
 
 if [ ! -d web ] || [ ! -d android ] || [ ! -d ios ]; then
-  ./tool/flutterw create --project-name zknotes_app --platforms=web,android,ios .
+  ./tool/flutterw create --project-name safernotes_app --platforms=web,android,ios .
 fi
 
 ./tool/flutterw pub get

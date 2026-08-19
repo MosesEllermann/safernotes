@@ -3,10 +3,10 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
-import 'package:zknotes_app/features/auth/auth_controller.dart';
-import 'package:zknotes_app/shared/api/api_client.dart';
-import 'package:zknotes_app/shared/models/note.dart';
-import 'package:zknotes_app/shared/providers.dart';
+import 'package:safernotes_app/features/auth/auth_controller.dart';
+import 'package:safernotes_app/shared/api/api_client.dart';
+import 'package:safernotes_app/shared/models/note.dart';
+import 'package:safernotes_app/shared/providers.dart';
 
 final notesControllerProvider =
     AsyncNotifierProvider<NotesController, List<PlainNote>>(

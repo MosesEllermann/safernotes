@@ -33,7 +33,7 @@ env = environ.Env(
     BILLING_SUCCESS_URL=(str, ""),
     BILLING_WEBHOOK_SECRET=(str, ""),
     EMAIL_BACKEND=(str, "django.core.mail.backends.console.EmailBackend"),
-    DEFAULT_FROM_EMAIL=(str, "ZK Notes <noreply@localhost>"),
+    DEFAULT_FROM_EMAIL=(str, "Safernotes <noreply@localhost>"),
 )
 
 if (ROOT_DIR / ".env").exists():
@@ -157,7 +157,7 @@ LOGGING = {
         }
     },
     "loggers": {
-        "zknotes.security": {
+        "safernotes.security": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

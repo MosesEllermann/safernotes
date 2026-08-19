@@ -1,6 +1,6 @@
-# ZK Notizen website
+# Safernotes website
 
-Static marketing website for ZK Notizen. No framework, no build step, no dev
+Static marketing website for Safernotes. No framework, no build step, no dev
 server required.
 
 ## Files
@@ -30,6 +30,8 @@ Replace or finalize these before publishing:
 - Datenschutz provider details, legal bases, storage locations, and processor list
 - final legal review of all legal pages
 - production app URL and production support email
+- self-host the free fonts currently loaded from Google Fonts, or replace the
+  import with locally hosted font files for production/privacy compliance
 
 The yellow/black `Livegang-TODO` bars and small `TODO` link badges intentionally
 mark unfinished production details.

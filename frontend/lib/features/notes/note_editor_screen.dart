@@ -5,11 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:uuid/uuid.dart';
-import 'package:zknotes_app/features/notes/notes_controller.dart';
-import 'package:zknotes_app/shared/app/app_l10n.dart';
-import 'package:zknotes_app/shared/models/note.dart';
-import 'package:zknotes_app/shared/notifications/reminder_notifications.dart';
-import 'package:zknotes_app/shared/widgets/animated_icon_button.dart';
+import 'package:safernotes_app/features/notes/notes_controller.dart';
+import 'package:safernotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/shared/models/note.dart';
+import 'package:safernotes_app/shared/notifications/reminder_notifications.dart';
+import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 class NoteEditorScreen extends StatelessWidget {
   const NoteEditorScreen({super.key, required this.note});

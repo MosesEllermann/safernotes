@@ -1,11 +1,11 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: zknotes-api-ingress
+  name: safernotes-api-ingress
 spec:
   podSelector:
     matchLabels:
-      app: zknotes-api
+      app: safernotes-api
   policyTypes:
     - Ingress
     - Egress

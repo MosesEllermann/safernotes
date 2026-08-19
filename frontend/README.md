@@ -1,4 +1,4 @@
-# ZK Notes prototype app
+# Safernotes prototype app
 
 This is the first user-facing Flutter app for web, Android, and iOS.
 
@@ -23,7 +23,7 @@ Install Flutter first, then run:
 
 ```sh
 cd frontend
-flutter create --project-name zknotes_app --platforms=web,android,ios .
+flutter create --project-name safernotes_app --platforms=web,android,ios .
 flutter pub get
 flutter run -d chrome --dart-define=API_BASE_URL=http://127.0.0.1:8000
 ```

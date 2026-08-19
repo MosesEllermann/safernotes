@@ -26,7 +26,7 @@ class PlanPolicy:
 PLAN_POLICIES = {
     "free": PlanPolicy(
         key="free",
-        storage_bytes=100 * 1024 * 1024,
+        storage_bytes=500 * 1024 * 1024,
         max_notes=500,
         max_attachment_bytes=10 * 1024 * 1024,
         max_collaborators_per_note=3,
@@ -41,7 +41,7 @@ PLAN_POLICIES = {
     ),
     "essential": PlanPolicy(
         key="essential",
-        storage_bytes=1024 * 1024 * 1024,
+        storage_bytes=5 * 1024 * 1024 * 1024,
         max_notes=5000,
         max_attachment_bytes=100 * 1024 * 1024,
         max_collaborators_per_note=5,
@@ -56,7 +56,7 @@ PLAN_POLICIES = {
     ),
     "pro": PlanPolicy(
         key="pro",
-        storage_bytes=10 * 1024 * 1024 * 1024,
+        storage_bytes=25 * 1024 * 1024 * 1024,
         max_notes=None,
         max_attachment_bytes=250 * 1024 * 1024,
         max_collaborators_per_note=25,

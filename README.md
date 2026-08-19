@@ -1,6 +1,6 @@
-# ZK Notes
+# Safernotes
 
-ZK Notes is a zero-knowledge encrypted notes prototype with a Django backend and a Flutter client for web, Android, and iOS.
+Safernotes is a zero-knowledge encrypted notes prototype with a Django backend and a Flutter client for web, Android, and iOS.
 
 The backend stores encrypted envelopes for user-facing content. The frontend owns encryption, local offline storage, note editing, checklist mode, autosync, archive/trash views, language/theme settings, and the current sticky-note UI.
 

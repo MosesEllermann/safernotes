@@ -1,5 +1,5 @@
 [project]
-name = "zknotes-backend"
+name = "safernotes-backend"
 version = "0.1.0"
 description = "Zero-knowledge SaaS notes backend"
 requires-python = ">=3.11"

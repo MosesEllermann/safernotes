@@ -61,16 +61,16 @@ def test_health_ready_checks_database(db):
 def test_production_configuration_check_flags_unsafe_launch_settings():
     issue_ids = {issue.id for issue in production_configuration_check(None)}
 
-    assert "zknotes.E001" in issue_ids
-    assert "zknotes.E002" in issue_ids
-    assert "zknotes.E003" in issue_ids
-    assert "zknotes.E004" in issue_ids
-    assert "zknotes.W001" in issue_ids
+    assert "safernotes.E001" in issue_ids
+    assert "safernotes.E002" in issue_ids
+    assert "safernotes.E003" in issue_ids
+    assert "safernotes.E004" in issue_ids
+    assert "safernotes.W001" in issue_ids
 
 
 @override_settings(
     SECRET_KEY="production-secret",
-    DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "zknotes"}},
+    DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "safernotes"}},
     EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
     BILLING_PROVIDER="paddle",
     BILLING_API_KEY="pdl_sdbx_apikey_test",

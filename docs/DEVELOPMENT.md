@@ -51,7 +51,7 @@ From the repository root:
 ```sh
 git init
 git add .
-git commit -m "Initial ZK Notes prototype"
+git commit -m "Initial Safernotes prototype"
 git branch -M main
 git remote add origin git@github.com:YOUR_USER/YOUR_REPO.git
 git push -u origin main

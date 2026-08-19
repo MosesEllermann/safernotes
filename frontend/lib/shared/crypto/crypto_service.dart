@@ -4,9 +4,9 @@ import 'dart:math';
 import 'package:cryptography/cryptography.dart';
 import 'package:hashlib/hashlib.dart' as hashlib;
 import 'package:uuid/uuid.dart';
-import 'package:zknotes_app/shared/models/encrypted_envelope.dart';
-import 'package:zknotes_app/shared/models/note.dart';
-import 'package:zknotes_app/shared/models/session.dart';
+import 'package:safernotes_app/shared/models/encrypted_envelope.dart';
+import 'package:safernotes_app/shared/models/note.dart';
+import 'package:safernotes_app/shared/models/session.dart';
 
 class CryptoService {
   static const passwordKdfAlgorithm = 'argon2id';

@@ -1,4 +1,4 @@
-package com.example.zknotes_app
+package com.safernotes.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ZK Notizen - Verschlüsselte Notizen für klare Gedanken</title>
+    <title>Safernotes - Verschlüsselte Notizen für klare Gedanken</title>
     <meta
       name="description"
-      content="ZK Notizen ist eine moderne, zero-knowledge verschlüsselte Notizen-App für Notizen, Checklisten, Erinnerungen und persönliche Organisation."
+      content="Safernotes ist eine moderne, zero-knowledge verschlüsselte Notizen-App für Notizen, Checklisten, Erinnerungen und persönliche Organisation."
     />
     <link rel="stylesheet" href="./styles.css" />
     <script src="./menu.js" defer></script>
@@ -18,9 +18,9 @@
     </div>
 
     <header class="site-header">
-      <a class="brand" href="./index.html" aria-label="ZK Notizen Startseite">
-        <span class="brand-mark">ZK</span>
-        <span class="brand-name">ZK Notizen</span>
+      <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
+        <span class="brand-mark">S</span>
+        <span class="brand-name">Safernotes</span>
       </a>
       <nav class="site-nav" aria-label="Hauptnavigation">
         <a href="#security">Zero Knowledge</a>
@@ -54,7 +54,7 @@
           <p class="eyebrow">Private notes, calm workflow</p>
           <h1 id="hero-title">Notizen, die niemand mitliest.</h1>
           <p class="hero-lead">
-            ZK Notizen verbindet schnelle Notizen, Checklisten und Erinnerungen
+            Safernotes verbindet schnelle Notizen, Checklisten und Erinnerungen
             mit einer Zero-Knowledge-Architektur. Deine Inhalte werden
             clientseitig verschlüsselt, bevor sie synchronisiert werden.
           </p>
@@ -191,22 +191,50 @@
             Suite, sondern ein fokussierter Ort für Gedanken, Aufgaben und
             Erinnerungen.
           </p>
+          <div class="workflow-mini-stats" aria-label="Workflow Eigenschaften">
+            <span>Markdown Preview</span>
+            <span>Checklisten</span>
+            <span>Lokale Erinnerungen</span>
+          </div>
         </div>
-        <div class="timeline">
-          <article>
-            <span>Notiz</span>
+        <div class="workflow-cards">
+          <article class="workflow-card note-workflow">
+            <div class="workflow-card-top">
+              <span class="workflow-number">01</span>
+              <span class="workflow-type">Notiz</span>
+            </div>
             <h3>Gedanken sofort festhalten</h3>
             <p>Eine kurze Idee, Meeting-Notizen oder ein längerer Entwurf.</p>
+            <div class="workflow-preview text-preview" aria-hidden="true">
+              <strong>Reiseideen</strong>
+              <span>Packliste ergänzen, Lieblingsorte sammeln, ruhige Morgen planen.</span>
+            </div>
           </article>
-          <article>
-            <span>Liste</span>
+          <article class="workflow-card list-workflow">
+            <div class="workflow-card-top">
+              <span class="workflow-number">02</span>
+              <span class="workflow-type">Liste</span>
+            </div>
             <h3>Checklisten ohne Reibung</h3>
             <p>Neue Punkte entstehen direkt beim Schreiben und bleiben scannbar.</p>
+            <div class="workflow-preview checklist-preview" aria-hidden="true">
+              <span class="done">Milch kaufen</span>
+              <span class="done">Rechnung ablegen</span>
+              <span>Geburtstagskarte schreiben</span>
+            </div>
           </article>
-          <article>
-            <span>Erinnerung</span>
+          <article class="workflow-card reminder-workflow">
+            <div class="workflow-card-top">
+              <span class="workflow-number">03</span>
+              <span class="workflow-type">Erinnerung</span>
+            </div>
             <h3>Wichtige Notizen wiederfinden</h3>
             <p>Eine Notiz kann zur Erinnerung werden, ohne ihre Privatsphäre zu verlieren.</p>
+            <div class="workflow-preview reminder-preview" aria-hidden="true">
+              <span>Heute</span>
+              <strong>10:00</strong>
+              <em>Review PRs</em>
+            </div>
           </article>
         </div>
       </section>
@@ -230,7 +258,7 @@
             <p class="price-note">Für den privaten Einstieg</p>
             <ul>
               <li>Bis zu 500 Notizen</li>
-              <li>100 MB Speicher</li>
+              <li>500 MB Speicher</li>
               <li>Basis-Synchronisierung</li>
             </ul>
             <a class="button button-plan todo-link" href="http://localhost:3000/">
@@ -248,7 +276,7 @@
             <p class="price-note">1,50 € pro Monat, jährlich abgerechnet</p>
             <ul>
               <li>Bis zu 5.000 Notizen</li>
-              <li>1 GB Speicher</li>
+              <li>5 GB Speicher</li>
               <li>Erweiterte Historie</li>
             </ul>
             <a class="button button-primary todo-link" href="http://localhost:3000/">
@@ -265,7 +293,7 @@
             <p class="price-note">5 € pro Monat, jährlich abgerechnet</p>
             <ul>
               <li>Unbegrenzte Notizen</li>
-              <li>10 GB Speicher</li>
+              <li>25 GB Speicher</li>
               <li>Mehr Kollaboration</li>
             </ul>
             <a class="button button-plan todo-link" href="http://localhost:3000/">
@@ -277,7 +305,7 @@
 
       <section class="section closing-section">
         <div>
-          <p class="eyebrow">Launch-ready foundation</p>
+          <p class="eyebrow">Vertrauenswürdige Grundlage</p>
           <h2>Eine Notizen-App, die Vertrauen nicht nur behauptet.</h2>
           <p>
             Zero-Knowledge-Architektur, klare Preise und ein Interface, das sich
@@ -293,8 +321,8 @@
     <footer class="site-footer">
       <div>
         <a class="brand footer-brand" href="./index.html">
-          <span class="brand-mark">ZK</span>
-          <span class="brand-name">ZK Notizen</span>
+          <span class="brand-mark">S</span>
+          <span class="brand-name">Safernotes</span>
         </a>
         <p>Verschlüsselte Notizen für klare Gedanken.</p>
       </div>
