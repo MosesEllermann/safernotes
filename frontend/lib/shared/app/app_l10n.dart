@@ -54,6 +54,8 @@ const _strings = {
     'noRecovery': 'No recovery key is available for this account.',
     'badRecoveryCode': 'The recovery code is invalid or expired.',
     'badRecoveryKey': 'The recovery key could not unlock this vault.',
+    'vaultUnlockFailed':
+        'This password could not unlock your encrypted vault.',
     'saveRecoveryKey': 'Save your recovery key',
     'recoveryKeyHint':
         'Keep this key somewhere safe. It is required to reset your password without losing notes.',
@@ -138,6 +140,8 @@ const _strings = {
     'badRecoveryCode':
         'Der Wiederherstellungscode ist ungültig oder abgelaufen.',
     'badRecoveryKey': 'Der Recovery-Key konnte diesen Tresor nicht entsperren.',
+    'vaultUnlockFailed':
+        'Dieses Passwort konnte deinen verschlüsselten Tresor nicht entsperren.',
     'saveRecoveryKey': 'Recovery-Key speichern',
     'recoveryKeyHint':
         'Bewahre diesen Key sicher auf. Du brauchst ihn, um dein Passwort ohne Notizverlust zurückzusetzen.',

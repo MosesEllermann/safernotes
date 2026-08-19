@@ -81,7 +81,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       code: _code,
       recoveryKey: _recoveryKey,
       newPassword: _newPassword,
-      error: error == null ? null : _cleanError(error, l10n),
+      error: error == null ? null : _cleanError(error, l10n, _recovering),
       onModeChanged: (value) => setState(() => _registering = value),
       onTogglePassword: _togglePassword,
       onSubmit: _submit,
@@ -310,7 +310,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     );
   }
 
-  String _cleanError(String value, AppL10n l10n) {
+  String _cleanError(String value, AppL10n l10n, bool recovering) {
     if (value.contains('SocketException')) return l10n.t('serverUnreachable');
     if (value.contains('Invalid credentials')) return l10n.t('badCredentials');
     if (value.contains('Invalid recovery code')) {
@@ -318,7 +318,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
     if (value.contains('SecretBoxAuthenticationError') ||
         value.contains('authentication')) {
-      return l10n.t('badRecoveryKey');
+      return l10n.t(recovering ? 'badRecoveryKey' : 'vaultUnlockFailed');
     }
     return value.replaceFirst('Exception: ', '');
   }

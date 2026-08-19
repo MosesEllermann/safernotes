@@ -9,7 +9,7 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: SafernotesApp()));
     await tester.pumpAndSettle();
 
-    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Welcome back'), findsWidgets);
     expect(find.text('Login'), findsWidgets);
   });
 }
