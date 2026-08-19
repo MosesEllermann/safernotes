@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hashlib/hashlib.dart' as hashlib;
 import 'package:uuid/uuid.dart';
 import 'package:safernotes_app/shared/models/encrypted_envelope.dart';
@@ -14,6 +15,13 @@ class CryptoService {
     'version': 19,
     'memory': 65536,
     'iterations': 3,
+    'parallelism': 1,
+    'bits': 256,
+  };
+  static const webPasswordKdfParams = <String, Object>{
+    'version': 19,
+    'memory': 8192,
+    'iterations': 2,
     'parallelism': 1,
     'bits': 256,
   };
@@ -155,7 +163,12 @@ class CryptoService {
   }) async {
     final masterKey = randomBytes(32);
     final passwordSalt = randomBytes(16);
-    final passwordKey = await derivePasswordKey(password, passwordSalt);
+    final kdfParams = kIsWeb ? webPasswordKdfParams : passwordKdfParams;
+    final passwordKey = await derivePasswordKey(
+      password,
+      passwordSalt,
+      params: kdfParams,
+    );
     final recoveryKeyBytes = randomBytes(32);
     final recoveryKey = base64UrlNoPad(recoveryKeyBytes);
     final encryptionPair = await _x25519.newKeyPair();
@@ -172,7 +185,7 @@ class CryptoService {
       masterKey: masterKey,
       recoveryKey: recoveryKey,
       kdfAlgorithm: passwordKdfAlgorithm,
-      kdfParams: passwordKdfParams,
+      kdfParams: kdfParams,
       passwordSalt: base64UrlNoPad(passwordSalt),
       publicEncryptionKey: publicEncryptionKey,
       publicSigningKey: publicSigningKey,
@@ -230,10 +243,15 @@ class CryptoService {
     required String password,
   }) async {
     final passwordSalt = randomBytes(16);
-    final passwordKey = await derivePasswordKey(password, passwordSalt);
+    final kdfParams = kIsWeb ? webPasswordKdfParams : passwordKdfParams;
+    final passwordKey = await derivePasswordKey(
+      password,
+      passwordSalt,
+      params: kdfParams,
+    );
     return PasswordWrappedMasterKey(
       kdfAlgorithm: passwordKdfAlgorithm,
-      kdfParams: passwordKdfParams,
+      kdfParams: kdfParams,
       passwordSalt: base64UrlNoPad(passwordSalt),
       encryptedMasterKey: await encryptString(
         base64UrlNoPad(masterKey),
