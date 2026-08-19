@@ -196,6 +196,8 @@ GitHub Actions macht dann:
 7. Migrationen ausführen
 8. API Healthcheck prüfen
 
+Die SPanel-Deploys schuetzen vorhandene `.htaccess`- und `.well-known/`-Dateien, damit SSL-Erneuerungen und Panel-Regeln nicht durch `rsync --delete` entfernt werden.
+
 ## 9. Backups
 
 Auf dem Ubuntu-Host:

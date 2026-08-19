@@ -109,8 +109,8 @@ jobs:
           chmod 600 ~/.ssh/spanel_deploy_key
           ssh-keyscan -p "${SPANEL_PORT:-22}" -H "$SPANEL_HOST" >> ~/.ssh/known_hosts
 
-          rsync -az --delete -e "ssh -p ${SPANEL_PORT:-22} -i ~/.ssh/spanel_deploy_key" website/ "$SPANEL_USER@$SPANEL_HOST:$SPANEL_LANDING_PATH/"
-          rsync -az --delete -e "ssh -p ${SPANEL_PORT:-22} -i ~/.ssh/spanel_deploy_key" frontend/build/web/ "$SPANEL_USER@$SPANEL_HOST:$SPANEL_APP_PATH/"
+          rsync -az --delete --exclude '.htaccess' --exclude '.well-known/' -e "ssh -p ${SPANEL_PORT:-22} -i ~/.ssh/spanel_deploy_key" website/ "$SPANEL_USER@$SPANEL_HOST:$SPANEL_LANDING_PATH/"
+          rsync -az --delete --exclude '.htaccess' --exclude '.well-known/' -e "ssh -p ${SPANEL_PORT:-22} -i ~/.ssh/spanel_deploy_key" frontend/build/web/ "$SPANEL_USER@$SPANEL_HOST:$SPANEL_APP_PATH/"
 
       - name: Deploy backend to Ubuntu host
         if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}

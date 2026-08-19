@@ -11,5 +11,5 @@ TARGET="$2"
 LANDING_PATH="$3"
 APP_PATH="$4"
 
-rsync -az --delete -e "ssh -i $SSH_KEY" website/ "$TARGET:$LANDING_PATH/"
-rsync -az --delete -e "ssh -i $SSH_KEY" frontend/build/web/ "$TARGET:$APP_PATH/"
+rsync -az --delete --exclude '.htaccess' --exclude '.well-known/' -e "ssh -i $SSH_KEY" website/ "$TARGET:$LANDING_PATH/"
+rsync -az --delete --exclude '.htaccess' --exclude '.well-known/' -e "ssh -i $SSH_KEY" frontend/build/web/ "$TARGET:$APP_PATH/"
