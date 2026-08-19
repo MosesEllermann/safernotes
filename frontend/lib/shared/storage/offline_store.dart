@@ -45,13 +45,15 @@ class OfflineStore {
 
   Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
+    final notesKey = await _currentNotesKey();
     await prefs.remove(_sessionKey);
+    await prefs.remove(notesKey);
     await prefs.remove(_notesKey);
   }
 
   Future<List<PlainNote>> loadNotes() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_notesKey);
+    final raw = prefs.getString(await _currentNotesKey());
     if (raw == null) return [];
     final vault = await localVaultKey();
     final envelope = EncryptedEnvelope.fromJson(
@@ -71,6 +73,16 @@ class OfflineStore {
       jsonEncode(notes.map((note) => note.toPlainJson()).toList()),
       vault,
     );
-    await prefs.setString(_notesKey, jsonEncode(envelope.toJson()));
+    await prefs.setString(
+        await _currentNotesKey(), jsonEncode(envelope.toJson()));
+  }
+
+  Future<String> _currentNotesKey() async {
+    final session = await loadSessionJson();
+    if (session == null) return _notesKey;
+    final email = session['email'] as String? ?? '';
+    final tenant = session['defaultTenant'] as String? ?? '';
+    final scope = _crypto.base64UrlNoPad(utf8.encode('$email:$tenant'));
+    return '$_notesKey.$scope';
   }
 }

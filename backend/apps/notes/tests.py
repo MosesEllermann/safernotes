@@ -154,6 +154,26 @@ def test_note_serializer_conflict_raises_409(db, django_user_model):
         serializer.save()
 
 
+def test_note_serializer_ignores_expected_version_on_create(tenant, owner_user):
+    request = type("Request", (), {"user": owner_user})()
+    serializer = NoteSerializer(
+        data={
+            "tenant": str(tenant.id),
+            "expected_version": 1,
+            "encrypted_payload": encrypted_payload(),
+            "payload_hash": "client-hash",
+            "client_updated_at": "2026-06-10T00:00:00Z",
+        },
+        context={"request": request},
+    )
+
+    assert serializer.is_valid()
+    note = serializer.save()
+
+    assert note.owner_user == owner_user
+    assert note.version == 1
+
+
 def test_sync_batch_requires_idempotency_key():
     serializer = SyncBatchSerializer(
         data={
