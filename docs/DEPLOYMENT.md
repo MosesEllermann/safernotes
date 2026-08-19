@@ -72,7 +72,7 @@ Wichtige Werte:
 DJANGO_SETTINGS_MODULE=config.settings.production
 DEBUG=False
 SECRET_KEY=<langes-zufaelliges-secret>
-ALLOWED_HOSTS=api.safernotes.com
+ALLOWED_HOSTS=api.safernotes.com,127.0.0.1,localhost
 CORS_ALLOWED_ORIGINS=https://app.safernotes.com
 POSTGRES_PASSWORD=<langes-zufaelliges-db-passwort>
 DATABASE_URL=postgres://safernotes:<gleiches-db-passwort>@postgres:5432/safernotes
