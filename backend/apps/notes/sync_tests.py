@@ -3,8 +3,7 @@ from __future__ import annotations
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from apps.notes.models import Note
-from apps.notes.sync import SyncBatchSerializer
-from apps.notes.sync import SyncBatchView
+from apps.notes.sync import SyncBatchSerializer, SyncBatchView
 from apps.notes.sync_models import SyncOperationReceipt
 from apps.notes.views import NoteViewSet
 
