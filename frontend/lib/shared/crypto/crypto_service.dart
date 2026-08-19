@@ -1,29 +1,24 @@
+// ignore_for_file: implementation_imports
+
 import 'dart:convert';
 import 'dart:math';
 
 import 'package:cryptography/cryptography.dart';
-import 'package:flutter/foundation.dart';
 import 'package:hashlib/hashlib.dart' as hashlib;
+import 'package:hashlib/src/algorithms/argon2/argon2_32bit.dart'
+    as hashlib_legacy_web_argon2;
+import 'package:hashlib/src/algorithms/argon2/common.dart'
+    as hashlib_argon2_common;
 import 'package:uuid/uuid.dart';
 import 'package:safernotes_app/shared/models/encrypted_envelope.dart';
 import 'package:safernotes_app/shared/models/note.dart';
 import 'package:safernotes_app/shared/models/session.dart';
 
 class CryptoService {
-  static const passwordKdfAlgorithm = 'argon2id';
+  static const passwordKdfAlgorithm = 'pbkdf2-sha256';
   static const passwordKdfParams = <String, Object>{
-    'version': 19,
-    'memory': 65536,
-    'iterations': 3,
-    'parallelism': 1,
     'bits': 256,
-  };
-  static const webPasswordKdfParams = <String, Object>{
-    'version': 19,
-    'memory': 8192,
-    'iterations': 2,
-    'parallelism': 1,
-    'bits': 256,
+    'iterations': 210000,
   };
 
   CryptoService({
@@ -97,6 +92,36 @@ class CryptoService {
     return argon2.convert(utf8.encode(password)).bytes;
   }
 
+  List<int> _deriveLegacyWebArgon2idPasswordKey(
+    String password,
+    List<int> salt,
+    Map<String, dynamic>? params,
+  ) {
+    final merged = {
+      'version': 19,
+      'memory': 8192,
+      'iterations': 2,
+      'parallelism': 1,
+      'bits': 256,
+      ...?params,
+    };
+    final bits = (merged['bits'] as num?)?.toInt() ?? 256;
+    final version = (merged['version'] as num?)?.toInt() ?? 19;
+    final context = hashlib_argon2_common.Argon2Context(
+      type: hashlib_argon2_common.Argon2Type.argon2id,
+      version: version == 16
+          ? hashlib_argon2_common.Argon2Version.v10
+          : hashlib_argon2_common.Argon2Version.v13,
+      hashLength: bits ~/ 8,
+      salt: salt,
+      iterations: (merged['iterations'] as num?)?.toInt() ?? 2,
+      memorySizeKB: (merged['memory'] as num?)?.toInt() ?? 8192,
+      parallelism: (merged['parallelism'] as num?)?.toInt() ?? 1,
+    );
+    return hashlib_legacy_web_argon2.Argon2Internal(context)
+        .convert(utf8.encode(password));
+  }
+
   Future<List<int>> _deriveLegacyPbkdf2PasswordKey(
     String password,
     List<int> salt,
@@ -163,7 +188,7 @@ class CryptoService {
   }) async {
     final masterKey = randomBytes(32);
     final passwordSalt = randomBytes(16);
-    final kdfParams = kIsWeb ? webPasswordKdfParams : passwordKdfParams;
+    const kdfParams = passwordKdfParams;
     final passwordKey = await derivePasswordKey(
       password,
       passwordSalt,
@@ -223,8 +248,21 @@ class CryptoService {
       algorithm: kdfAlgorithm,
       params: kdfParams,
     );
-    final encodedMaster = await decryptString(encryptedMasterKey, passwordKey);
-    return decodeBase64UrlNoPad(encodedMaster);
+    try {
+      final encodedMaster =
+          await decryptString(encryptedMasterKey, passwordKey);
+      return decodeBase64UrlNoPad(encodedMaster);
+    } on SecretBoxAuthenticationError {
+      if (kdfAlgorithm != 'argon2id') rethrow;
+      final legacyWebPasswordKey = _deriveLegacyWebArgon2idPasswordKey(
+        password,
+        decodeBase64UrlNoPad(passwordSalt),
+        kdfParams,
+      );
+      final encodedMaster =
+          await decryptString(encryptedMasterKey, legacyWebPasswordKey);
+      return decodeBase64UrlNoPad(encodedMaster);
+    }
   }
 
   Future<List<int>> unlockMasterKeyWithRecovery({
@@ -243,7 +281,7 @@ class CryptoService {
     required String password,
   }) async {
     final passwordSalt = randomBytes(16);
-    final kdfParams = kIsWeb ? webPasswordKdfParams : passwordKdfParams;
+    const kdfParams = passwordKdfParams;
     final passwordKey = await derivePasswordKey(
       password,
       passwordSalt,
