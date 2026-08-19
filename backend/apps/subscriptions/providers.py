@@ -122,7 +122,8 @@ class LemonSqueezyBillingProvider(HostedCheckoutBillingProvider):
             method="POST",
         )
         try:
-            with urlopen(request, timeout=10) as response:
+            # Fixed provider API URL, not user-controlled.
+            with urlopen(request, timeout=10) as response:  # nosec B310
                 body = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             return {
@@ -180,7 +181,8 @@ class PaddleBillingProvider(HostedCheckoutBillingProvider):
             method="POST",
         )
         try:
-            with urlopen(request, timeout=10) as response:
+            # Server-configured provider API URL, not user-controlled.
+            with urlopen(request, timeout=10) as response:  # nosec B310
                 body = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
             return {

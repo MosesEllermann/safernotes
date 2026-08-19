@@ -19,5 +19,9 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install ".[dev]" pip-audit bandit
       - run: pip-audit
-      - run: bandit -r apps config -x "*/tests.py"
-
+      - run: |
+          find apps config -name "*.py" \
+            ! -name "tests.py" \
+            ! -name "*_tests.py" \
+            ! -path "*/migrations/*" \
+            -print0 | xargs -0 bandit

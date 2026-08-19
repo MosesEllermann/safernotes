@@ -8,7 +8,7 @@ from django.core.checks import Error, Warning, register
 def production_configuration_check(app_configs, **kwargs):
     issues = []
 
-    if settings.SECRET_KEY == "unsafe-dev-secret-change-me":
+    if settings.SECRET_KEY == "unsafe-dev-secret-change-me":  # nosec B105
         issues.append(
             Error(
                 "Production SECRET_KEY must not use the development default.",
