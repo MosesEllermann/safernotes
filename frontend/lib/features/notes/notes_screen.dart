@@ -665,34 +665,31 @@ class _RailButton extends ConsumerWidget {
                   color: selected
                       ? Theme.of(context).colorScheme.onSurface
                       : Theme.of(context).colorScheme.onSurfaceVariant),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOutCubic,
-                child: expanded
-                    ? Padding(
-                        padding: const EdgeInsets.only(left: 14),
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.fade,
-                          softWrap: false,
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelLarge
-                              ?.copyWith(
-                                color: selected
-                                    ? Theme.of(context).colorScheme.onSurface
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                fontWeight: selected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                              ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
+              if (expanded)
+                Expanded(
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 14),
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: selected
+                                  ? Theme.of(context).colorScheme.onSurface
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                              fontWeight:
+                                  selected ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -1475,6 +1472,7 @@ class _MeasuredNoteDraggable extends StatefulWidget {
 
 class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
   final _cardKey = GlobalKey();
+  Size? _dragFeedbackSize;
 
   Size? get _cardSize {
     final renderObject = _cardKey.currentContext?.findRenderObject();
@@ -1488,13 +1486,13 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
       data: widget.note,
       feedback: _NoteDragFeedback(
         key: ValueKey('note-drag-feedback-${widget.note.localId}'),
-        note: widget.note,
-        sizeReader: () => _cardSize,
+        sizeReader: () => _dragFeedbackSize ?? _cardSize,
+        child: widget.child,
       ),
-      onDragStarted: widget.onDragStarted,
-      onDraggableCanceled: (_, __) => widget.onDragEnded(),
-      onDragEnd: (_) => widget.onDragEnded(),
-      onDragCompleted: widget.onDragEnded,
+      onDragStarted: _handleDragStarted,
+      onDraggableCanceled: (_, __) => _handleDragEnded(),
+      onDragEnd: (_) => _handleDragEnded(),
+      onDragCompleted: _handleDragEnded,
       childWhenDragging: widget.childWhenDragging,
       child: KeyedSubtree(
         key: _cardKey,
@@ -1502,54 +1500,37 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
       ),
     );
   }
+
+  void _handleDragStarted() {
+    _dragFeedbackSize = _cardSize;
+    widget.onDragStarted();
+  }
+
+  void _handleDragEnded() {
+    _dragFeedbackSize = null;
+    widget.onDragEnded();
+  }
 }
 
 class _NoteDragFeedback extends StatelessWidget {
   const _NoteDragFeedback({
     super.key,
-    required this.note,
     required this.sizeReader,
+    required this.child,
   });
 
-  final PlainNote note;
   final Size? Function() sizeReader;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final bg = _noteColorFor(context, note.color);
     final size = sizeReader() ?? const Size(260, 170);
     return Material(
-      color: note.color == 0xffffffff ? scheme.surface : bg,
-      elevation: 8,
-      shadowColor: Colors.black.withValues(alpha: 0.16),
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
+      type: MaterialType.transparency,
       child: SizedBox(
         width: size.width,
         height: size.height,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                note.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-              const SizedBox(height: 10),
-              Expanded(
-                child: note.checklist.isNotEmpty && note.body.trim().isEmpty
-                    ? _ChecklistPreview(items: note.checklist)
-                    : _FormattedPreview(text: note.body),
-              ),
-            ],
-          ),
-        ),
+        child: child,
       ),
     );
   }

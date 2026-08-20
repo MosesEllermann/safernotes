@@ -10,10 +10,20 @@ import 'package:safernotes_app/shared/models/note.dart';
 import 'package:safernotes_app/shared/models/session.dart';
 
 void main() {
-  testWidgets('note drag feedback keeps the rendered card size',
+  testWidgets('desktop note drag feedback keeps the rendered card size',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
-    final note = _note(
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final shortNote = _note(
+      localId: 'note-short',
+      title: 'Short measured note',
+      body: 'Tiny body.',
+    );
+    final longNote = _note(
       localId: 'note-long',
       title: 'Long measured note',
       body: List.filled(8, 'A line with enough text to wrap naturally.')
@@ -25,7 +35,7 @@ void main() {
         overrides: [
           authControllerProvider.overrideWith(_TestAuthController.new),
           notesControllerProvider.overrideWith(
-            () => _TestNotesController([note]),
+            () => _TestNotesController([shortNote, longNote]),
           ),
         ],
         child: const MaterialApp(home: NotesScreen()),
@@ -33,19 +43,25 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final cardFinder =
+    final shortCardFinder =
+        find.byKey(const ValueKey('compact-note-drag-note-short'));
+    final longCardFinder =
         find.byKey(const ValueKey('compact-note-drag-note-long'));
-    expect(cardFinder, findsOneWidget);
-    final cardSize = tester.getSize(cardFinder);
+    expect(shortCardFinder, findsOneWidget);
+    expect(longCardFinder, findsOneWidget);
+    final shortCardSize = tester.getSize(shortCardFinder);
+    final longCardSize = tester.getSize(longCardFinder);
+    expect(longCardSize.height, greaterThan(shortCardSize.height));
 
-    final gesture = await tester.startGesture(tester.getCenter(cardFinder));
+    final gesture = await tester.startGesture(tester.getCenter(longCardFinder));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
     await tester.pump();
 
     final feedbackFinder =
         find.byKey(const ValueKey('note-drag-feedback-note-long'));
     expect(feedbackFinder, findsOneWidget);
-    expect(tester.getSize(feedbackFinder), cardSize);
+    expect(tester.getSize(feedbackFinder), longCardSize);
+    expect(tester.getSize(feedbackFinder), isNot(shortCardSize));
 
     await gesture.up();
   });
