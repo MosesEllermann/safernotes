@@ -1023,9 +1023,12 @@ class _EmailVerificationDialogState
     try {
       await ref.read(authControllerProvider.notifier).resendEmailVerification();
       if (mounted) setState(() => _message = 'Code wurde erneut gesendet.');
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        setState(() => _error = 'Code konnte nicht gesendet werden.');
+        setState(() => _error = _mailErrorMessage(
+              error,
+              fallback: 'Code konnte nicht gesendet werden.',
+            ));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1048,11 +1051,21 @@ class _EmailVerificationDialogState
           .read(authControllerProvider.notifier)
           .confirmEmailVerification(code);
       if (mounted) Navigator.of(context).pop();
-    } catch (_) {
-      if (mounted) setState(() => _error = 'Der Code ist ungültig.');
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = _mailErrorMessage(
+              error,
+              fallback: 'Der Code ist ungültig.',
+            ));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  String _mailErrorMessage(Object error, {required String fallback}) {
+    if (error is ApiException) return error.message;
+    return fallback;
   }
 }
 

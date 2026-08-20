@@ -78,6 +78,14 @@ POSTGRES_PASSWORD=<langes-zufaelliges-db-passwort>
 DATABASE_URL=postgres://safernotes:<gleiches-db-passwort>@postgres:5432/safernotes
 SAFERNOTES_DATA_DIR=/opt/safernotes/data
 SAFERNOTES_API_PORT=8000
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.resend.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=resend
+EMAIL_HOST_PASSWORD=<resend-api-key>
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+DEFAULT_FROM_EMAIL=Safernotes <noreply@safernotes.com>
 ```
 
 ## 4. API Reverse Proxy

@@ -10,6 +10,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from apps.authentication.tokens import hash_token
 from apps.authentication.views import (
     EmailVerificationConfirmView,
+    EmailVerificationResendView,
     LoginView,
     PasswordChangeView,
     RecoveryCompleteView,
@@ -258,6 +259,28 @@ def test_email_verification_confirm_marks_user_verified(db, django_user_model):
     assert response.data["email_verified"] is True
     user.refresh_from_db()
     assert user.email_verified_at is not None
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_email_verification_resend_sends_email_for_unverified_user(db, django_user_model):
+    from apps.authentication.models import EmailVerificationCode
+
+    user = django_user_model.objects.create_user(
+        email="resend@example.com", password="password"
+    )
+    request = APIRequestFactory().post(
+        "/api/v1/auth/email/verification/resend",
+        {},
+        format="json",
+    )
+    force_authenticate(request, user=user)
+    response = EmailVerificationResendView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data["email_verified"] is False
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].to == ["resend@example.com"]
+    assert EmailVerificationCode.objects.filter(user=user).exists()
 
 
 def test_email_verification_confirm_rejects_bad_code(db, django_user_model):

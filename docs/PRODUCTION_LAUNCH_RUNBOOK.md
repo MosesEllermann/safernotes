@@ -75,8 +75,14 @@ Use a transactional email provider and configure:
 Required backend environment:
 
 ```env
-EMAIL_BACKEND=...
-DEFAULT_FROM_EMAIL=Safernotes <hello@example.com>
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.resend.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=resend
+EMAIL_HOST_PASSWORD=<resend-api-key>
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+DEFAULT_FROM_EMAIL=Safernotes <noreply@safernotes.com>
 ```
 
 ## 4. Legal and GDPR
