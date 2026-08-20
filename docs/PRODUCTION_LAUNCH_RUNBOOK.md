@@ -76,10 +76,10 @@ Required backend environment:
 
 ```env
 EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
-EMAIL_HOST=smtp.resend.com
+EMAIL_HOST=smtp.protonmail.ch
 EMAIL_PORT=587
-EMAIL_HOST_USER=resend
-EMAIL_HOST_PASSWORD=<resend-api-key>
+EMAIL_HOST_USER=noreply@safernotes.com
+EMAIL_HOST_PASSWORD=<proton-smtp-token>
 EMAIL_USE_TLS=True
 EMAIL_USE_SSL=False
 DEFAULT_FROM_EMAIL=Safernotes <noreply@safernotes.com>

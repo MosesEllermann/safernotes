@@ -105,12 +105,14 @@ jobs:
           API_PORT: ${{ secrets.API_PORT }}
           API_USER: ${{ secrets.API_USER }}
           API_SSH_KEY: ${{ secrets.API_SSH_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PROTON_SMTP_TOKEN: ${{ secrets.PROTON_SMTP_TOKEN }}
+          PROTON_SMTP_USER: ${{ secrets.PROTON_SMTP_USER }}
         run: |
-          if [ -z "$RESEND_API_KEY" ]; then
-            echo "::warning::RESEND_API_KEY secret is not set; production email cannot send."
+          if [ -z "$PROTON_SMTP_TOKEN" ]; then
+            echo "::warning::PROTON_SMTP_TOKEN secret is not set; production email cannot send."
             exit 0
           fi
+          PROTON_SMTP_USER="${PROTON_SMTP_USER:-noreply@safernotes.com}"
 
           mkdir -p ~/.ssh
           printf '%s\n' "$API_SSH_KEY" > ~/.ssh/api_deploy_key
@@ -118,7 +120,7 @@ jobs:
           ssh-keyscan -p "${API_PORT:-22}" -H "$API_HOST" >> ~/.ssh/known_hosts
 
           ssh -p "${API_PORT:-22}" -i ~/.ssh/api_deploy_key "$API_USER@$API_HOST" \
-            "RESEND_API_KEY=$(printf '%q' "$RESEND_API_KEY") bash -s" <<'REMOTE'
+            "PROTON_SMTP_TOKEN=$(printf '%q' "$PROTON_SMTP_TOKEN") PROTON_SMTP_USER=$(printf '%q' "$PROTON_SMTP_USER") bash -s" <<'REMOTE'
           set -Eeuo pipefail
 
           python3 - <<'PY'
@@ -133,13 +135,13 @@ jobs:
 
           updates = {
               "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
-              "EMAIL_HOST": "smtp.resend.com",
+              "EMAIL_HOST": "smtp.protonmail.ch",
               "EMAIL_PORT": "587",
-              "EMAIL_HOST_USER": "resend",
-              "EMAIL_HOST_PASSWORD": os.environ["RESEND_API_KEY"],
+              "EMAIL_HOST_USER": os.environ["PROTON_SMTP_USER"],
+              "EMAIL_HOST_PASSWORD": os.environ["PROTON_SMTP_TOKEN"],
               "EMAIL_USE_TLS": "True",
               "EMAIL_USE_SSL": "False",
-              "DEFAULT_FROM_EMAIL": "Safernotes <noreply@safernotes.com>",
+              "DEFAULT_FROM_EMAIL": f"Safernotes <{os.environ['PROTON_SMTP_USER']}>",
           }
 
           lines = env_file.read_text().splitlines()
