@@ -312,7 +312,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   String _cleanError(String value, AppL10n l10n, bool recovering) {
-    if (value.contains('SocketException')) return l10n.t('serverUnreachable');
+    if (value.contains('SocketException') ||
+        value.contains('ClientException') ||
+        value.contains('Server unreachable') ||
+        value.contains('timed out')) {
+      return l10n.t('serverUnreachable');
+    }
     if (value.contains('Invalid credentials')) return l10n.t('badCredentials');
     if (value.contains('Invalid recovery code')) {
       return l10n.t('badRecoveryCode');

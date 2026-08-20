@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -19,10 +20,12 @@ class ApiClient {
   ApiClient({
     http.Client? httpClient,
     this.baseUrl = 'http://127.0.0.1:8000',
+    this.requestTimeout = const Duration(seconds: 12),
   }) : _http = httpClient ?? http.Client();
 
   final http.Client _http;
   final String baseUrl;
+  final Duration requestTimeout;
 
   Future<Map<String, dynamic>> register({
     required String email,
@@ -205,11 +208,13 @@ class ApiClient {
     required String accessToken,
     required String tenant,
   }) async {
-    final response = await _http.get(
-      Uri.parse('$baseUrl/api/v1/subscription').replace(
-        queryParameters: {'tenant': tenant},
+    final response = await _request(
+      () => _http.get(
+        Uri.parse('$baseUrl/api/v1/subscription').replace(
+          queryParameters: {'tenant': tenant},
+        ),
+        headers: {'Authorization': 'Bearer $accessToken'},
       ),
-      headers: {'Authorization': 'Bearer $accessToken'},
     );
     return SubscriptionInfo.fromJson(_decode(response));
   }
@@ -228,9 +233,11 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> _get(String path, String accessToken) async {
-    final response = await _http.get(
-      Uri.parse('$baseUrl$path'),
-      headers: {'Authorization': 'Bearer $accessToken'},
+    final response = await _request(
+      () => _http.get(
+        Uri.parse('$baseUrl$path'),
+        headers: {'Authorization': 'Bearer $accessToken'},
+      ),
     );
     return _decode(response);
   }
@@ -240,13 +247,15 @@ class ApiClient {
     Map<String, dynamic> body, {
     String? accessToken,
   }) async {
-    final response = await _http.post(
-      Uri.parse('$baseUrl$path'),
-      headers: {
-        'Content-Type': 'application/json',
-        if (accessToken != null) 'Authorization': 'Bearer $accessToken',
-      },
-      body: jsonEncode(body),
+    final response = await _request(
+      () => _http.post(
+        Uri.parse('$baseUrl$path'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+        },
+        body: jsonEncode(body),
+      ),
     );
     return _decode(response);
   }
@@ -256,15 +265,32 @@ class ApiClient {
     Map<String, dynamic> body, {
     required String accessToken,
   }) async {
-    final response = await _http.patch(
-      Uri.parse('$baseUrl$path'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $accessToken',
-      },
-      body: jsonEncode(body),
+    final response = await _request(
+      () => _http.patch(
+        Uri.parse('$baseUrl$path'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+        body: jsonEncode(body),
+      ),
     );
     return _decode(response);
+  }
+
+  Future<http.Response> _request(Future<http.Response> Function() send) async {
+    try {
+      return await send().timeout(requestTimeout);
+    } on TimeoutException {
+      throw ApiException('Server unreachable.', 0);
+    } on http.ClientException {
+      throw ApiException('Server unreachable.', 0);
+    } catch (error) {
+      if (error.toString().contains('SocketException')) {
+        throw ApiException('Server unreachable.', 0);
+      }
+      rethrow;
+    }
   }
 
   Map<String, dynamic> _decode(http.Response response) {

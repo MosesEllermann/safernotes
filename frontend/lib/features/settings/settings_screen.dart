@@ -787,7 +787,12 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
     if (value.contains('Current password is incorrect')) {
       return l10n.t('currentPasswordIncorrect');
     }
-    if (value.contains('SocketException')) return l10n.t('serverUnreachable');
+    if (value.contains('SocketException') ||
+        value.contains('ClientException') ||
+        value.contains('Server unreachable') ||
+        value.contains('timed out')) {
+      return l10n.t('serverUnreachable');
+    }
     return value.replaceFirst('Exception: ', '');
   }
 }

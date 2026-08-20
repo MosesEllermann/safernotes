@@ -24,6 +24,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["usesCleartextTraffic"] =
+            (project.findProperty("usesCleartextTraffic") as String?) ?: "false"
     }
 
     buildTypes {
