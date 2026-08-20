@@ -144,6 +144,51 @@ jobs:
           ssh -p "${API_PORT:-22}" -i ~/.ssh/api_deploy_key "$API_USER@$API_HOST" \
             "cd '$API_PROJECT_PATH' && bash deploy/scripts/deploy_backend.sh '$API_PROJECT_PATH'"
 
+      - name: Verify production email configuration
+        if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
+        env:
+          API_HOST: ${{ secrets.API_HOST }}
+          API_PORT: ${{ secrets.API_PORT }}
+          API_USER: ${{ secrets.API_USER }}
+          API_SSH_KEY: ${{ secrets.API_SSH_KEY }}
+          API_PROJECT_PATH: ${{ secrets.API_PROJECT_PATH }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$API_SSH_KEY" > ~/.ssh/api_deploy_key
+          chmod 600 ~/.ssh/api_deploy_key
+          ssh-keyscan -p "${API_PORT:-22}" -H "$API_HOST" >> ~/.ssh/known_hosts
+
+          EMAIL_DIAG="$(cat <<'PY'
+          import os
+
+          os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings.production')
+
+          import django
+
+          django.setup()
+
+          from django.conf import settings
+          from django.core import mail
+
+          print(f'EMAIL_BACKEND={settings.EMAIL_BACKEND}')
+          print(f'EMAIL_HOST={settings.EMAIL_HOST or "<empty>"}')
+          print(f'EMAIL_PORT={settings.EMAIL_PORT}')
+          print(f'EMAIL_HOST_USER_SET={bool(settings.EMAIL_HOST_USER)}')
+          print(f'EMAIL_HOST_PASSWORD_SET={bool(settings.EMAIL_HOST_PASSWORD)}')
+          print(f'EMAIL_USE_TLS={settings.EMAIL_USE_TLS}')
+          print(f'EMAIL_USE_SSL={settings.EMAIL_USE_SSL}')
+          print(f'DEFAULT_FROM_EMAIL={settings.DEFAULT_FROM_EMAIL}')
+
+          connection = mail.get_connection(timeout=15)
+          connection.open()
+          connection.close()
+          print('SMTP_OPEN_OK=true')
+          PY
+          )"
+
+          ssh -p "${API_PORT:-22}" -i ~/.ssh/api_deploy_key "$API_USER@$API_HOST" \
+            "cd '$API_PROJECT_PATH' && docker compose --env-file /opt/safernotes/.env.production -f deploy/docker-compose.prod.yml run --rm api python -c $(printf '%q' "$EMAIL_DIAG")"
+
       - name: Verify production API
         if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
         run: |
