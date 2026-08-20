@@ -33,6 +33,27 @@ def production_configuration_check(app_configs, **kwargs):
             )
         )
 
+    if settings.EMAIL_BACKEND.endswith("smtp.EmailBackend"):
+        missing_email_settings = []
+        for setting_name in (
+            "EMAIL_HOST",
+            "EMAIL_PORT",
+            "EMAIL_HOST_USER",
+            "EMAIL_HOST_PASSWORD",
+        ):
+            if not getattr(settings, setting_name, None):
+                missing_email_settings.append(setting_name)
+        if not settings.EMAIL_USE_TLS and not settings.EMAIL_USE_SSL:
+            missing_email_settings.append("EMAIL_USE_TLS or EMAIL_USE_SSL")
+        if missing_email_settings:
+            issues.append(
+                Error(
+                    "SMTP email backend is enabled but required settings are missing: "
+                    + ", ".join(missing_email_settings),
+                    id="safernotes.E005",
+                )
+            )
+
     if settings.BILLING_PROVIDER == "paddle":
         missing = []
         if not settings.BILLING_API_KEY:

@@ -85,6 +85,31 @@ def test_production_configuration_check_flags_unsafe_launch_settings():
     SECRET_KEY="production-secret",
     DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "safernotes"}},
     EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+    EMAIL_HOST="",
+    EMAIL_PORT=587,
+    EMAIL_HOST_USER="",
+    EMAIL_HOST_PASSWORD="",
+    EMAIL_USE_TLS=False,
+    EMAIL_USE_SSL=False,
+    BILLING_PROVIDER="manual",
+    CORS_ALLOWED_ORIGINS=["https://app.example.com"],
+)
+def test_production_configuration_check_flags_incomplete_smtp_settings():
+    issue_ids = {issue.id for issue in production_configuration_check(None)}
+
+    assert "safernotes.E005" in issue_ids
+
+
+@override_settings(
+    SECRET_KEY="production-secret",
+    DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "safernotes"}},
+    EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+    EMAIL_HOST="smtp.example.com",
+    EMAIL_PORT=587,
+    EMAIL_HOST_USER="noreply@example.com",
+    EMAIL_HOST_PASSWORD="smtp-secret",
+    EMAIL_USE_TLS=True,
+    EMAIL_USE_SSL=False,
     BILLING_PROVIDER="paddle",
     BILLING_API_KEY="pdl_sdbx_apikey_test",
     BILLING_WEBHOOK_SECRET="webhook-secret",
