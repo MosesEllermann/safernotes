@@ -164,6 +164,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           email: _email.text.trim(),
           password: _password.text,
           workspaceName: _workspace.text.trim(),
+          locale: ref.read(l10nProvider).languageCode,
         );
         if (mounted && recoveryKey != null) {
           await _showRecoveryKeyDialog(recoveryKey);

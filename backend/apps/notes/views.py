@@ -7,6 +7,7 @@ from rest_framework import decorators, exceptions, response, viewsets
 
 from apps.audit.events import record_audit_event
 from apps.core.abuse import increment_metadata_limit
+from apps.core.emails import send_share_invitation_email
 from apps.notes.models import (
     Label,
     Note,
@@ -71,14 +72,18 @@ class NoteViewSet(viewsets.ModelViewSet):
         conflicts = NoteConflict.objects.filter(note=note, resolved_at__isnull=True)
         return response.Response(NoteConflictSerializer(conflicts, many=True).data)
 
-    @decorators.action(detail=True, methods=["post"], url_path=r"conflicts/(?P<conflict_id>[^/.]+)/resolve")
+    @decorators.action(
+        detail=True, methods=["post"], url_path=r"conflicts/(?P<conflict_id>[^/.]+)/resolve"
+    )
     def resolve_conflict(self, request, pk=None, conflict_id=None):
         note = self.get_object()
         if not can_write_note(request.user, note):
             raise exceptions.PermissionDenied("Viewer role cannot resolve note conflicts.")
         serializer = ConflictResolutionSerializer(data=request.data or {})
         serializer.is_valid(raise_exception=True)
-        conflict = get_object_or_404(NoteConflict, note=note, id=conflict_id, resolved_at__isnull=True)
+        conflict = get_object_or_404(
+            NoteConflict, note=note, id=conflict_id, resolved_at__isnull=True
+        )
         if serializer.validated_data["resolved"]:
             conflict.resolved_at = timezone.now()
             conflict.save(update_fields=["resolved_at", "updated_at"])
@@ -110,7 +115,9 @@ class NoteViewSet(viewsets.ModelViewSet):
         previous_owner = note.owner_user
         note.owner_user = new_owner
         note.save(update_fields=["owner_user", "updated_at"])
-        NoteKeyGrant.objects.filter(note=note, recipient_user=previous_owner, revoked_at__isnull=True).update(
+        NoteKeyGrant.objects.filter(
+            note=note, recipient_user=previous_owner, revoked_at__isnull=True
+        ).update(
             role="editor",
             updated_at=timezone.now(),
         )
@@ -127,7 +134,10 @@ class NoteViewSet(viewsets.ModelViewSet):
             tenant=note.tenant,
             target_type="note",
             target_id=note.id,
-            metadata={"new_owner_user_id": str(new_owner.id), "previous_owner_user_id": str(previous_owner.id)},
+            metadata={
+                "new_owner_user_id": str(new_owner.id),
+                "previous_owner_user_id": str(previous_owner.id),
+            },
         )
         return response.Response(NoteKeyGrantSerializer(grant, context={"request": request}).data)
 
@@ -138,13 +148,18 @@ class NoteKeyGrantViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return NoteKeyGrant.objects.filter(
             Q(note__owner_user=self.request.user)
-            | Q(note__key_grants__recipient_user=self.request.user, note__key_grants__revoked_at__isnull=True)
+            | Q(
+                note__key_grants__recipient_user=self.request.user,
+                note__key_grants__revoked_at__isnull=True,
+            )
         ).distinct()
 
     def perform_create(self, serializer):
         allowed, count = increment_metadata_limit("share_invite", str(self.request.user.id))
         if not allowed:
-            raise exceptions.ValidationError({"detail": "Share invitation rate limit exceeded.", "count": count})
+            raise exceptions.ValidationError(
+                {"detail": "Share invitation rate limit exceeded.", "count": count}
+            )
         note = serializer.validated_data["note"]
         if not can_share_note(self.request.user, note):
             raise exceptions.PermissionDenied("Only note owners can share encrypted note keys.")
@@ -155,7 +170,11 @@ class NoteKeyGrantViewSet(viewsets.ModelViewSet):
             tenant=note.tenant,
             target_type="note_key_grant",
             target_id=grant.id,
-            metadata={"note_id": str(note.id), "recipient_user_id": str(grant.recipient_user_id), "role": grant.role},
+            metadata={
+                "note_id": str(note.id),
+                "recipient_user_id": str(grant.recipient_user_id),
+                "role": grant.role,
+            },
         )
 
     def perform_update(self, serializer):
@@ -189,6 +208,40 @@ class ShareInvitationViewSet(viewsets.ModelViewSet):
             Q(sender_user=self.request.user) | Q(recipient_user=self.request.user)
         ).distinct()
 
+    @decorators.action(detail=False, methods=["get"], url_path="contacts")
+    def contacts(self, request):
+        invitations = (
+            self.get_queryset()
+            .select_related("sender_user", "recipient_user")
+            .order_by("-created_at")[:100]
+        )
+        contacts = []
+        seen = set()
+        for invitation in invitations:
+            other_user = (
+                invitation.recipient_user
+                if invitation.sender_user_id == request.user.id
+                else invitation.sender_user
+            )
+            email = other_user.email
+            normalized = email.casefold()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            contacts.append(
+                {
+                    "email": email,
+                    "last_role": invitation.role,
+                    "last_direction": "sent"
+                    if invitation.sender_user_id == request.user.id
+                    else "received",
+                    "last_invited_at": invitation.created_at,
+                }
+            )
+            if len(contacts) >= 12:
+                break
+        return response.Response({"results": contacts})
+
     def perform_create(self, serializer):
         note = serializer.validated_data["note"]
         if not can_share_note(self.request.user, note):
@@ -201,13 +254,18 @@ class ShareInvitationViewSet(viewsets.ModelViewSet):
                 type="share_invitation",
                 encrypted_payload=notification_payload,
             )
+        send_share_invitation_email(invitation)
         record_audit_event(
             event_type="sharing.invitation_created",
             actor_user=self.request.user,
             tenant=note.tenant,
             target_type="share_invitation",
             target_id=invitation.id,
-            metadata={"note_id": str(note.id), "recipient_user_id": str(invitation.recipient_user_id), "role": invitation.role},
+            metadata={
+                "note_id": str(note.id),
+                "recipient_user_id": str(invitation.recipient_user_id),
+                "role": invitation.role,
+            },
         )
 
     def perform_destroy(self, instance):
@@ -245,7 +303,9 @@ class ShareInvitationViewSet(viewsets.ModelViewSet):
                 target_type="share_invitation",
                 target_id=invitation.id,
             )
-            return response.Response(ShareInvitationSerializer(invitation, context={"request": request}).data)
+            return response.Response(
+                ShareInvitationSerializer(invitation, context={"request": request}).data
+            )
 
         grant = NoteKeyGrant.objects.create(
             note=invitation.note,
@@ -269,7 +329,9 @@ class ShareInvitationViewSet(viewsets.ModelViewSet):
         )
         return response.Response(
             {
-                "invitation": ShareInvitationSerializer(invitation, context={"request": request}).data,
+                "invitation": ShareInvitationSerializer(
+                    invitation, context={"request": request}
+                ).data,
                 "grant": NoteKeyGrantSerializer(grant, context={"request": request}).data,
             }
         )

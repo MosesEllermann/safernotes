@@ -4,7 +4,6 @@ import secrets
 from datetime import timedelta
 
 from django.contrib.auth import login, logout
-from django.core.mail import send_mail
 from django.db import models, transaction
 from django.utils import timezone
 from rest_framework import decorators, permissions, response, views, viewsets
@@ -23,6 +22,7 @@ from apps.authentication.serializers import (
     SessionSerializer,
 )
 from apps.authentication.tokens import hash_token, issue_session, rotate_refresh_token
+from apps.core.emails import send_recovery_code_email, send_verification_code_email
 from apps.users.models import User
 
 
@@ -35,14 +35,7 @@ def send_email_verification_code(user: User) -> None:
         code_hash=hash_token(code),
         expires_at=timezone.now() + timedelta(minutes=30),
     )
-    send_mail(
-        "Verify your Safernotes email",
-        f"Use this verification code to confirm your Safernotes email: {code}\n\n"
-        "The code expires in 30 minutes. If you did not create this account, you can ignore this email.",
-        None,
-        [user.email],
-        fail_silently=True,
-    )
+    send_verification_code_email(user, code)
 
 
 class RegisterView(views.APIView):
@@ -198,14 +191,7 @@ class RecoveryStartView(views.APIView):
                 code_hash=hash_token(code),
                 expires_at=timezone.now() + timedelta(minutes=15),
             )
-            send_mail(
-                "Your Safernotes recovery code",
-                f"Use this recovery code to reset your Safernotes password: {code}\n\n"
-                "The code expires in 15 minutes. If you did not request it, you can ignore this email.",
-                None,
-                [user.email],
-                fail_silently=True,
-            )
+            send_recovery_code_email(user, code)
         return response.Response(
             {
                 "recovery_available": bool(material.recovery_wrapper),
@@ -270,7 +256,9 @@ class RecoveryCompleteView(views.APIView):
         user.save(update_fields=["password", "updated_at"])
         recovery_code.used_at = now
         recovery_code.save(update_fields=["used_at", "updated_at"])
-        Session.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=now, updated_at=now)
+        Session.objects.filter(user=user, revoked_at__isnull=True).update(
+            revoked_at=now, updated_at=now
+        )
 
         login(request, user)
         issued = issue_session(user, request=request)

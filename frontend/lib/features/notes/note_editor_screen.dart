@@ -5,10 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:uuid/uuid.dart';
+import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/notes/notes_controller.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/shared/api/api_client.dart';
 import 'package:safernotes_app/shared/models/note.dart';
 import 'package:safernotes_app/shared/notifications/reminder_notifications.dart';
+import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 class NoteEditorScreen extends StatelessWidget {
@@ -120,6 +123,17 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
         .where(
             (item) => item.noteId == note.remoteId && item.status == 'online')
         .toList();
+    final bottomToolbar = MediaQuery.sizeOf(context).width < 700;
+    final toolbar = _Toolbar(
+      onFormat: _applyFormat,
+      onBackground: _showBackgroundSheet,
+    );
+    final divider = Divider(
+      height: 1,
+      thickness: 1,
+      color:
+          Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.62),
+    );
 
     return Shortcuts(
       shortcuts: {
@@ -131,10 +145,6 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
             const _FormatIntent('italic'),
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyI):
             const _FormatIntent('italic'),
-        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyU):
-            const _FormatIntent('underline'),
-        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyU):
-            const _FormatIntent('underline'),
       },
       child: Actions(
         actions: {
@@ -214,23 +224,10 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                     ],
                   ),
                 ),
-                _Toolbar(
-                  onFormat: _applyFormat,
-                  onColor: (value) {
-                    setState(() => _color = value);
-                    _scheduleSave(immediate: true);
-                  },
-                  selectedColor: _color,
-                  colors: _colors,
-                ),
-                Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .outlineVariant
-                      .withValues(alpha: 0.62),
-                ),
+                if (!bottomToolbar) ...[
+                  toolbar,
+                  divider,
+                ],
                 Expanded(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
@@ -264,6 +261,10 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                     },
                   ),
                 ),
+                if (bottomToolbar) ...[
+                  divider,
+                  toolbar,
+                ],
               ],
             ),
           ),
@@ -320,32 +321,223 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   void _applyFormat(String action) {
     final selection = _body.selection;
     final text = _body.text;
-    final start = selection.start < 0 ? text.length : selection.start;
-    final end = selection.end < 0 ? text.length : selection.end;
-    final selected = start == end ? '' : text.substring(start, end);
-    final replacement = switch (action) {
-      'bold' => '**$selected**',
-      'italic' => '_${selected}_',
-      'underline' => '<u>$selected</u>',
-      'strike' => '~~$selected~~',
-      'h1' => '# $selected',
-      'h2' => '## $selected',
-      'h3' => '### $selected',
-      'code' => '`$selected`',
-      'codeblock' => '```\n$selected\n```',
-      'quote' => '> $selected',
-      'link' => '[$selected](https://)',
-      'clear' => selected.replaceAll(
-          RegExp(r'(\*\*|__|~~|`|<u>|</u>|^#{1,3}\s|^>\s)', multiLine: true),
-          ''),
-      'check' => _switchToChecklist(selected),
-      _ => selected,
+    if (action == 'link') {
+      unawaited(_showLinkSheet());
+      return;
+    }
+    if (action == 'codeblock') {
+      _applyCodeBlock();
+      return;
+    }
+    if (action == 'check') {
+      final range = _safeSelectionRange(selection, text);
+      final selected = range.isCollapsed ? '' : range.textInside(text);
+      final replacement = _switchToChecklist(selected);
+      _body.value = TextEditingValue(
+        text: text.replaceRange(range.start, range.end, replacement),
+        selection: TextSelection.collapsed(offset: range.start),
+      );
+      _scheduleSave();
+      return;
+    }
+
+    final range = action == 'clear'
+        ? _rangeForClear(selection, text)
+        : _rangeForInlineFormat(selection, text);
+    if (range == null) return;
+    final selected = range.textInside(text);
+    if (selected.trim().isEmpty) return;
+    final edit = switch (action) {
+      'bold' => _inlineMarkdownEdit(text, range, '**'),
+      'italic' => _inlineMarkdownEdit(text, range, '_'),
+      'strike' => _inlineMarkdownEdit(text, range, '~~'),
+      'clear' =>
+        _TextEdit(range: range, replacement: _clearMarkdownSyntax(selected)),
+      _ => _TextEdit(range: range, replacement: selected),
     };
     _body.value = TextEditingValue(
-      text: text.replaceRange(start, end, replacement),
-      selection: TextSelection.collapsed(offset: start + replacement.length),
+      text:
+          text.replaceRange(edit.range.start, edit.range.end, edit.replacement),
+      selection: TextSelection.collapsed(
+          offset: edit.range.start + edit.replacement.length),
     );
     _scheduleSave();
+  }
+
+  void _applyCodeBlock() {
+    final text = _body.text;
+    final range = _safeSelectionRange(_body.selection, text);
+    final selected = range.isCollapsed ? '' : range.textInside(text);
+    final replacement =
+        selected.trim().isEmpty ? '```\n\n```' : '```\n$selected\n```';
+    final caretOffset = selected.trim().isEmpty
+        ? range.start + 4
+        : range.start + replacement.length;
+    _body.value = TextEditingValue(
+      text: text.replaceRange(range.start, range.end, replacement),
+      selection: TextSelection.collapsed(offset: caretOffset),
+    );
+    _scheduleSave();
+  }
+
+  Future<void> _showLinkSheet() async {
+    final text = _body.text;
+    final selection = _body.selection;
+    final link = _linkAroundSelection(selection, text);
+    final fallbackRange = _rangeForInlineFormat(selection, text) ??
+        _safeSelectionRange(selection, text);
+    final editRange = link?.range ?? fallbackRange;
+    final selected = editRange.isCollapsed ? '' : editRange.textInside(text);
+    final initialLabel = link?.label ?? selected;
+    final initialUrl = link?.url ?? '';
+    final result = await showModalBottomSheet<_LinkEdit>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _LinkSheet(
+        initialLabel: initialLabel,
+        initialUrl: initialUrl,
+        canRemove: link != null,
+      ),
+    );
+    if (result == null || !mounted) return;
+    final replacement = result.remove
+        ? result.label
+        : '[${result.label}](${_normalizeUrl(result.url)})';
+    _body.value = TextEditingValue(
+      text: text.replaceRange(editRange.start, editRange.end, replacement),
+      selection:
+          TextSelection.collapsed(offset: editRange.start + replacement.length),
+    );
+    _scheduleSave();
+  }
+
+  _ExistingLink? _linkAroundSelection(TextSelection selection, String text) {
+    final range = _safeSelectionRange(selection, text);
+    final expression = RegExp(r'\[([^\]]*)\]\(([^)]*)\)');
+    for (final match in expression.allMatches(text)) {
+      final touchesCollapsed = range.isCollapsed &&
+          range.start >= match.start &&
+          range.start <= match.end;
+      final overlapsSelection = !range.isCollapsed &&
+          range.start < match.end &&
+          range.end > match.start;
+      if (touchesCollapsed || overlapsSelection) {
+        return _ExistingLink(
+          range: TextRange(start: match.start, end: match.end),
+          label: match.group(1) ?? '',
+          url: match.group(2) ?? '',
+        );
+      }
+    }
+    return null;
+  }
+
+  String _normalizeUrl(String value) {
+    final trimmed = value.trim();
+    if (RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*:').hasMatch(trimmed)) {
+      return trimmed;
+    }
+    return 'https://$trimmed';
+  }
+
+  TextRange _safeSelectionRange(TextSelection selection, String text) {
+    final start = selection.start < 0 ? text.length : selection.start;
+    final end = selection.end < 0 ? text.length : selection.end;
+    return TextRange(start: start, end: end);
+  }
+
+  TextRange? _rangeForInlineFormat(TextSelection selection, String text) {
+    final range = _safeSelectionRange(selection, text);
+    if (!range.isCollapsed) return range;
+    return _wordRangeAt(text, range.start);
+  }
+
+  TextRange? _rangeForClear(TextSelection selection, String text) {
+    final range = _safeSelectionRange(selection, text);
+    if (!range.isCollapsed) return range;
+    if (text.trim().isEmpty) return null;
+    return _lineRangeAt(text, range.start);
+  }
+
+  TextRange? _wordRangeAt(String text, int offset) {
+    if (text.isEmpty) return null;
+    var start = offset.clamp(0, text.length);
+    var end = start;
+    while (start > 0 && _isWordCharacter(text.codeUnitAt(start - 1))) {
+      start--;
+    }
+    while (end < text.length && _isWordCharacter(text.codeUnitAt(end))) {
+      end++;
+    }
+    if (start == end) return null;
+    return TextRange(start: start, end: end);
+  }
+
+  TextRange _lineRangeAt(String text, int offset) {
+    final safeOffset = offset.clamp(0, text.length);
+    final lineStart =
+        text.lastIndexOf('\n', safeOffset == 0 ? 0 : safeOffset - 1) + 1;
+    final nextBreak = text.indexOf('\n', safeOffset);
+    final lineEnd = nextBreak == -1 ? text.length : nextBreak;
+    return TextRange(start: lineStart, end: lineEnd);
+  }
+
+  bool _isWordCharacter(int codeUnit) {
+    return (codeUnit >= 48 && codeUnit <= 57) ||
+        (codeUnit >= 65 && codeUnit <= 90) ||
+        (codeUnit >= 97 && codeUnit <= 122) ||
+        codeUnit == 45 ||
+        codeUnit == 95 ||
+        codeUnit >= 128;
+  }
+
+  _TextEdit _inlineMarkdownEdit(String text, TextRange range, String marker) {
+    final beforeStart = range.start - marker.length;
+    final afterEnd = range.end + marker.length;
+    final hasWrappingMarkers = beforeStart >= 0 &&
+        afterEnd <= text.length &&
+        text.substring(beforeStart, range.start) == marker &&
+        text.substring(range.end, afterEnd) == marker;
+    if (hasWrappingMarkers) {
+      return _TextEdit(
+        range: TextRange(start: beforeStart, end: afterEnd),
+        replacement: range.textInside(text),
+      );
+    }
+    return _TextEdit(
+      range: range,
+      replacement: '$marker${range.textInside(text)}$marker',
+    );
+  }
+
+  String _clearMarkdownSyntax(String value) {
+    return value
+        .replaceAllMapped(RegExp(r'\[(.*?)\]\((.*?)\)'), (match) {
+          final label = match.group(1)?.trim() ?? '';
+          final url = match.group(2)?.trim() ?? '';
+          if (label.isEmpty) return url;
+          if (url.isEmpty || label == url) return label;
+          return '$label $url';
+        })
+        .replaceAll(RegExp(r'(\*\*|__|~~|`|<u>|</u>|```)', multiLine: true), '')
+        .replaceAll(RegExp(r'^#{1,3}\s+', multiLine: true), '')
+        .replaceAll(RegExp(r'^>\s+', multiLine: true), '');
+  }
+
+  Future<void> _showBackgroundSheet() async {
+    final color = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _BackgroundSheet(
+        colors: _colors,
+        selectedColor: _color,
+      ),
+    );
+    if (color == null || !mounted) return;
+    setState(() => _color = color);
+    _scheduleSave(immediate: true);
   }
 
   String _switchToChecklist(String selected) {
@@ -450,72 +642,430 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
 class _Toolbar extends StatelessWidget {
   const _Toolbar({
     required this.onFormat,
-    required this.onColor,
-    required this.selectedColor,
-    required this.colors,
+    required this.onBackground,
   });
 
   final ValueChanged<String> onFormat;
-  final ValueChanged<int> onColor;
-  final int selectedColor;
-  final List<int> colors;
+  final VoidCallback onBackground;
 
   @override
   Widget build(BuildContext context) {
     final buttons = [
-      ('bold', LucideIcons.bold),
-      ('italic', LucideIcons.italic),
-      ('underline', LucideIcons.underline),
-      ('strike', LucideIcons.strikethrough),
-      ('h1', LucideIcons.heading1),
-      ('code', LucideIcons.code),
-      ('codeblock', LucideIcons.squareCode),
-      ('quote', LucideIcons.quote),
-      ('link', LucideIcons.link),
-      ('check', LucideIcons.squareCheck),
-      ('clear', LucideIcons.removeFormatting),
+      const _ToolbarItem('bold', LucideIcons.bold, 'Fett'),
+      const _ToolbarItem('italic', LucideIcons.italic, 'Kursiv'),
+      const _ToolbarItem('strike', LucideIcons.strikethrough, 'Durchstreichen'),
+      const _ToolbarItem('link', LucideIcons.link, 'Link'),
+      const _ToolbarItem('codeblock', LucideIcons.squareCode, 'Codeblock'),
+      const _ToolbarItem('check', LucideIcons.squareCheck, 'Checkliste'),
+      const _ToolbarItem(
+          'clear', LucideIcons.removeFormatting, 'Formatierung löschen'),
     ];
     return Material(
       color: Colors.transparent,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+      child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
         child: Row(
           children: [
-            for (final item in buttons)
-              AppIconButton(
-                tooltip: item.$1,
-                icon: item.$2,
-                onPressed: () => onFormat(item.$1),
-              ),
-            const SizedBox(width: 8),
-            for (final color in colors)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(11),
-                  onTap: () => onColor(color),
-                  child: Container(
-                    width: 22,
-                    height: 22,
-                    decoration: BoxDecoration(
-                      color: Color(color),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: color == selectedColor
-                            ? Theme.of(context).colorScheme.primary
-                            : const Color(0xffcbd5e1),
-                        width: color == selectedColor ? 2 : 1,
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final item in buttons)
+                      AppIconButton(
+                        tooltip: item.tooltip,
+                        icon: item.icon,
+                        onPressed: () => onFormat(item.action),
                       ),
-                    ),
-                  ),
+                  ],
                 ),
               ),
+            ),
+            const SizedBox(width: 8),
+            AppIconButton(
+              tooltip: 'Hintergrund',
+              icon: LucideIcons.palette,
+              onPressed: onBackground,
+            ),
           ],
         ),
       ),
     );
   }
+}
+
+class _ToolbarItem {
+  const _ToolbarItem(this.action, this.icon, this.tooltip);
+
+  final String action;
+  final IconData icon;
+  final String tooltip;
+}
+
+class _LinkSheet extends StatefulWidget {
+  const _LinkSheet({
+    required this.initialLabel,
+    required this.initialUrl,
+    required this.canRemove,
+  });
+
+  final String initialLabel;
+  final String initialUrl;
+  final bool canRemove;
+
+  @override
+  State<_LinkSheet> createState() => _LinkSheetState();
+}
+
+class _LinkSheetState extends State<_LinkSheet> {
+  late final TextEditingController _label =
+      TextEditingController(text: widget.initialLabel);
+  late final TextEditingController _url =
+      TextEditingController(text: widget.initialUrl);
+
+  @override
+  void initState() {
+    super.initState();
+    _label.addListener(_refresh);
+    _url.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    _label
+      ..removeListener(_refresh)
+      ..dispose();
+    _url
+      ..removeListener(_refresh)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _refresh() => setState(() {});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final canSave =
+        _label.text.trim().isNotEmpty && _url.text.trim().isNotEmpty;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 12,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Material(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Icon(
+                              LucideIcons.link,
+                              size: 20,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Link',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          AppIconButton(
+                            tooltip: 'Schließen',
+                            icon: LucideIcons.x,
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: _label,
+                        autofocus: widget.initialLabel.trim().isEmpty,
+                        textInputAction: TextInputAction.next,
+                        decoration: InputDecoration(
+                          labelText: 'Text',
+                          prefixIcon: const Icon(LucideIcons.type, size: 18),
+                          filled: true,
+                          fillColor: scheme.surfaceContainerHighest
+                              .withValues(alpha: 0.42),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: _url,
+                        autofocus: widget.initialLabel.trim().isNotEmpty &&
+                            widget.initialUrl.trim().isEmpty,
+                        keyboardType: TextInputType.url,
+                        decoration: InputDecoration(
+                          labelText: 'URL',
+                          prefixIcon: const Icon(LucideIcons.globe, size: 18),
+                          filled: true,
+                          fillColor: scheme.surfaceContainerHighest
+                              .withValues(alpha: 0.42),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      FilledButton.icon(
+                        onPressed: canSave
+                            ? () => Navigator.of(context).pop(_LinkEdit(
+                                  label: _label.text.trim(),
+                                  url: _url.text.trim(),
+                                ))
+                            : null,
+                        icon: const Icon(LucideIcons.check),
+                        label: const Text('Speichern'),
+                      ),
+                      if (widget.canRemove) ...[
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () => Navigator.of(context).pop(_LinkEdit(
+                            label: _label.text.trim(),
+                            url: _url.text.trim(),
+                            remove: true,
+                          )),
+                          icon: const Icon(LucideIcons.unlink),
+                          label: const Text('Link entfernen'),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BackgroundSheet extends StatelessWidget {
+  const _BackgroundSheet({
+    required this.colors,
+    required this.selectedColor,
+  });
+
+  final List<int> colors;
+  final int selectedColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 12,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Material(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: scheme.surfaceContainerHighest,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Icon(
+                              LucideIcons.palette,
+                              size: 20,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Hintergrund',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleLarge
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          AppIconButton(
+                            tooltip: 'Schließen',
+                            icon: LucideIcons.x,
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          for (final color in colors)
+                            _BackgroundColorTile(
+                              color: color,
+                              selected: color == selectedColor,
+                              onSelected: () =>
+                                  Navigator.of(context).pop(color),
+                            ),
+                          _BackgroundImageTile(
+                            onSelected: () {},
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BackgroundColorTile extends StatelessWidget {
+  const _BackgroundColorTile({
+    required this.color,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final int color;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onSelected,
+      child: Container(
+        width: 64,
+        height: 56,
+        decoration: BoxDecoration(
+          color: Color(color),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? scheme.primary : scheme.outlineVariant,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: selected
+            ? Icon(LucideIcons.check, size: 18, color: scheme.onSurface)
+            : null,
+      ),
+    );
+  }
+}
+
+class _BackgroundImageTile extends StatelessWidget {
+  const _BackgroundImageTile({required this.onSelected});
+
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onSelected,
+      child: Container(
+        width: 112,
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: scheme.outlineVariant),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(LucideIcons.image, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Text(
+              'Bild',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExistingLink {
+  const _ExistingLink({
+    required this.range,
+    required this.label,
+    required this.url,
+  });
+
+  final TextRange range;
+  final String label;
+  final String url;
+}
+
+class _LinkEdit {
+  const _LinkEdit({
+    required this.label,
+    required this.url,
+    this.remove = false,
+  });
+
+  final String label;
+  final String url;
+  final bool remove;
 }
 
 class _ReminderSelection {
@@ -758,55 +1308,244 @@ class _MarkdownEditingController extends TextEditingController {
   }) {
     final base = style ?? DefaultTextStyle.of(context).style;
     final spans = <InlineSpan>[];
+    var inCodeBlock = false;
     for (final line in text.split('\n')) {
-      final lineStyle = _lineStyle(base, line);
-      spans.add(TextSpan(text: _visibleLine(line), style: lineStyle));
+      if (line.trim() == '```') {
+        spans.add(TextSpan(text: line, style: _hiddenStyle(base)));
+        inCodeBlock = !inCodeBlock;
+      } else {
+        spans.addAll(
+          _lineSpans(context, base, line, inCodeBlock: inCodeBlock),
+        );
+      }
       spans.add(const TextSpan(text: '\n'));
     }
     if (spans.isNotEmpty) spans.removeLast();
     return TextSpan(style: base, children: spans);
   }
 
-  TextStyle _lineStyle(TextStyle base, String line) {
-    if (line.startsWith('# ')) {
-      return base.copyWith(fontSize: 28, fontWeight: FontWeight.w700);
-    }
-    if (line.startsWith('## ')) {
-      return base.copyWith(fontSize: 23, fontWeight: FontWeight.w700);
-    }
-    if (line.startsWith('### ')) {
-      return base.copyWith(fontSize: 19, fontWeight: FontWeight.w700);
-    }
-    if (line.startsWith('> ')) {
-      return base.copyWith(
-          fontStyle: FontStyle.italic,
-          color: base.color?.withValues(alpha: 0.72));
-    }
-    if (line.startsWith('```')) return base.copyWith(fontFamily: 'monospace');
-    if (line.contains('**')) return base.copyWith(fontWeight: FontWeight.w700);
-    if (line.contains('_')) return base.copyWith(fontStyle: FontStyle.italic);
-    if (line.contains('~~')) {
-      return base.copyWith(decoration: TextDecoration.lineThrough);
-    }
-    if (line.contains('<u>')) {
-      return base.copyWith(decoration: TextDecoration.underline);
-    }
-    if (line.contains('`')) return base.copyWith(fontFamily: 'monospace');
-    return base;
+  TextStyle _hiddenStyle(TextStyle base) {
+    return base.copyWith(
+        color: Colors.transparent, fontSize: 0.01, height: 0.01);
   }
 
-  String _visibleLine(String line) {
-    return line
-        .replaceFirst(RegExp(r'^#{1,3}\s'), '')
-        .replaceFirst(RegExp(r'^>\s'), '')
-        .replaceAll('**', '')
-        .replaceAll('~~', '')
-        .replaceAll('`', '')
-        .replaceAll('<u>', '')
-        .replaceAll('</u>', '')
-        .replaceAllMapped(
-            RegExp(r'\[(.*?)\]\((.*?)\)'), (match) => match.group(1) ?? '');
+  List<TextSpan> _lineSpans(
+    BuildContext context,
+    TextStyle base,
+    String line, {
+    required bool inCodeBlock,
+  }) {
+    final hiddenStyle = _hiddenStyle(base);
+    if (inCodeBlock) {
+      return [
+        TextSpan(
+          text: line,
+          style: base.copyWith(
+            fontFamily: 'monospace',
+            backgroundColor: Theme.of(context)
+                .colorScheme
+                .surfaceContainerHighest
+                .withValues(alpha: 0.58),
+          ),
+        ),
+      ];
+    }
+    var index = 0;
+    var lineStyle = base;
+    if (line.startsWith('# ')) {
+      lineStyle = base.copyWith(fontSize: 28, fontWeight: FontWeight.w700);
+      index = 2;
+    } else if (line.startsWith('## ')) {
+      lineStyle = base.copyWith(fontSize: 23, fontWeight: FontWeight.w700);
+      index = 3;
+    } else if (line.startsWith('### ')) {
+      lineStyle = base.copyWith(fontSize: 19, fontWeight: FontWeight.w700);
+      index = 4;
+    } else if (line.startsWith('> ')) {
+      lineStyle = base.copyWith(
+        fontStyle: FontStyle.italic,
+        color: base.color?.withValues(alpha: 0.72),
+      );
+      index = 2;
+    }
+
+    final spans = <TextSpan>[];
+    if (index > 0) {
+      spans.add(TextSpan(text: line.substring(0, index), style: hiddenStyle));
+    }
+
+    var bold = false;
+    var italic = false;
+    var strike = false;
+    var underline = false;
+    var code = false;
+    while (index < line.length) {
+      if (line.startsWith('**', index)) {
+        spans.add(TextSpan(text: '**', style: hiddenStyle));
+        bold = !bold;
+        index += 2;
+        continue;
+      }
+      if (line.startsWith('~~', index)) {
+        spans.add(TextSpan(text: '~~', style: hiddenStyle));
+        strike = !strike;
+        index += 2;
+        continue;
+      }
+      if (line.startsWith('<u>', index)) {
+        spans.add(TextSpan(text: '<u>', style: hiddenStyle));
+        underline = true;
+        index += 3;
+        continue;
+      }
+      if (line.startsWith('</u>', index)) {
+        spans.add(TextSpan(text: '</u>', style: hiddenStyle));
+        underline = false;
+        index += 4;
+        continue;
+      }
+      if (line.startsWith('```', index)) {
+        spans.add(TextSpan(text: '```', style: hiddenStyle));
+        code = !code;
+        index += 3;
+        continue;
+      }
+      if (line.startsWith('`', index)) {
+        spans.add(TextSpan(text: '`', style: hiddenStyle));
+        code = !code;
+        index += 1;
+        continue;
+      }
+      if (_isItalicMarker(line, index)) {
+        spans.add(TextSpan(text: '_', style: hiddenStyle));
+        italic = !italic;
+        index += 1;
+        continue;
+      }
+      final link = _markdownLinkAt(line, index);
+      if (link != null) {
+        spans
+          ..add(TextSpan(text: '[', style: hiddenStyle))
+          ..add(TextSpan(
+            text: link.label,
+            style: _inlineStyle(
+              context,
+              lineStyle,
+              bold: bold,
+              italic: italic,
+              strike: strike,
+              underline: true,
+              code: code,
+              link: true,
+            ),
+          ))
+          ..add(TextSpan(text: '](${link.url})', style: hiddenStyle));
+        index = link.end;
+        continue;
+      }
+
+      final next = _nextMarkdownBoundary(line, index);
+      spans.add(TextSpan(
+        text: line.substring(index, next),
+        style: _inlineStyle(
+          context,
+          lineStyle,
+          bold: bold,
+          italic: italic,
+          strike: strike,
+          underline: underline,
+          code: code,
+        ),
+      ));
+      index = next;
+    }
+    return spans;
   }
+
+  TextStyle _inlineStyle(
+    BuildContext context,
+    TextStyle base, {
+    required bool bold,
+    required bool italic,
+    required bool strike,
+    required bool underline,
+    required bool code,
+    bool link = false,
+  }) {
+    final decorations = <TextDecoration>[
+      if (strike) TextDecoration.lineThrough,
+      if (underline || link) TextDecoration.underline,
+    ];
+    return base.copyWith(
+      backgroundColor: link
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
+          : base.backgroundColor,
+      color: link ? Theme.of(context).colorScheme.primary : base.color,
+      fontWeight: bold ? FontWeight.w700 : base.fontWeight,
+      fontStyle: italic ? FontStyle.italic : base.fontStyle,
+      fontFamily: code ? 'monospace' : base.fontFamily,
+      decoration: decorations.isEmpty
+          ? base.decoration
+          : TextDecoration.combine(decorations),
+    );
+  }
+
+  int _nextMarkdownBoundary(String line, int start) {
+    for (var i = start + 1; i < line.length; i++) {
+      if (line.startsWith('**', i) ||
+          line.startsWith('~~', i) ||
+          line.startsWith('<u>', i) ||
+          line.startsWith('</u>', i) ||
+          line.startsWith('```', i) ||
+          line.startsWith('`', i) ||
+          line.startsWith('[', i) ||
+          _isItalicMarker(line, i)) {
+        return i;
+      }
+    }
+    return line.length;
+  }
+
+  bool _isItalicMarker(String line, int index) {
+    if (!line.startsWith('_', index)) return false;
+    final beforeIsWord =
+        index > 0 && _isInlineWordCharacter(line.codeUnitAt(index - 1));
+    final afterIsWord = index + 1 < line.length &&
+        _isInlineWordCharacter(line.codeUnitAt(index + 1));
+    return beforeIsWord != afterIsWord;
+  }
+
+  bool _isInlineWordCharacter(int codeUnit) {
+    return (codeUnit >= 48 && codeUnit <= 57) ||
+        (codeUnit >= 65 && codeUnit <= 90) ||
+        (codeUnit >= 97 && codeUnit <= 122) ||
+        codeUnit >= 128;
+  }
+
+  _MarkdownLink? _markdownLinkAt(String line, int index) {
+    if (!line.startsWith('[', index)) return null;
+    final labelEnd = line.indexOf('](', index + 1);
+    if (labelEnd == -1) return null;
+    final urlEnd = line.indexOf(')', labelEnd + 2);
+    if (urlEnd == -1) return null;
+    return _MarkdownLink(
+      label: line.substring(index + 1, labelEnd),
+      url: line.substring(labelEnd + 2, urlEnd),
+      end: urlEnd + 1,
+    );
+  }
+}
+
+class _MarkdownLink {
+  const _MarkdownLink({
+    required this.label,
+    required this.url,
+    required this.end,
+  });
+
+  final String label;
+  final String url;
+  final int end;
 }
 
 class _ChecklistEditor extends ConsumerStatefulWidget {
@@ -1040,9 +1779,17 @@ class _ShareSheet extends ConsumerStatefulWidget {
 
 class _ShareSheetState extends ConsumerState<_ShareSheet> {
   final _recipient = TextEditingController();
+  List<ShareContact> _recentContacts = const [];
+  var _contactsLoading = true;
   var _role = 'editor';
   var _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadRecentContacts());
+  }
 
   @override
   void dispose() {
@@ -1057,9 +1804,39 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
       role: _role,
       busy: _busy,
       error: _error,
+      recentContacts: _recentContacts,
+      contactsLoading: _contactsLoading,
+      onContactSelected: _selectContact,
       onRoleChanged: (value) => setState(() => _role = value),
       onInvite: _busy ? null : _invite,
     );
+  }
+
+  Future<void> _loadRecentContacts() async {
+    final session = ref.read(authControllerProvider).valueOrNull;
+    if (session == null) {
+      if (mounted) setState(() => _contactsLoading = false);
+      return;
+    }
+    try {
+      final contacts = await ref
+          .read(apiClientProvider)
+          .fetchShareContacts(session.accessToken);
+      if (mounted) {
+        setState(() {
+          _recentContacts = contacts;
+          _contactsLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _contactsLoading = false);
+    }
+  }
+
+  void _selectContact(ShareContact contact) {
+    _recipient.text = contact.email;
+    _recipient.selection =
+        TextSelection.collapsed(offset: contact.email.length);
   }
 
   Future<void> _invite() async {
@@ -1111,6 +1888,9 @@ class _CollaboratorInviteSheet extends StatelessWidget {
     required this.role,
     required this.busy,
     required this.error,
+    required this.recentContacts,
+    required this.contactsLoading,
+    required this.onContactSelected,
     required this.onRoleChanged,
     required this.onInvite,
   });
@@ -1119,6 +1899,9 @@ class _CollaboratorInviteSheet extends StatelessWidget {
   final String role;
   final bool busy;
   final String? error;
+  final List<ShareContact> recentContacts;
+  final bool contactsLoading;
+  final ValueChanged<ShareContact> onContactSelected;
   final ValueChanged<String> onRoleChanged;
   final VoidCallback? onInvite;
 
@@ -1206,6 +1989,14 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (contactsLoading || recentContacts.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _RecentInviteContacts(
+                          contacts: recentContacts,
+                          loading: contactsLoading,
+                          onSelected: onContactSelected,
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       Row(
                         children: [
@@ -1258,6 +2049,70 @@ class _CollaboratorInviteSheet extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _RecentInviteContacts extends StatelessWidget {
+  const _RecentInviteContacts({
+    required this.contacts,
+    required this.loading,
+    required this.onSelected,
+  });
+
+  final List<ShareContact> contacts;
+  final bool loading;
+  final ValueChanged<ShareContact> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (loading) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          height: 24,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox.square(
+                dimension: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Kontakte laden',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final contact in contacts)
+          ActionChip(
+            avatar: Icon(
+              contact.lastDirection == 'received'
+                  ? LucideIcons.mailOpen
+                  : LucideIcons.send,
+              size: 15,
+            ),
+            label: Text(contact.email),
+            tooltip: contact.lastDirection == 'received'
+                ? 'Hat dich schon eingeladen'
+                : 'Schon eingeladen',
+            onPressed: () => onSelected(contact),
+          ),
+      ],
     );
   }
 }
@@ -1325,6 +2180,13 @@ class _FormatIntent extends Intent {
   const _FormatIntent(this.action);
 
   final String action;
+}
+
+class _TextEdit {
+  const _TextEdit({required this.range, required this.replacement});
+
+  final TextRange range;
+  final String replacement;
 }
 
 Color _noteColorFor(BuildContext context, int color) {

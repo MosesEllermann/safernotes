@@ -34,6 +34,7 @@ env = environ.Env(
     BILLING_WEBHOOK_SECRET=(str, ""),
     EMAIL_BACKEND=(str, "django.core.mail.backends.console.EmailBackend"),
     DEFAULT_FROM_EMAIL=(str, "Safernotes <noreply@localhost>"),
+    APP_BASE_URL=(str, "http://localhost:3000"),
 )
 
 if (ROOT_DIR / ".env").exists():
@@ -44,6 +45,7 @@ DEBUG = env("DEBUG")
 ALLOWED_HOSTS = env("ALLOWED_HOSTS")
 EMAIL_BACKEND = env("EMAIL_BACKEND")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
+APP_BASE_URL = env("APP_BASE_URL")
 
 INSTALLED_APPS = [
     "django.contrib.auth",

@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+  <head>
+    <meta name="color-scheme" content="light dark">
+    <meta name="supported-color-schemes" content="light dark">
+    <style>
+      :root {
+        color-scheme: light dark;
+        supported-color-schemes: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        .email-bg {
+          background: #0f172a !important;
+        }
+        .email-card {
+          background: #111827 !important;
+          border-color: #334155 !important;
+        }
+        .email-title,
+        .email-code {
+          color: #f8fafc !important;
+        }
+        .email-body {
+          color: #cbd5e1 !important;
+        }
+        .email-muted,
+        .email-eyebrow,
+        .email-footer,
+        .email-brand {
+          color: #94a3b8 !important;
+        }
+        .email-button {
+          background: #f8fafc !important;
+          border-color: #f8fafc !important;
+          color: #0f172a !important;
+        }
+      }
+    </style>
+  
+<style>
+  body.email-bg, table.email-bg { background: #0f172a !important; }
+  .email-card { background: #111827 !important; border-color: #334155 !important; }
+  .email-title, .email-code { color: #f8fafc !important; }
+  .email-body { color: #cbd5e1 !important; }
+  .email-muted, .email-eyebrow, .email-footer, .email-brand { color: #94a3b8 !important; }
+  .email-button { background: #f8fafc !important; border-color: #f8fafc !important; color: #0f172a !important; }
+</style>
+</head>
+  <body class="email-bg" style="margin:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+    <div style="display:none;max-height:0;overflow:hidden;color:transparent;">You can now open Safernotes to review the invitation and view the shared note.</div>
+    <table class="email-bg" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8fafc;">
+      <tr>
+        <td align="center" style="padding:36px 18px;">
+          <table class="email-card" role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;">
+            <tr>
+              <td style="padding:30px 32px 28px;">
+                <div class="email-eyebrow" style="font-size:14px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#64748b;">Shared note</div>
+                <h1 class="email-title" style="margin:12px 0 0;font-size:28px;line-height:34px;font-weight:750;color:#0f172a;">anna@example.com shared a note with you</h1>
+                <p class="email-body" style="margin:16px 0 0;font-size:16px;line-height:25px;color:#334155;">You can now open Safernotes to review the invitation and view the shared note.</p>
+                
+                
+          <div style="margin-top:28px;">
+            <a class="email-button" href="http://localhost:3000" style="display:inline-block;border-radius:10px;background:#1f2937;border:1px solid #1f2937;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:13px 18px;">Open Safernotes</a>
+          </div>
+        
+                <p class="email-footer" style="margin:30px 0 0;font-size:13px;line-height:20px;color:#64748b;">For your privacy, note contents are not shown in email.</p>
+              </td>
+            </tr>
+          </table>
+          <div class="email-brand" style="margin-top:18px;font-size:12px;line-height:18px;color:#94a3b8;">Safernotes</div>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

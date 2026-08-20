@@ -8,8 +8,10 @@ import 'package:safernotes_app/features/notes/note_editor_screen.dart';
 import 'package:safernotes_app/features/notes/notes_controller.dart';
 import 'package:safernotes_app/features/settings/settings_screen.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/shared/api/api_client.dart';
 import 'package:safernotes_app/shared/models/note.dart';
 import 'package:safernotes_app/shared/notifications/reminder_notifications.dart';
+import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 final noteSearchProvider = StateProvider<String>((ref) => '');
@@ -496,13 +498,11 @@ class _CompactNoteColumn extends ConsumerWidget {
                     top: before ? 12 : 0,
                     bottom: after ? 12 : 0,
                   ),
-                  child: LongPressDraggable<PlainNote>(
-                    data: entry.note,
-                    feedback: _NoteDragFeedback(note: entry.note),
+                  child: _MeasuredNoteDraggable(
+                    key: ValueKey('compact-note-drag-${entry.note.localId}'),
+                    note: entry.note,
                     onDragStarted: () => onDragStarted(entry.note),
-                    onDraggableCanceled: (_, __) => onDragEnded(),
-                    onDragEnd: (_) => onDragEnded(),
-                    onDragCompleted: onDragEnded,
+                    onDragEnded: onDragEnded,
                     childWhenDragging: Opacity(opacity: 0.34, child: card),
                     child: card,
                   ),
@@ -1453,15 +1453,72 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
   }
 }
 
-class _NoteDragFeedback extends StatelessWidget {
-  const _NoteDragFeedback({required this.note});
+class _MeasuredNoteDraggable extends StatefulWidget {
+  const _MeasuredNoteDraggable({
+    super.key,
+    required this.note,
+    required this.onDragStarted,
+    required this.onDragEnded,
+    required this.childWhenDragging,
+    required this.child,
+  });
 
   final PlainNote note;
+  final VoidCallback onDragStarted;
+  final VoidCallback onDragEnded;
+  final Widget childWhenDragging;
+  final Widget child;
+
+  @override
+  State<_MeasuredNoteDraggable> createState() => _MeasuredNoteDraggableState();
+}
+
+class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
+  final _cardKey = GlobalKey();
+
+  Size? get _cardSize {
+    final renderObject = _cardKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) return null;
+    return renderObject.size;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LongPressDraggable<PlainNote>(
+      data: widget.note,
+      feedback: _NoteDragFeedback(
+        key: ValueKey('note-drag-feedback-${widget.note.localId}'),
+        note: widget.note,
+        sizeReader: () => _cardSize,
+      ),
+      onDragStarted: widget.onDragStarted,
+      onDraggableCanceled: (_, __) => widget.onDragEnded(),
+      onDragEnd: (_) => widget.onDragEnded(),
+      onDragCompleted: widget.onDragEnded,
+      childWhenDragging: widget.childWhenDragging,
+      child: KeyedSubtree(
+        key: _cardKey,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _NoteDragFeedback extends StatelessWidget {
+  const _NoteDragFeedback({
+    super.key,
+    required this.note,
+    required this.sizeReader,
+  });
+
+  final PlainNote note;
+  final Size? Function() sizeReader;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final bg = _noteColorFor(context, note.color);
+    final size = sizeReader() ?? const Size(260, 170);
     return Material(
       color: note.color == 0xffffffff ? scheme.surface : bg,
       elevation: 8,
@@ -1469,8 +1526,8 @@ class _NoteDragFeedback extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
-        width: 260,
-        height: 170,
+        width: size.width,
+        height: size.height,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
           child: Column(
@@ -1566,17 +1623,31 @@ class _FormattedPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35);
-    final lines =
-        text.trim().isEmpty ? [''] : text.trim().split('\n').take(7).toList();
+    final lines = text.trim().isEmpty ? [''] : text.trim().split('\n').toList();
+    final visibleLines = <({String line, bool code})>[];
+    var inCodeBlock = false;
+    for (final line in lines) {
+      if (line.trim() == '```') {
+        inCodeBlock = !inCodeBlock;
+        continue;
+      }
+      visibleLines.add((line: line, code: inCodeBlock));
+      if (visibleLines.length == 7) break;
+    }
     return Text.rich(
       TextSpan(
         children: [
-          for (var i = 0; i < lines.length; i++) ...[
+          for (var i = 0; i < visibleLines.length; i++) ...[
             TextSpan(
-              text: _clean(lines[i]),
-              style: _styleFor(context, base, lines[i]),
+              text: _clean(visibleLines[i].line),
+              style: _styleFor(
+                context,
+                base,
+                visibleLines[i].line,
+                inCodeBlock: visibleLines[i].code,
+              ),
             ),
-            if (i != lines.length - 1) const TextSpan(text: '\n'),
+            if (i != visibleLines.length - 1) const TextSpan(text: '\n'),
           ],
         ],
       ),
@@ -1585,7 +1656,21 @@ class _FormattedPreview extends StatelessWidget {
     );
   }
 
-  TextStyle? _styleFor(BuildContext context, TextStyle? base, String line) {
+  TextStyle? _styleFor(
+    BuildContext context,
+    TextStyle? base,
+    String line, {
+    required bool inCodeBlock,
+  }) {
+    if (inCodeBlock) {
+      return base?.copyWith(
+        fontFamily: 'monospace',
+        backgroundColor: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.58),
+      );
+    }
     if (line.startsWith('# ')) {
       return base?.copyWith(fontSize: 18, fontWeight: FontWeight.w700);
     }
@@ -1602,16 +1687,24 @@ class _FormattedPreview extends StatelessWidget {
       );
     }
     if (line.contains('**')) return base?.copyWith(fontWeight: FontWeight.w700);
-    if (line.contains('_')) return base?.copyWith(fontStyle: FontStyle.italic);
+    if (_containsItalicMarker(line)) {
+      return base?.copyWith(fontStyle: FontStyle.italic);
+    }
     if (line.contains('~~')) {
       return base?.copyWith(decoration: TextDecoration.lineThrough);
+    }
+    if (RegExp(r'\[(.*?)\]\((.*?)\)').hasMatch(line)) {
+      return base?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+        decoration: TextDecoration.underline,
+      );
     }
     if (line.contains('`')) return base?.copyWith(fontFamily: 'monospace');
     return base;
   }
 
   String _clean(String line) {
-    return line
+    final cleaned = line
         .replaceFirst(RegExp(r'^#{1,3}\s'), '')
         .replaceFirst(RegExp(r'^>\s'), '')
         .replaceAll('**', '')
@@ -1619,8 +1712,41 @@ class _FormattedPreview extends StatelessWidget {
         .replaceAll('`', '')
         .replaceAll('<u>', '')
         .replaceAll('</u>', '')
+        .replaceAll('```', '')
         .replaceAllMapped(
             RegExp(r'\[(.*?)\]\((.*?)\)'), (match) => match.group(1) ?? '');
+    return _stripItalicMarkers(cleaned);
+  }
+
+  bool _containsItalicMarker(String line) {
+    for (var index = 0; index < line.length; index++) {
+      if (_isItalicMarker(line, index)) return true;
+    }
+    return false;
+  }
+
+  String _stripItalicMarkers(String line) {
+    final buffer = StringBuffer();
+    for (var index = 0; index < line.length; index++) {
+      if (!_isItalicMarker(line, index)) buffer.write(line[index]);
+    }
+    return buffer.toString();
+  }
+
+  bool _isItalicMarker(String line, int index) {
+    if (!line.startsWith('_', index)) return false;
+    final beforeIsWord =
+        index > 0 && _isWordCharacter(line.codeUnitAt(index - 1));
+    final afterIsWord =
+        index + 1 < line.length && _isWordCharacter(line.codeUnitAt(index + 1));
+    return beforeIsWord != afterIsWord;
+  }
+
+  bool _isWordCharacter(int codeUnit) {
+    return (codeUnit >= 48 && codeUnit <= 57) ||
+        (codeUnit >= 65 && codeUnit <= 90) ||
+        (codeUnit >= 97 && codeUnit <= 122) ||
+        codeUnit >= 128;
   }
 }
 
@@ -2273,9 +2399,17 @@ class _InviteSheet extends ConsumerStatefulWidget {
 
 class _InviteSheetState extends ConsumerState<_InviteSheet> {
   final _recipient = TextEditingController();
+  List<ShareContact> _recentContacts = const [];
+  var _contactsLoading = true;
   var _role = 'editor';
   var _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadRecentContacts());
+  }
 
   @override
   void dispose() {
@@ -2290,9 +2424,39 @@ class _InviteSheetState extends ConsumerState<_InviteSheet> {
       role: _role,
       busy: _busy,
       error: _error,
+      recentContacts: _recentContacts,
+      contactsLoading: _contactsLoading,
+      onContactSelected: _selectContact,
       onRoleChanged: (value) => setState(() => _role = value),
       onInvite: _busy ? null : _invite,
     );
+  }
+
+  Future<void> _loadRecentContacts() async {
+    final session = ref.read(authControllerProvider).valueOrNull;
+    if (session == null) {
+      if (mounted) setState(() => _contactsLoading = false);
+      return;
+    }
+    try {
+      final contacts = await ref
+          .read(apiClientProvider)
+          .fetchShareContacts(session.accessToken);
+      if (mounted) {
+        setState(() {
+          _recentContacts = contacts;
+          _contactsLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _contactsLoading = false);
+    }
+  }
+
+  void _selectContact(ShareContact contact) {
+    _recipient.text = contact.email;
+    _recipient.selection =
+        TextSelection.collapsed(offset: contact.email.length);
   }
 
   Future<void> _invite() async {
@@ -2344,6 +2508,9 @@ class _CollaboratorInviteSheet extends StatelessWidget {
     required this.role,
     required this.busy,
     required this.error,
+    required this.recentContacts,
+    required this.contactsLoading,
+    required this.onContactSelected,
     required this.onRoleChanged,
     required this.onInvite,
   });
@@ -2352,6 +2519,9 @@ class _CollaboratorInviteSheet extends StatelessWidget {
   final String role;
   final bool busy;
   final String? error;
+  final List<ShareContact> recentContacts;
+  final bool contactsLoading;
+  final ValueChanged<ShareContact> onContactSelected;
   final ValueChanged<String> onRoleChanged;
   final VoidCallback? onInvite;
 
@@ -2439,6 +2609,14 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (contactsLoading || recentContacts.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        _RecentInviteContacts(
+                          contacts: recentContacts,
+                          loading: contactsLoading,
+                          onSelected: onContactSelected,
+                        ),
+                      ],
                       const SizedBox(height: 14),
                       Row(
                         children: [
@@ -2491,6 +2669,70 @@ class _CollaboratorInviteSheet extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _RecentInviteContacts extends StatelessWidget {
+  const _RecentInviteContacts({
+    required this.contacts,
+    required this.loading,
+    required this.onSelected,
+  });
+
+  final List<ShareContact> contacts;
+  final bool loading;
+  final ValueChanged<ShareContact> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (loading) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          height: 24,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox.square(
+                dimension: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Kontakte laden',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final contact in contacts)
+          ActionChip(
+            avatar: Icon(
+              contact.lastDirection == 'received'
+                  ? LucideIcons.mailOpen
+                  : LucideIcons.send,
+              size: 15,
+            ),
+            label: Text(contact.email),
+            tooltip: contact.lastDirection == 'received'
+                ? 'Hat dich schon eingeladen'
+                : 'Schon eingeladen',
+            onPressed: () => onSelected(contact),
+          ),
+      ],
     );
   }
 }

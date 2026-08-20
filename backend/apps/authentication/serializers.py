@@ -5,10 +5,11 @@ from rest_framework import serializers
 
 from apps.authentication.models import KeyMaterial, Session
 from apps.authentication.tokens import hash_token
+from apps.core.locales import normalize_locale
 from apps.core.serializers import BinaryTextField, EncryptedEnvelopeField
 from apps.devices.models import Device
 from apps.tenants.models import Membership, Organization
-from apps.users.models import User
+from apps.users.models import Profile, User
 
 
 class RegistrationSerializer(serializers.Serializer):
@@ -19,8 +20,12 @@ class RegistrationSerializer(serializers.Serializer):
     password_salt = serializers.CharField()
     public_encryption_key = serializers.CharField()
     public_signing_key = serializers.CharField()
-    public_encryption_key_fingerprint = serializers.CharField(max_length=128, required=False, allow_blank=True)
-    public_signing_key_fingerprint = serializers.CharField(max_length=128, required=False, allow_blank=True)
+    public_encryption_key_fingerprint = serializers.CharField(
+        max_length=128, required=False, allow_blank=True
+    )
+    public_signing_key_fingerprint = serializers.CharField(
+        max_length=128, required=False, allow_blank=True
+    )
     encrypted_master_key = EncryptedEnvelopeField()
     encrypted_private_encryption_key = EncryptedEnvelopeField()
     encrypted_private_signing_key = EncryptedEnvelopeField()
@@ -28,6 +33,7 @@ class RegistrationSerializer(serializers.Serializer):
     device_name_ciphertext = EncryptedEnvelopeField(required=False)
     device_public_signing_key = serializers.CharField(required=False)
     default_tenant_name_ciphertext = EncryptedEnvelopeField()
+    locale = serializers.CharField(required=False, default="en")
 
     def validate_email(self, value):
         if User.objects.filter(email__iexact=value).exists():
@@ -37,12 +43,14 @@ class RegistrationSerializer(serializers.Serializer):
     def create(self, validated_data):
         password = validated_data.pop("password")
         email = validated_data.pop("email")
+        locale = normalize_locale(validated_data.pop("locale", "en"))
         device_name_ciphertext = validated_data.pop("device_name_ciphertext", None)
         device_public_signing_key = validated_data.pop("device_public_signing_key", None)
         default_tenant_name_ciphertext = validated_data.pop("default_tenant_name_ciphertext")
         binary_fields = ["password_salt", "public_encryption_key", "public_signing_key"]
         key_data = {field: validated_data.pop(field).encode("utf-8") for field in binary_fields}
         user = User.objects.create_user(email=email, password=password)
+        Profile.objects.create(user=user, locale=locale)
         KeyMaterial.objects.create(user=user, **validated_data, **key_data)
         tenant = Organization.objects.create(
             name_ciphertext=default_tenant_name_ciphertext,
@@ -76,7 +84,9 @@ class LoginSerializer(serializers.Serializer):
         device_id = attrs.get("device_id")
         attrs["device"] = None
         if device_id:
-            attrs["device"] = Device.objects.filter(user=user, id=device_id, revoked_at__isnull=True).first()
+            attrs["device"] = Device.objects.filter(
+                user=user, id=device_id, revoked_at__isnull=True
+            ).first()
             if attrs["device"] is None:
                 raise serializers.ValidationError("Unknown or revoked device.")
         return attrs
@@ -87,7 +97,9 @@ class RefreshSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         token_hash = hash_token(attrs["refresh_token"])
-        session = Session.objects.filter(refresh_token_hash=token_hash, revoked_at__isnull=True).first()
+        session = Session.objects.filter(
+            refresh_token_hash=token_hash, revoked_at__isnull=True
+        ).first()
         if session is None:
             reused_session = Session.objects.filter(
                 previous_refresh_token_hash=token_hash, revoked_at__isnull=True

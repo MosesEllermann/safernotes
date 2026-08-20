@@ -35,6 +35,7 @@ class AuthController extends AsyncNotifier<AppSession?> {
     required String email,
     required String password,
     required String workspaceName,
+    required String locale,
   }) async {
     state = const AsyncLoading();
     String? recoveryKey;
@@ -50,6 +51,7 @@ class AuthController extends AsyncNotifier<AppSession?> {
             email: email,
             password: password,
             material: material,
+            locale: locale,
           );
       final session = AppSession(
         email: response['email'] as String? ?? email,

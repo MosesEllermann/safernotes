@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:safernotes_app/features/auth/auth_controller.dart';
+import 'package:safernotes_app/shared/providers.dart';
 
 final appPreferencesProvider =
     AsyncNotifierProvider<AppPreferencesController, AppPreferences>(
@@ -49,6 +52,7 @@ class AppPreferencesController extends AsyncNotifier<AppPreferences> {
     await prefs.setString(_languageKey, languageCode);
     state = AsyncData((state.valueOrNull ?? await build())
         .copyWith(languageCode: languageCode));
+    unawaited(_syncLanguage(languageCode));
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
@@ -77,5 +81,18 @@ class AppPreferencesController extends AsyncNotifier<AppPreferences> {
       ThemeMode.dark => 'dark',
       ThemeMode.system => 'system',
     };
+  }
+
+  Future<void> _syncLanguage(String languageCode) async {
+    final session = ref.read(authControllerProvider).valueOrNull;
+    if (session == null) return;
+    try {
+      await ref.read(apiClientProvider).updatePreferences(
+            accessToken: session.accessToken,
+            locale: languageCode,
+          );
+    } catch (_) {
+      // Local preferences should keep working while the app is offline.
+    }
   }
 }

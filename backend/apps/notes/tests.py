@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import pytest
+from django.core import mail
+from django.test import override_settings
+from rest_framework.test import APIRequestFactory, force_authenticate
 
 from apps.attachments.serializers import AttachmentSerializer
 from apps.collaboration.consumers import valid_encrypted_event_payload
@@ -13,6 +16,7 @@ from apps.notes.serializers import (
     ShareInvitationSerializer,
 )
 from apps.notes.sync import SyncBatchSerializer
+from apps.notes.views import ShareInvitationViewSet
 from apps.notifications.serializers import (
     EncryptedNotificationFanoutSerializer,
     NotificationSerializer,
@@ -123,7 +127,9 @@ def test_websocket_encrypted_event_payload_requires_envelope():
 
 
 def test_note_serializer_conflict_raises_409(db, django_user_model):
-    user = django_user_model.objects.create_user(email="owner@example.com", password="strong-password")
+    user = django_user_model.objects.create_user(
+        email="owner@example.com", password="strong-password"
+    )
     from apps.notes.models import Note
     from apps.tenants.models import Organization
 
@@ -199,7 +205,9 @@ def test_conflict_resolution_serializer_accepts_minimal_resolution():
 
 
 def test_encrypted_notification_fanout_rejects_plaintext_body(db, django_user_model):
-    user = django_user_model.objects.create_user(email="recipient@example.com", password="strong-password")
+    user = django_user_model.objects.create_user(
+        email="recipient@example.com", password="strong-password"
+    )
     serializer = EncryptedNotificationFanoutSerializer(
         data={
             "type": "share_invite",
@@ -218,8 +226,12 @@ def test_encrypted_notification_fanout_rejects_plaintext_body(db, django_user_mo
 
 
 def test_share_invitation_rejects_plaintext_note_key(db, django_user_model):
-    owner = django_user_model.objects.create_user(email="share-owner@example.com", password="strong-password")
-    recipient = django_user_model.objects.create_user(email="share-recipient@example.com", password="strong-password")
+    owner = django_user_model.objects.create_user(
+        email="share-owner@example.com", password="strong-password"
+    )
+    recipient = django_user_model.objects.create_user(
+        email="share-recipient@example.com", password="strong-password"
+    )
     from apps.notes.models import Note
     from apps.tenants.models import Organization
 
@@ -249,8 +261,12 @@ def test_share_invitation_rejects_plaintext_note_key(db, django_user_model):
 
 
 def test_share_invitation_rejects_owner_role(db, django_user_model):
-    owner = django_user_model.objects.create_user(email="role-owner@example.com", password="strong-password")
-    recipient = django_user_model.objects.create_user(email="role-recipient@example.com", password="strong-password")
+    owner = django_user_model.objects.create_user(
+        email="role-owner@example.com", password="strong-password"
+    )
+    recipient = django_user_model.objects.create_user(
+        email="role-recipient@example.com", password="strong-password"
+    )
     from apps.notes.models import Note
     from apps.tenants.models import Organization
 
@@ -278,8 +294,12 @@ def test_share_invitation_rejects_owner_role(db, django_user_model):
 
 
 def test_share_invitation_accepts_recipient_email(db, django_user_model):
-    owner = django_user_model.objects.create_user(email="email-owner@example.com", password="strong-password")
-    recipient = django_user_model.objects.create_user(email="email-recipient@example.com", password="strong-password")
+    owner = django_user_model.objects.create_user(
+        email="email-owner@example.com", password="strong-password"
+    )
+    recipient = django_user_model.objects.create_user(
+        email="email-recipient@example.com", password="strong-password"
+    )
     from apps.notes.models import Note
     from apps.tenants.models import Organization
 
@@ -307,8 +327,118 @@ def test_share_invitation_accepts_recipient_email(db, django_user_model):
     assert serializer.validated_data["recipient_user"] == recipient
 
 
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_share_invitation_sends_localized_email(db, django_user_model):
+    from apps.notes.models import Note
+    from apps.tenants.models import Organization
+    from apps.users.models import Profile
+
+    owner = django_user_model.objects.create_user(
+        email="owner-mail@example.com", password="strong-password"
+    )
+    recipient = django_user_model.objects.create_user(
+        email="recipient-mail@example.com", password="strong-password"
+    )
+    Profile.objects.create(user=recipient, locale="de")
+    tenant = Organization.objects.create(name_ciphertext=encrypted_payload(), owner_user=owner)
+    note = Note.objects.create(
+        tenant=tenant,
+        owner_user=owner,
+        encrypted_payload=encrypted_payload(),
+        payload_hash=b"server-hash",
+        client_updated_at="2026-06-09T00:00:00Z",
+    )
+    request = APIRequestFactory().post(
+        "/api/v1/notes/invitations/",
+        {
+            "note": str(note.id),
+            "recipient_user": recipient.email,
+            "role": "editor",
+            "encrypted_note_key": encrypted_payload(),
+            "invitation_signature": "signature",
+        },
+        format="json",
+    )
+    force_authenticate(request, user=owner)
+
+    response = ShareInvitationViewSet.as_view({"post": "create"})(request)
+
+    assert response.status_code == 201
+    assert len(mail.outbox) == 1
+    assert (
+        mail.outbox[0].subject
+        == "owner-mail@example.com hat dich eingeladen, eine Notiz zu bearbeiten"
+    )
+    assert "gemeinsam zu bearbeiten" in mail.outbox[0].alternatives[0][0]
+
+
+def test_share_invitation_contacts_include_sent_and_received(db, django_user_model):
+    from apps.notes.models import Note, ShareInvitation
+    from apps.tenants.models import Organization
+
+    user = django_user_model.objects.create_user(
+        email="contacts@example.com", password="strong-password"
+    )
+    sent_contact = django_user_model.objects.create_user(
+        email="sent-contact@example.com", password="strong-password"
+    )
+    received_contact = django_user_model.objects.create_user(
+        email="received-contact@example.com", password="strong-password"
+    )
+    tenant = Organization.objects.create(name_ciphertext=encrypted_payload(), owner_user=user)
+    received_tenant = Organization.objects.create(
+        name_ciphertext=encrypted_payload(), owner_user=received_contact
+    )
+    note = Note.objects.create(
+        tenant=tenant,
+        owner_user=user,
+        encrypted_payload=encrypted_payload(),
+        payload_hash=b"server-hash",
+        client_updated_at="2026-06-09T00:00:00Z",
+    )
+    received_note = Note.objects.create(
+        tenant=received_tenant,
+        owner_user=received_contact,
+        encrypted_payload=encrypted_payload(),
+        payload_hash=b"received-server-hash",
+        client_updated_at="2026-06-09T00:00:00Z",
+    )
+    ShareInvitation.objects.create(
+        note=note,
+        sender_user=user,
+        recipient_user=sent_contact,
+        role="editor",
+        encrypted_note_key=encrypted_payload(),
+        invitation_signature=b"signature",
+    )
+    ShareInvitation.objects.create(
+        note=received_note,
+        sender_user=received_contact,
+        recipient_user=user,
+        role="viewer",
+        encrypted_note_key=encrypted_payload(),
+        invitation_signature=b"signature",
+    )
+    request = APIRequestFactory().get("/api/v1/notes/invitations/contacts/")
+    force_authenticate(request, user=user)
+
+    response = ShareInvitationViewSet.as_view({"get": "contacts"})(request)
+
+    assert response.status_code == 200
+    contacts = response.data["results"]
+    assert {item["email"] for item in contacts} == {
+        "sent-contact@example.com",
+        "received-contact@example.com",
+    }
+    directions = {item["email"]: item["last_direction"] for item in contacts}
+    assert directions["sent-contact@example.com"] == "sent"
+    assert directions["received-contact@example.com"] == "received"
+
+
 def test_ownership_transfer_rejects_plaintext_fields(db, django_user_model):
-    user = django_user_model.objects.create_user(email="new-owner@example.com", password="strong-password")
+    user = django_user_model.objects.create_user(
+        email="new-owner@example.com", password="strong-password"
+    )
     serializer = OwnershipTransferSerializer(
         data={
             "new_owner_user": str(user.id),

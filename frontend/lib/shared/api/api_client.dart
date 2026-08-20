@@ -28,10 +28,12 @@ class ApiClient {
     required String email,
     required String password,
     required RegistrationKeyMaterial material,
+    required String locale,
   }) {
     return _post('/api/v1/auth/register', {
       'email': email,
       'password': password,
+      'locale': locale,
       'kdf_algorithm': material.kdfAlgorithm,
       'kdf_params': material.kdfParams,
       'password_salt': material.passwordSalt,
@@ -109,6 +111,17 @@ class ApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> updatePreferences({
+    required String accessToken,
+    required String locale,
+  }) {
+    return _patch(
+      '/api/v1/users/me/preferences',
+      {'locale': locale},
+      accessToken: accessToken,
+    );
+  }
+
   Future<Map<String, dynamic>> changePassword({
     required String accessToken,
     required String currentPassword,
@@ -144,6 +157,15 @@ class ApiClient {
     return results
         .map((item) => CollaboratorPresence.fromJson(
             Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
+  Future<List<ShareContact>> fetchShareContacts(String accessToken) async {
+    final json = await _get('/api/v1/notes/invitations/contacts/', accessToken);
+    final results = json['results'] as List? ?? json as List;
+    return results
+        .map((item) =>
+            ShareContact.fromJson(Map<String, dynamic>.from(item as Map)))
         .toList();
   }
 
@@ -229,6 +251,22 @@ class ApiClient {
     return _decode(response);
   }
 
+  Future<Map<String, dynamic>> _patch(
+    String path,
+    Map<String, dynamic> body, {
+    required String accessToken,
+  }) async {
+    final response = await _http.patch(
+      Uri.parse('$baseUrl$path'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode(body),
+    );
+    return _decode(response);
+  }
+
   Map<String, dynamic> _decode(http.Response response) {
     final dynamic body =
         response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
@@ -306,6 +344,26 @@ class CheckoutSession {
       provider: json['provider'] as String? ?? 'unconfigured',
       targetPlan: json['target_plan'] as String? ?? '',
       checkoutUrl: json['checkout_url'] as String?,
+    );
+  }
+}
+
+class ShareContact {
+  const ShareContact({
+    required this.email,
+    required this.lastRole,
+    required this.lastDirection,
+  });
+
+  final String email;
+  final String lastRole;
+  final String lastDirection;
+
+  factory ShareContact.fromJson(Map<String, dynamic> json) {
+    return ShareContact(
+      email: json['email'] as String? ?? '',
+      lastRole: json['last_role'] as String? ?? '',
+      lastDirection: json['last_direction'] as String? ?? '',
     );
   }
 }

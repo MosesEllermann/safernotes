@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib.sessions.middleware import SessionMiddleware
+from django.core import mail
+from django.test import override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from apps.authentication.tokens import hash_token
@@ -11,6 +13,7 @@ from apps.authentication.views import (
     LoginView,
     PasswordChangeView,
     RecoveryCompleteView,
+    RecoveryStartView,
     RegisterView,
 )
 
@@ -51,7 +54,9 @@ def attach_session(request):
 def test_register_view_returns_tokens(db):
     from apps.authentication.models import EmailVerificationCode
 
-    request = APIRequestFactory().post("/api/v1/auth/register", registration_payload(), format="json")
+    request = APIRequestFactory().post(
+        "/api/v1/auth/register", registration_payload(), format="json"
+    )
     attach_session(request)
     response = RegisterView.as_view()(request)
 
@@ -63,10 +68,31 @@ def test_register_view_returns_tokens(db):
     assert EmailVerificationCode.objects.filter(user__email="new@example.com").exists()
 
 
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_register_sends_localized_verification_email(db):
+    request = APIRequestFactory().post(
+        "/api/v1/auth/register",
+        registration_payload(email="de-register@example.com") | {"locale": "de"},
+        format="json",
+    )
+    attach_session(request)
+    response = RegisterView.as_view()(request)
+
+    assert response.status_code == 201
+    assert len(mail.outbox) == 1
+    message = mail.outbox[0]
+    assert message.subject == "Dein Safernotes Bestätigungscode"
+    assert "sechsstelligen Code" in message.body
+    assert message.alternatives[0][1] == "text/html"
+    assert "Dein Bestätigungscode" in message.alternatives[0][0]
+
+
 def test_login_view_returns_key_material(db, django_user_model):
     from apps.authentication.models import KeyMaterial
 
-    user = django_user_model.objects.create_user(email="login@example.com", password="very-strong-password")
+    user = django_user_model.objects.create_user(
+        email="login@example.com", password="very-strong-password"
+    )
     KeyMaterial.objects.create(
         user=user,
         kdf_params={"m": 65536, "t": 3, "p": 1},
@@ -94,7 +120,9 @@ def test_recovery_complete_rewraps_master_key(db, django_user_model):
 
     from apps.authentication.models import KeyMaterial, RecoveryCode
 
-    user = django_user_model.objects.create_user(email="recover@example.com", password="old-password")
+    user = django_user_model.objects.create_user(
+        email="recover@example.com", password="old-password"
+    )
     KeyMaterial.objects.create(
         user=user,
         kdf_params={"m": 65536, "t": 3, "p": 1},
@@ -135,10 +163,46 @@ def test_recovery_complete_rewraps_master_key(db, django_user_model):
     assert user.key_material.encrypted_master_key["ciphertext"] == "new-ciphertext"
 
 
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_recovery_start_sends_localized_email(db, django_user_model):
+    from apps.authentication.models import KeyMaterial
+    from apps.users.models import Profile
+
+    user = django_user_model.objects.create_user(
+        email="recover-de@example.com", password="old-password"
+    )
+    Profile.objects.create(user=user, locale="de")
+    KeyMaterial.objects.create(
+        user=user,
+        kdf_params={"m": 65536, "t": 3, "p": 1},
+        password_salt=b"old-salt",
+        public_encryption_key=b"public-encryption-key",
+        public_signing_key=b"public-signing-key",
+        encrypted_master_key=encrypted_payload(),
+        encrypted_private_encryption_key=encrypted_payload(),
+        encrypted_private_signing_key=encrypted_payload(),
+        recovery_wrapper=encrypted_payload(),
+    )
+    request = APIRequestFactory().post(
+        "/api/v1/auth/recovery/start",
+        {"email": "recover-de@example.com"},
+        format="json",
+    )
+    response = RecoveryStartView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data["recovery_available"] is True
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].subject == "Dein Safernotes Code zum Zurücksetzen des Passworts"
+    assert "Passwort zurückzusetzen" in mail.outbox[0].alternatives[0][0]
+
+
 def test_password_change_rewraps_master_key(db, django_user_model):
     from apps.authentication.models import KeyMaterial
 
-    user = django_user_model.objects.create_user(email="change@example.com", password="old-password")
+    user = django_user_model.objects.create_user(
+        email="change@example.com", password="old-password"
+    )
     KeyMaterial.objects.create(
         user=user,
         kdf_params={"m": 65536, "t": 3, "p": 1},
