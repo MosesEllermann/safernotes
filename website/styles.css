@@ -454,7 +454,7 @@ dd {
 .plans {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 48px;
+  gap: 16px;
   margin-top: 60px;
 }
 
@@ -463,11 +463,13 @@ dd {
   min-width: 0;
   min-height: 390px;
   flex-direction: column;
-  padding: 0;
+  padding: 28px;
+  background: var(--surface-soft);
+  border-radius: 8px;
 }
 
 .plan + .plan {
-  padding-left: 0;
+  padding-left: 28px;
 }
 
 .plan > div p {
@@ -856,21 +858,26 @@ a.download-option:hover h3 {
   }
 
   .feature-list article,
-  .feature-list article + article,
-  .plan,
-  .plan + .plan {
+  .feature-list article + article {
     padding: 0;
     border-left: 0;
   }
 
-  .feature-list article + article,
-  .plan + .plan {
+  .feature-list article + article {
     border-top: 0;
   }
 
-  .feature-list,
-  .plans {
+  .feature-list {
     gap: 42px;
+  }
+
+  .plans {
+    gap: 16px;
+  }
+
+  .plan,
+  .plan + .plan {
+    padding: 24px;
   }
 
   .plan {
