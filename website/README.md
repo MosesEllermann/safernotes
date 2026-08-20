@@ -5,7 +5,8 @@ server required.
 
 ## Files
 
-- `index.html`: landing page with hero, product preview, trust section, workflow, pricing, and CTA
+- `index.html`: simple product landing page with app preview, security, pricing, and CTA
+- `assets/app-preview.png`: product image based on the live Safernotes interface
 - `privacy.html`: professionally structured privacy policy placeholder
 - `impressum.html`: professionally structured legal notice placeholder
 - `styles.css`: shared responsive design system
@@ -20,21 +21,15 @@ website/index.html
 
 All links between the static pages are relative and work from the filesystem.
 
-## Livegang To-dos
+## Legal To-dos
 
-Replace or finalize these before publishing:
+Replace or finalize these before publishing the legal pages:
 
-- `http://localhost:3000/` app links
-- `hello@example.com` contact links
 - Impressum provider details
 - Datenschutz provider details, legal bases, storage locations, and processor list
 - final legal review of all legal pages
-- production app URL and production support email
-- self-host the free fonts currently loaded from Google Fonts, or replace the
-  import with locally hosted font files for production/privacy compliance
 
-The yellow/black `Livegang-TODO` bars and small `TODO` link badges intentionally
-mark unfinished production details.
+The notice bars on the legal pages intentionally mark unfinished legal details.
 
 ## Deployment
 
