@@ -20,7 +20,7 @@ class ApiClient {
   ApiClient({
     http.Client? httpClient,
     this.baseUrl = 'http://127.0.0.1:8000',
-    this.requestTimeout = const Duration(seconds: 12),
+    this.requestTimeout = const Duration(seconds: 5),
   }) : _http = httpClient ?? http.Client();
 
   final http.Client _http;

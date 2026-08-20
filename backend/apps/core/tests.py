@@ -5,6 +5,7 @@ from rest_framework.test import APIRequestFactory
 
 from apps.core.abuse import increment_metadata_limit
 from apps.core.checks import production_configuration_check
+from apps.core.emails import _send
 from apps.core.security import redact_value
 from apps.core.views import HealthLiveView, HealthReadyView
 
@@ -59,6 +60,24 @@ def test_health_ready_checks_database(db):
 
     assert response.status_code == 200
     assert response.data == {"status": "ready"}
+
+
+def test_send_email_does_not_silence_delivery_errors(monkeypatch):
+    calls = []
+
+    def fake_send(self, *, fail_silently):
+        calls.append(fail_silently)
+
+    monkeypatch.setattr("django.core.mail.message.EmailMessage.send", fake_send)
+
+    _send(
+        to="user@example.test",
+        subject="Test",
+        text_body="Text",
+        html_body="<p>Text</p>",
+    )
+
+    assert calls == [False]
 
 
 @override_settings(

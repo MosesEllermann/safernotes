@@ -172,7 +172,7 @@ def _send(*, to: str, subject: str, text_body: str, html_body: str) -> None:
         to=[to],
     )
     message.attach_alternative(html_body, "text/html")
-    message.send(fail_silently=True)
+    message.send(fail_silently=False)
 
 
 def _render_html(*, copy: MailCopy, code: str = "", button_url: str = "") -> str:
