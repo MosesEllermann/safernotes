@@ -98,6 +98,70 @@ jobs:
 
           exit 1
 
+      - name: Configure production email environment
+        if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
+        env:
+          API_HOST: ${{ secrets.API_HOST }}
+          API_PORT: ${{ secrets.API_PORT }}
+          API_USER: ${{ secrets.API_USER }}
+          API_SSH_KEY: ${{ secrets.API_SSH_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          if [ -z "$RESEND_API_KEY" ]; then
+            echo "::warning::RESEND_API_KEY secret is not set; production email cannot send."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$API_SSH_KEY" > ~/.ssh/api_deploy_key
+          chmod 600 ~/.ssh/api_deploy_key
+          ssh-keyscan -p "${API_PORT:-22}" -H "$API_HOST" >> ~/.ssh/known_hosts
+
+          ssh -p "${API_PORT:-22}" -i ~/.ssh/api_deploy_key "$API_USER@$API_HOST" \
+            "RESEND_API_KEY=$(printf '%q' "$RESEND_API_KEY") bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import os
+          from pathlib import Path
+
+          env_file = Path("/opt/safernotes/.env.production")
+          if not env_file.exists():
+              raise SystemExit(f"Missing production env file: {env_file}")
+
+          updates = {
+              "EMAIL_BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+              "EMAIL_HOST": "smtp.resend.com",
+              "EMAIL_PORT": "587",
+              "EMAIL_HOST_USER": "resend",
+              "EMAIL_HOST_PASSWORD": os.environ["RESEND_API_KEY"],
+              "EMAIL_USE_TLS": "True",
+              "EMAIL_USE_SSL": "False",
+              "DEFAULT_FROM_EMAIL": "Safernotes <noreply@safernotes.com>",
+          }
+
+          lines = env_file.read_text().splitlines()
+          seen = set()
+          next_lines = []
+          for line in lines:
+              key = line.split("=", 1)[0] if "=" in line else ""
+              if key in updates:
+                  next_lines.append(f"{key}={updates[key]}")
+                  seen.add(key)
+              else:
+                  next_lines.append(line)
+
+          for key, value in updates.items():
+              if key not in seen:
+                  next_lines.append(f"{key}={value}")
+
+          env_file.write_text("\n".join(next_lines) + "\n")
+          print("Production email environment updated.")
+          PY
+          REMOTE
+
       - name: Deploy static sites to SPanel
         if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
         env:
@@ -178,6 +242,17 @@ jobs:
           print(f'EMAIL_USE_TLS={settings.EMAIL_USE_TLS}')
           print(f'EMAIL_USE_SSL={settings.EMAIL_USE_SSL}')
           print(f'DEFAULT_FROM_EMAIL={settings.DEFAULT_FROM_EMAIL}')
+
+          if settings.EMAIL_BACKEND != 'django.core.mail.backends.smtp.EmailBackend':
+              raise SystemExit(f'EMAIL_BACKEND must be SMTP in production, got {settings.EMAIL_BACKEND}')
+          if not settings.EMAIL_HOST:
+              raise SystemExit('EMAIL_HOST is not set')
+          if not settings.EMAIL_HOST_USER:
+              raise SystemExit('EMAIL_HOST_USER is not set')
+          if not settings.EMAIL_HOST_PASSWORD:
+              raise SystemExit('EMAIL_HOST_PASSWORD is not set')
+          if not (settings.EMAIL_USE_TLS or settings.EMAIL_USE_SSL):
+              raise SystemExit('EMAIL_USE_TLS or EMAIL_USE_SSL must be enabled')
 
           connection = mail.get_connection(timeout=15)
           connection.open()
