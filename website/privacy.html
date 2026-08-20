@@ -6,56 +6,37 @@
     <title>Datenschutz - Safernotes</title>
     <meta
       name="description"
-      content="Professionell strukturierter Datenschutz-Platzhalter für Safernotes."
+      content="Datenschutzhinweise für die Website und App Safernotes."
     />
+    <meta name="theme-color" content="#fbfbfa" />
     <link rel="stylesheet" href="./styles.css" />
-    <script src="./menu.js" defer></script>
   </head>
   <body class="legal-page">
-    <div class="launch-note" role="note">
-      <span>Livegang-TODO</span>
-      Datenschutztext vor Veröffentlichung rechtlich finalisieren.
-    </div>
-
     <header class="site-header">
-      <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
-        <span class="brand-mark">S</span>
-        <span class="brand-name">Safernotes</span>
-      </a>
-      <nav class="site-nav" aria-label="Hauptnavigation">
-        <a href="./index.html#security">Zero Knowledge</a>
-        <a href="./index.html#workflow">Workflow</a>
-        <a href="./index.html#pricing">Preise</a>
-        <a href="./impressum.html">Impressum</a>
-      </nav>
-      <a class="header-cta" href="https://app.safernotes.com/">App öffnen</a>
-      <button class="menu-button" type="button" aria-controls="mobile-menu" aria-expanded="false" data-menu-open>
-        <span></span>
-        <span></span>
-        <span></span>
-      </button>
+      <div class="header-inner">
+        <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
+          <span class="brand-mark" aria-hidden="true">S</span>
+          <span>Safernotes</span>
+        </a>
+        <nav class="site-nav" aria-label="Hauptnavigation">
+          <a href="./index.html#product">Produkt</a>
+          <a href="./index.html#security">Sicherheit</a>
+          <a href="./downloads.html">Downloads</a>
+          <a href="./privacy.html" aria-current="page">Datenschutz</a>
+        </nav>
+        <a class="button button-small button-dark" href="https://app.safernotes.com/">
+          App öffnen
+        </a>
+      </div>
     </header>
-
-    <div class="menu-scrim" data-menu-close></div>
-    <aside class="menu-panel" id="mobile-menu" aria-hidden="true">
-      <button class="menu-close" type="button" aria-label="Menü schließen" data-menu-close>×</button>
-      <nav aria-label="Mobile Navigation">
-        <a href="./index.html#security">Zero Knowledge</a>
-        <a href="./index.html#workflow">Workflow</a>
-        <a href="./index.html#pricing">Preise</a>
-        <a href="./privacy.html">Datenschutz</a>
-        <a href="./impressum.html">Impressum</a>
-      </nav>
-    </aside>
 
     <main>
       <section class="legal-hero">
-        <p class="eyebrow">Datenschutz</p>
-        <h1>Datenschutz mit klarer Zero-Knowledge-Grenze.</h1>
+        <p class="eyebrow">Rechtliches</p>
+        <h1>Datenschutz</h1>
         <p>
-          Diese Seite beschreibt professionell, welche Datenschutzinformationen
-          vor dem Livegang benötigt werden. Rechtliche Platzhalter sind bewusst
-          markiert und müssen final geprüft werden.
+          Diese Hinweise erklären, welche Daten Safernotes für Website, Account,
+          Synchronisierung und Sicherheit verarbeitet.
         </p>
       </section>
 
@@ -64,103 +45,146 @@
           <strong>Auf dieser Seite</strong>
           <a href="#status">Status</a>
           <a href="#controller">Verantwortlicher</a>
-          <a href="#zero-knowledge">Zero Knowledge</a>
-          <a href="#data">Datenarten</a>
-          <a href="#payments">Zahlungen</a>
+          <a href="#data">Daten und Zwecke</a>
+          <a href="#encryption">Verschlüsselung</a>
+          <a href="#legal-bases">Rechtsgrundlagen</a>
           <a href="#providers">Dienstleister</a>
-          <a href="#rights">Rechte</a>
+          <a href="#storage">Speicherdauer</a>
+          <a href="#rights">Deine Rechte</a>
         </aside>
 
         <article class="legal-content">
           <div class="placeholder-box" id="status">
-            <strong>Platzhalter, nicht veröffentlichungsfertig</strong>
-            Diese Struktur ersetzt keine Rechtsberatung. Vor Veröffentlichung
-            müssen Anbieter, Rechtsgrundlagen, Speicherorte und Kontaktdaten
-            ergänzt und geprüft werden.
+            <strong>Stand: Entwurf</strong>
+            Name oder Firma, ladungsfähige Anschrift, Datenschutzkontakt,
+            Hosting-Anbieter und konkrete Aufbewahrungsfristen müssen noch mit
+            den tatsächlichen Betreiberangaben ergänzt und rechtlich geprüft werden.
           </div>
 
           <section id="controller">
             <h2>Verantwortlicher</h2>
             <div class="data-table">
               <div class="data-row">
-                <strong>Name/Firma</strong>
-                <span>[Name/Firma einsetzen]</span>
+                <strong>Name oder Firma</strong>
+                <span>[Betreiber ergänzen]</span>
               </div>
               <div class="data-row">
-                <strong>Adresse</strong>
-                <span>[Straße, PLZ, Ort, Land einsetzen]</span>
+                <strong>Anschrift</strong>
+                <span>[Ladungsfähige Anschrift ergänzen]</span>
               </div>
               <div class="data-row">
-                <strong>Kontakt</strong>
-                <span>[E-Mail einsetzen]</span>
+                <strong>Datenschutzkontakt</strong>
+                <span>[E-Mail-Adresse ergänzen]</span>
               </div>
             </div>
           </section>
 
-          <section id="zero-knowledge">
-            <h2>Zero-Knowledge-Verarbeitung</h2>
-            <p>
-              Safernotes ist darauf ausgelegt, Notizinhalte clientseitig zu
-              verschlüsseln. Titel, Text, Checklisten und nutzerseitige Inhalte
-              werden vor der Synchronisierung verschlüsselt. Der Server
-              verarbeitet diese Inhalte grundsätzlich als verschlüsselte Daten.
-            </p>
-            <p>
-              Diese Aussage muss vor Livegang technisch und rechtlich mit der
-              tatsächlichen Implementierung abgeglichen werden.
-            </p>
-          </section>
-
           <section id="data">
-            <h2>Verarbeitete Daten</h2>
+            <h2>Verarbeitete Daten und Zwecke</h2>
+            <h3>Öffentliche Website</h3>
+            <p>
+              Die Landingpage setzt derzeit keine Analyse- oder Werbetracker ein.
+              Beim Aufruf können technisch notwendige Server-Protokolldaten wie
+              IP-Adresse, Zeitpunkt, angeforderte Datei und Browserkennung anfallen.
+            </p>
+            <h3>Safernotes-App</h3>
             <ul>
-              <li>Accountdaten wie E-Mail-Adresse und Authentifizierungsdaten</li>
-              <li>verschlüsselte Notizdaten und Synchronisierungsmetadaten</li>
-              <li>technische Protokolldaten zur Sicherheit und Fehleranalyse</li>
-              <li>Billing-Statusdaten bei kostenpflichtigen Plänen</li>
+              <li>Accountdaten, insbesondere E-Mail-Adresse und Verifizierungsstatus</li>
+              <li>Authentifizierungs- und Sicherheitsdaten für Anmeldung und Sitzungen</li>
+              <li>verschlüsselte Notizinhalte und Synchronisierungsmetadaten</li>
+              <li>technische Protokolldaten zur Stabilität und Missbrauchsabwehr</li>
+              <li>Plan- und Zahlungsstatus, sofern kostenpflichtige Funktionen genutzt werden</li>
             </ul>
           </section>
 
-          <section id="payments">
-            <h2>Zahlungen</h2>
+          <section id="encryption">
+            <h2>Clientseitige Verschlüsselung</h2>
             <p>
-              Zahlungen sollen über Paddle als Merchant of Record abgewickelt
-              werden. Zahlungsdaten werden dabei von Paddle verarbeitet. ZK
-              Notizen speichert nur notwendige Subscription-Statusdaten, z. B.
-              Plan, Status, Customer-ID und Subscription-ID.
+              Titel, Texte und Checklisten werden vor der Synchronisierung auf
+              dem Endgerät verschlüsselt. Der Server speichert diese Inhalte als
+              verschlüsselte Daten. Accountdaten, technische Metadaten und
+              Server-Protokolle sind davon nicht automatisch umfasst.
+            </p>
+            <p>
+              Erinnerungen werden lokal auf dem jeweiligen Gerät geplant. Die
+              Betriebssysteme können dafür lokale Benachrichtigungsdaten verarbeiten.
             </p>
           </section>
 
+          <section id="legal-bases">
+            <h2>Zwecke und Rechtsgrundlagen</h2>
+            <div class="data-table">
+              <div class="data-row">
+                <strong>Bereitstellung der App</strong>
+                <span>Vertragserfüllung gemäß Art. 6 Abs. 1 lit. b DSGVO</span>
+              </div>
+              <div class="data-row">
+                <strong>Sicherheit und Fehleranalyse</strong>
+                <span>Berechtigte Interessen gemäß Art. 6 Abs. 1 lit. f DSGVO</span>
+              </div>
+              <div class="data-row">
+                <strong>Rechtliche Pflichten</strong>
+                <span>Art. 6 Abs. 1 lit. c DSGVO, soweit anwendbar</span>
+              </div>
+              <div class="data-row">
+                <strong>Optionale Funktionen</strong>
+                <span>Einwilligung gemäß Art. 6 Abs. 1 lit. a DSGVO, soweit erforderlich</span>
+              </div>
+            </div>
+          </section>
+
           <section id="providers">
-            <h2>Hosting und E-Mail</h2>
+            <h2>Hosting und Dienstleister</h2>
+            <ul>
+              <li>Website-, App- und API-Hosting: [Anbieter und Standort ergänzen]</li>
+              <li>Proton Mail SMTP für Verifizierungs- und Wiederherstellungs-E-Mails</li>
+              <li>Zahlungsdienstleister: [vor Aktivierung kostenpflichtiger Pläne ergänzen]</li>
+            </ul>
             <p>
-              [Hosting-Anbieter einsetzen]. Für transaktionale E-Mails wie
-              E-Mail-Verifizierung und Passwort-Wiederherstellung wird
-              [Mail-Anbieter einsetzen] genutzt.
+              Dienstleister erhalten nur die Daten, die sie für ihre jeweilige
+              Aufgabe benötigen. Auftragsverarbeitung und mögliche Übermittlungen
+              in Drittländer sind anhand der tatsächlichen Verträge zu dokumentieren.
+            </p>
+          </section>
+
+          <section id="storage">
+            <h2>Speicherdauer</h2>
+            <p>
+              Account- und Synchronisierungsdaten werden grundsätzlich für die
+              Dauer des Nutzerkontos gespeichert. Nach Löschung gelten technische
+              Löschfristen und gesetzliche Aufbewahrungspflichten. Konkrete Fristen
+              für Backups, Protokolle und Abrechnungsdaten sind noch zu ergänzen.
             </p>
           </section>
 
           <section id="rights">
-            <h2>Rechte betroffener Personen</h2>
+            <h2>Deine Rechte</h2>
             <p>
-              Nutzer können Auskunft, Berichtigung, Löschung, Einschränkung,
-              Datenübertragbarkeit und Widerspruch nach den gesetzlichen
-              Vorgaben verlangen. Kontakt: [E-Mail einsetzen].
+              Du hast nach Maßgabe der DSGVO insbesondere Rechte auf Auskunft,
+              Berichtigung, Löschung, Einschränkung, Datenübertragbarkeit und
+              Widerspruch. Erteilte Einwilligungen können mit Wirkung für die
+              Zukunft widerrufen werden.
+            </p>
+            <p>
+              Beschwerden können an die
+              <a class="inline-link" href="https://www.dsb.gv.at/">Österreichische Datenschutzbehörde</a>
+              gerichtet werden.
             </p>
           </section>
+
+          <p class="legal-updated">Zuletzt aktualisiert: 20. August 2026</p>
         </article>
       </div>
     </main>
 
     <footer class="site-footer">
-      <div>
-        <a class="brand footer-brand" href="./index.html">
-          <span class="brand-mark">S</span>
-          <span class="brand-name">Safernotes</span>
-        </a>
-        <p>Verschlüsselte Notizen für klare Gedanken.</p>
-      </div>
+      <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
+        <span class="brand-mark" aria-hidden="true">S</span>
+        <span>Safernotes</span>
+      </a>
+      <p>Private Notizen, sicher synchronisiert.</p>
       <nav aria-label="Footer Navigation">
+        <a href="./downloads.html">Downloads</a>
         <a href="./privacy.html">Datenschutz</a>
         <a href="./impressum.html">Impressum</a>
       </nav>

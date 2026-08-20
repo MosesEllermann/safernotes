@@ -75,13 +75,16 @@ jobs:
           git clone https://github.com/flutter/flutter.git --depth 1 --branch stable "$HOME/flutter"
           echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
 
-      - name: Check and build Flutter web
+      - name: Check and build Flutter clients
         working-directory: frontend
         run: |
           flutter --version
           flutter pub get
           flutter analyze
           flutter build web --release --dart-define=API_BASE_URL="$API_BASE_URL" --no-wasm-dry-run
+          flutter build apk --release --dart-define=API_BASE_URL="$API_BASE_URL"
+          mkdir -p ../website/downloads
+          cp build/app/outputs/flutter-apk/app-release.apk ../website/downloads/safernotes-android.apk
 
       - name: Install deploy tools
         run: |
@@ -270,6 +273,13 @@ jobs:
         if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
         run: |
           curl -fsS "$API_BASE_URL/api/v1/health/live"
+
+      - name: Verify production website downloads
+        if: ${{ vars.ENABLE_PRODUCTION_DEPLOY == 'true' }}
+        run: |
+          curl -fsS https://safernotes.com/ | grep -q 'Safernotes'
+          curl -fsS https://safernotes.com/downloads.html | grep -q 'Downloads'
+          curl -fsSI https://safernotes.com/downloads/safernotes-android.apk
 
       - name: Skip production deploy until configured
         if: ${{ vars.ENABLE_PRODUCTION_DEPLOY != 'true' }}

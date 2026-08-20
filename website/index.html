@@ -10,6 +10,7 @@
     />
     <meta name="theme-color" content="#fbfbfa" />
     <link rel="preload" href="./assets/app-preview.png" as="image" />
+    <link rel="preload" href="./assets/app-mobile.png" as="image" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -24,6 +25,7 @@
           <a href="#product">Produkt</a>
           <a href="#security">Sicherheit</a>
           <a href="#pricing">Preise</a>
+          <a href="./downloads.html">Downloads</a>
         </nav>
 
         <a class="button button-small button-dark" href="https://app.safernotes.com/">
@@ -46,18 +48,44 @@
             <a class="button button-primary" href="https://app.safernotes.com/">
               App öffnen
             </a>
-            <a class="text-link" href="#product">Mehr erfahren</a>
+            <a class="text-link" href="./downloads.html">Apps &amp; Downloads</a>
           </div>
-          <p class="hero-meta">Im Web und auf Android. Ohne Werbung.</p>
+          <p class="hero-meta">Web und Android verfügbar. iOS kommt bald.</p>
         </div>
 
-        <div class="product-shot">
-          <img
-            src="./assets/app-preview.png"
-            width="1672"
-            height="941"
-            alt="Safernotes mit drei geöffneten Beispielnotizen"
-          />
+        <div class="product-showcase" aria-label="Safernotes für Desktop und Smartphone">
+          <div class="desktop-shot">
+            <img
+              src="./assets/app-preview.png"
+              width="1672"
+              height="941"
+              alt="Safernotes Desktop-App mit drei Beispielnotizen"
+            />
+          </div>
+          <div class="mobile-shot">
+            <img
+              src="./assets/app-mobile.png"
+              width="853"
+              height="1844"
+              alt="Safernotes Mobile-App mit Notizen und Bottom-Navigation"
+            />
+          </div>
+        </div>
+
+        <div class="platform-status" aria-label="Verfügbare Plattformen">
+          <div>
+            <strong>Web</strong>
+            <span>Jetzt verfügbar</span>
+          </div>
+          <div>
+            <strong>Android</strong>
+            <span>APK verfügbar</span>
+          </div>
+          <div>
+            <strong>iPhone &amp; iPad</strong>
+            <span>Coming soon</span>
+          </div>
+          <a class="text-link" href="./downloads.html">Alle Downloads</a>
         </div>
       </section>
 
@@ -184,7 +212,8 @@
         <span>Safernotes</span>
       </a>
       <p>Private Notizen, sicher synchronisiert.</p>
-      <nav aria-label="Rechtliches">
+      <nav aria-label="Footer Navigation">
+        <a href="./downloads.html">Downloads</a>
         <a href="./privacy.html">Datenschutz</a>
         <a href="./impressum.html">Impressum</a>
       </nav>

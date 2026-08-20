@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Downloads - Safernotes</title>
+    <meta
+      name="description"
+      content="Safernotes für Android herunterladen, die Web-App öffnen oder den Status der iOS-App prüfen."
+    />
+    <meta name="theme-color" content="#fbfbfa" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./downloads.js" defer></script>
+  </head>
+  <body class="downloads-page">
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
+          <span class="brand-mark" aria-hidden="true">S</span>
+          <span>Safernotes</span>
+        </a>
+
+        <nav class="site-nav" aria-label="Hauptnavigation">
+          <a href="./index.html#product">Produkt</a>
+          <a href="./index.html#security">Sicherheit</a>
+          <a href="./index.html#pricing">Preise</a>
+          <a href="./downloads.html" aria-current="page">Downloads</a>
+        </nav>
+
+        <a class="button button-small button-dark" href="https://app.safernotes.com/">
+          App öffnen
+        </a>
+      </div>
+    </header>
+
+    <main>
+      <section class="download-hero" aria-labelledby="download-title">
+        <h1 id="download-title">Downloads</h1>
+        <p id="device-recommendation" aria-live="polite">
+          Wähle deine Plattform.
+        </p>
+
+        <div class="platform-tabs" role="tablist" aria-label="Plattform auswählen">
+          <button type="button" role="tab" data-platform-button="desktop">
+            Desktop &amp; Web
+          </button>
+          <button type="button" role="tab" data-platform-button="android">
+            Android
+          </button>
+          <button type="button" role="tab" data-platform-button="ios">
+            iPhone &amp; iPad
+          </button>
+        </div>
+      </section>
+
+      <section class="download-content" aria-label="Downloadmöglichkeiten">
+        <div class="download-panel" data-platform-panel="desktop">
+          <div class="download-recommendation">
+            <div>
+              <p class="section-label">Für Desktop</p>
+              <h2>Direkt im Browser arbeiten.</h2>
+              <p>
+                Die Web-App läuft auf Windows, macOS und Linux. Es ist keine
+                Installation notwendig.
+              </p>
+              <a class="button button-primary" href="https://app.safernotes.com/">
+                Web-App öffnen
+              </a>
+            </div>
+            <div class="qr-block" aria-label="QR-Code Platzhalter für mobile Downloads">
+              <div class="qr-placeholder" aria-hidden="true">QR</div>
+              <strong>Mobile Apps</strong>
+              <span>QR-Code folgt</span>
+            </div>
+          </div>
+
+          <div class="download-options">
+            <article class="download-option">
+              <div>
+                <h3>Web-App</h3>
+                <p>Immer aktuell, auf jedem modernen Desktop-Browser.</p>
+              </div>
+              <span class="availability is-available">Verfügbar</span>
+            </article>
+            <article class="download-option">
+              <div>
+                <h3>Desktop-App</h3>
+                <p>Native Pakete sind derzeit nicht geplant.</p>
+              </div>
+              <span class="availability">Web empfohlen</span>
+            </article>
+          </div>
+        </div>
+
+        <div class="download-panel" data-platform-panel="android" hidden>
+          <div class="download-recommendation">
+            <div>
+              <p class="section-label">Für Android</p>
+              <h2>Safernotes für Android.</h2>
+              <p>
+                Die aktuelle Beta kannst du direkt als APK installieren. Play
+                Store und F-Droid folgen später.
+              </p>
+              <a
+                class="button button-primary"
+                href="./downloads/safernotes-android.apk"
+                download
+              >
+                APK herunterladen
+              </a>
+              <p class="download-note">Beta · Android kann die Freigabe unbekannter Quellen verlangen.</p>
+            </div>
+          </div>
+
+          <div class="download-options">
+            <a class="download-option" href="./downloads/safernotes-android.apk" download>
+              <div>
+                <h3>Direkter APK-Download</h3>
+                <p>Aktuelle Safernotes-Beta direkt von safernotes.com.</p>
+              </div>
+              <span class="availability is-available">Verfügbar</span>
+            </a>
+            <div class="download-option is-disabled" aria-disabled="true">
+              <div>
+                <h3>Google Play</h3>
+                <p>Automatische Updates über den Play Store.</p>
+              </div>
+              <span class="availability">In Vorbereitung</span>
+            </div>
+            <div class="download-option is-disabled" aria-disabled="true">
+              <div>
+                <h3>F-Droid</h3>
+                <p>Verteilung über ein freies Android-Repository.</p>
+              </div>
+              <span class="availability">In Vorbereitung</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="download-panel" data-platform-panel="ios" hidden>
+          <div class="download-recommendation">
+            <div>
+              <p class="section-label">Für iPhone &amp; iPad</p>
+              <h2>Die iOS-App kommt bald.</h2>
+              <p>
+                Safernotes für iPhone und iPad ist in Vorbereitung. Bis dahin
+                kannst du die Web-App direkt in Safari verwenden.
+              </p>
+              <span class="button button-disabled" aria-disabled="true">
+                App Store · Coming soon
+              </span>
+              <a class="text-link" href="https://app.safernotes.com/">
+                Web-App in Safari öffnen
+              </a>
+            </div>
+          </div>
+
+          <div class="download-options">
+            <div class="download-option is-disabled" aria-disabled="true">
+              <div>
+                <h3>Apple App Store</h3>
+                <p>Native App für iPhone und iPad.</p>
+              </div>
+              <span class="availability">Coming soon</span>
+            </div>
+            <a class="download-option" href="https://app.safernotes.com/">
+              <div>
+                <h3>Web-App</h3>
+                <p>Schon jetzt über Safari nutzbar.</p>
+              </div>
+              <span class="availability is-available">Verfügbar</span>
+            </a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
+        <span class="brand-mark" aria-hidden="true">S</span>
+        <span>Safernotes</span>
+      </a>
+      <p>Private Notizen, sicher synchronisiert.</p>
+      <nav aria-label="Footer Navigation">
+        <a href="./downloads.html">Downloads</a>
+        <a href="./privacy.html">Datenschutz</a>
+        <a href="./impressum.html">Impressum</a>
+      </nav>
+    </footer>
+  </body>
+</html>
