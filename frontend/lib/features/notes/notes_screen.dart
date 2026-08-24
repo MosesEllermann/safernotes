@@ -9,6 +9,7 @@ import 'package:safernotes_app/features/notes/note_editor_screen.dart';
 import 'package:safernotes_app/features/notes/notes_controller.dart';
 import 'package:safernotes_app/features/settings/settings_screen.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/shared/app/app_preferences.dart';
 import 'package:safernotes_app/shared/api/api_client.dart';
 import 'package:safernotes_app/shared/models/note.dart';
 import 'package:safernotes_app/shared/notifications/reminder_notifications.dart';
@@ -176,6 +177,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final desktop = width >= 900;
     final showLogoText = width >= 620;
+    final noteOverviewLayout =
+        ref.watch(appPreferencesProvider).valueOrNull?.noteOverviewLayout ??
+            NoteOverviewLayout.cards;
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 76,
@@ -238,6 +242,25 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             ? [
                 const _SyncIndicator(),
                 AppIconButton(
+                  key: const ValueKey('note-overview-layout-toggle'),
+                  tooltip: l10n.t(
+                    noteOverviewLayout == NoteOverviewLayout.cards
+                        ? 'switchToListView'
+                        : 'switchToCardsView',
+                  ),
+                  icon: noteOverviewLayout == NoteOverviewLayout.cards
+                      ? LucideIcons.columns2
+                      : LucideIcons.grid2X2,
+                  selected: noteOverviewLayout == NoteOverviewLayout.list,
+                  onPressed: () => ref
+                      .read(appPreferencesProvider.notifier)
+                      .setNoteOverviewLayout(
+                        noteOverviewLayout == NoteOverviewLayout.cards
+                            ? NoteOverviewLayout.list
+                            : NoteOverviewLayout.cards,
+                      ),
+                ),
+                AppIconButton(
                   tooltip: l10n.t('settings'),
                   icon: LucideIcons.settings,
                   onPressed: () => _openSettings(context),
@@ -267,6 +290,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                 child: _KeepWorkspace(
                   notes: items,
                   email: session?.email ?? '',
+                  layout: noteOverviewLayout,
                 ),
               ),
             ],
@@ -387,10 +411,12 @@ class _KeepWorkspace extends ConsumerStatefulWidget {
   const _KeepWorkspace({
     required this.notes,
     required this.email,
+    required this.layout,
   });
 
   final List<PlainNote> notes;
   final String email;
+  final NoteOverviewLayout layout;
 
   @override
   ConsumerState<_KeepWorkspace> createState() => _KeepWorkspaceState();
@@ -399,6 +425,7 @@ class _KeepWorkspace extends ConsumerStatefulWidget {
 class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
   String? _draggedId;
   int? _dropIndex;
+  String? _selectedNoteId;
   final _trashHovering = ValueNotifier(false);
   late final ProviderSubscription<String> _bucketSubscription;
 
@@ -428,8 +455,9 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     final baseNotes = _filteredNotes;
     final filtered = _previewNotes(baseNotes);
     final dragging = _draggedId != null;
-    final noteColumnCount = compact ? 2 : _noteColumnCount(screenWidth, wide);
-    final showTrashTarget = dragging && bucket != 'trashed';
+    final listLayout = widget.layout == NoteOverviewLayout.list;
+    final splitLayout = wide && listLayout;
+    final showTrashTarget = !listLayout && dragging && bucket != 'trashed';
     return Stack(
       children: [
         Row(
@@ -437,59 +465,18 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
           children: [
             if (wide) const _SideRail(),
             Expanded(
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: SizedBox(height: wide ? 12 : 8),
-                  ),
-                  if (filtered.isEmpty)
-                    const SliverFillRemaining(
-                        hasScrollBody: false, child: _EmptyState())
-                  else
-                    SliverPadding(
-                      padding: compact
-                          ? const EdgeInsets.fromLTRB(12, 0, 12, 96)
-                          : EdgeInsets.fromLTRB(
-                              wide ? 32 : 12,
-                              0,
-                              wide ? 32 : 12,
-                              48,
-                            ),
-                      sliver: SliverToBoxAdapter(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            for (var column = 0;
-                                column < noteColumnCount;
-                                column += 1) ...[
-                              Expanded(
-                                child: _CompactNoteColumn(
-                                  notes: [
-                                    for (var i = column;
-                                        i < filtered.length;
-                                        i += noteColumnCount)
-                                      (index: i, note: filtered[i]),
-                                  ],
-                                  dragging: dragging,
-                                  dropIndex: _dropIndex,
-                                  onDropIndexChanged: _setDropIndex,
-                                  onCommitReorder: (draggedId, targetIndex) =>
-                                      _commitReorder(
-                                          draggedId, targetIndex, bucket),
-                                  onDragStarted: _startDrag,
-                                  onDragEnded: _clearDragPreview,
-                                  trashHovering: _trashHovering,
-                                ),
-                              ),
-                              if (column != noteColumnCount - 1)
-                                const SizedBox(width: 12),
-                            ],
-                          ],
+              child: splitLayout
+                  ? _buildSplitOverview(baseNotes)
+                  : listLayout
+                      ? _buildMobileList(baseNotes)
+                      : _buildCardOverview(
+                          filtered: filtered,
+                          compact: compact,
+                          wide: wide,
+                          screenWidth: screenWidth,
+                          dragging: dragging,
+                          bucket: bucket,
                         ),
-                      ),
-                    ),
-                ],
-              ),
             ),
           ],
         ),
@@ -520,6 +507,125 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
         ),
       ],
     );
+  }
+
+  Widget _buildCardOverview({
+    required List<PlainNote> filtered,
+    required bool compact,
+    required bool wide,
+    required double screenWidth,
+    required bool dragging,
+    required String bucket,
+  }) {
+    final noteColumnCount = compact ? 2 : _noteColumnCount(screenWidth, wide);
+    return CustomScrollView(
+      key: const ValueKey('cards-note-overview'),
+      slivers: [
+        SliverToBoxAdapter(child: SizedBox(height: wide ? 12 : 8)),
+        if (filtered.isEmpty)
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: _EmptyState(),
+          )
+        else
+          SliverPadding(
+            padding: compact
+                ? const EdgeInsets.fromLTRB(12, 0, 12, 96)
+                : EdgeInsets.fromLTRB(
+                    wide ? 32 : 12,
+                    0,
+                    wide ? 32 : 12,
+                    48,
+                  ),
+            sliver: SliverToBoxAdapter(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var column = 0;
+                      column < noteColumnCount;
+                      column += 1) ...[
+                    Expanded(
+                      child: _CompactNoteColumn(
+                        notes: [
+                          for (var i = column;
+                              i < filtered.length;
+                              i += noteColumnCount)
+                            (index: i, note: filtered[i]),
+                        ],
+                        dragging: dragging,
+                        dropIndex: _dropIndex,
+                        onDropIndexChanged: _setDropIndex,
+                        onCommitReorder: (draggedId, targetIndex) =>
+                            _commitReorder(draggedId, targetIndex, bucket),
+                        onDragStarted: _startDrag,
+                        onDragEnded: _clearDragPreview,
+                        trashHovering: _trashHovering,
+                      ),
+                    ),
+                    if (column != noteColumnCount - 1)
+                      const SizedBox(width: 12),
+                  ],
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMobileList(List<PlainNote> notes) {
+    if (notes.isEmpty) return const _EmptyState();
+    return _NoteListPane(
+      key: const ValueKey('mobile-note-list'),
+      notes: notes,
+      bottomPadding: 96,
+      onSelected: (note) => _openEditor(context, ref, note),
+    );
+  }
+
+  Widget _buildSplitOverview(List<PlainNote> notes) {
+    final selected = _selectedNote(notes);
+    return Row(
+      key: const ValueKey('desktop-split-layout'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          flex: 3,
+          child: _NoteListPane(
+            key: const ValueKey('desktop-note-list-pane'),
+            notes: notes,
+            selectedNoteId: selected?.localId,
+            onSelected: (note) {
+              if (_selectedNoteId == note.localId) return;
+              setState(() => _selectedNoteId = note.localId);
+            },
+          ),
+        ),
+        VerticalDivider(
+          width: 1,
+          thickness: 1,
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant
+              .withValues(alpha: 0.42),
+        ),
+        Expanded(
+          key: const ValueKey('desktop-note-editor-pane'),
+          flex: 7,
+          child: selected == null
+              ? const _SelectNoteState()
+              : NoteEditorPanel(note: selected, embedded: true),
+        ),
+      ],
+    );
+  }
+
+  PlainNote? _selectedNote(List<PlainNote> notes) {
+    if (notes.isEmpty) return null;
+    for (final note in notes) {
+      if (note.localId == _selectedNoteId) return note;
+    }
+    return notes.first;
   }
 
   int _noteColumnCount(double screenWidth, bool wide) {
@@ -768,6 +874,262 @@ class _TrashCanPainter extends CustomPainter {
   bool shouldRepaint(covariant _TrashCanPainter oldDelegate) {
     return oldDelegate.progress != progress || oldDelegate.color != color;
   }
+}
+
+class _NoteListPane extends ConsumerWidget {
+  const _NoteListPane({
+    super.key,
+    required this.notes,
+    required this.onSelected,
+    this.selectedNoteId,
+    this.bottomPadding = 24,
+  });
+
+  final List<PlainNote> notes;
+  final ValueChanged<PlainNote> onSelected;
+  final String? selectedNoteId;
+  final double bottomPadding;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
+    final scheme = Theme.of(context).colorScheme;
+    return ListView.separated(
+      padding: EdgeInsets.fromLTRB(12, 8, 12, bottomPadding),
+      itemCount: notes.length,
+      separatorBuilder: (_, __) => Divider(
+        height: 1,
+        indent: 16,
+        endIndent: 16,
+        color: scheme.outlineVariant.withValues(alpha: 0.34),
+      ),
+      itemBuilder: (context, index) {
+        final note = notes[index];
+        return _NoteListItem(
+          key: ValueKey('note-list-item-${note.localId}'),
+          note: note,
+          l10n: l10n,
+          selected: note.localId == selectedNoteId,
+          onTap: () => onSelected(note),
+        );
+      },
+    );
+  }
+}
+
+class _NoteListItem extends StatelessWidget {
+  const _NoteListItem({
+    super.key,
+    required this.note,
+    required this.l10n,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final PlainNote note;
+  final AppL10n l10n;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final title = _noteListTitle(note, l10n);
+    final preview = _noteListPreview(note);
+    final showPreview = preview.isNotEmpty && preview != title;
+    final noteColor = note.color == 0xffffffff
+        ? scheme.outlineVariant
+        : brandNoteSurfaceColor(context, note.color);
+    return Material(
+      color: selected ? scheme.surfaceContainerHighest : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 82),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 10, 11),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 4,
+                  height: 38,
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    color: noteColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          if (note.pinned)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Icon(
+                                LucideIcons.pin,
+                                size: 15,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Text(
+                            _noteListDate(note.updatedAt, l10n),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                          if (showPreview) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                preview,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                            ),
+                          ] else
+                            const Spacer(),
+                          if (note.checklist.isNotEmpty)
+                            _NoteListMetaIcon(
+                              icon: LucideIcons.squareCheck,
+                              label:
+                                  '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
+                            ),
+                          if (note.shared)
+                            const _NoteListMetaIcon(icon: LucideIcons.users),
+                          if (note.reminderAt != null)
+                            const _NoteListMetaIcon(icon: LucideIcons.bell),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoteListMetaIcon extends StatelessWidget {
+  const _NoteListMetaIcon({required this.icon, this.label});
+
+  final IconData icon;
+  final String? label;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          if (label != null) ...[
+            const SizedBox(width: 3),
+            Text(
+              label!,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: color),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SelectNoteState extends ConsumerWidget {
+  const _SelectNoteState();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            LucideIcons.notebookText,
+            size: 42,
+            color: Theme.of(context).colorScheme.outline,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            ref.watch(l10nProvider).t('selectNote'),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _noteListTitle(PlainNote note, AppL10n l10n) {
+  final title = note.title.trim();
+  if (title.isNotEmpty && title != 'Untitled note') return title;
+  final preview = _noteListPreview(note);
+  return preview.isEmpty ? l10n.t('emptyNote') : preview;
+}
+
+String _noteListPreview(PlainNote note) {
+  final body = note.body.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (body.isNotEmpty) return body;
+  final pending = note.checklist
+      .where((item) => !item.done && item.text.trim().isNotEmpty)
+      .map((item) => item.text.trim())
+      .take(3)
+      .join(' · ');
+  if (pending.isNotEmpty) return pending;
+  return note.checklist
+      .where((item) => item.text.trim().isNotEmpty)
+      .map((item) => item.text.trim())
+      .take(3)
+      .join(' · ');
+}
+
+String _noteListDate(DateTime value, AppL10n l10n) {
+  final local = value.toLocal();
+  final now = DateTime.now();
+  if (local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day) {
+    return l10n.t('today');
+  }
+  return '${local.day.toString().padLeft(2, '0')}.${local.month.toString().padLeft(2, '0')}.';
 }
 
 class _CompactNoteColumn extends ConsumerWidget {
@@ -1713,6 +2075,12 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
     final showHoverActions = MediaQuery.sizeOf(context).width >= 700;
     final displayTitle =
         note.title.trim() == 'Untitled note' ? '' : note.title.trim();
+    final hasMetadata = note.checklist.isNotEmpty ||
+        note.conflicted ||
+        note.dirty ||
+        note.reminderAt != null ||
+        note.shared;
+    final showFooter = hasMetadata || (_hovered && showHoverActions);
     return MouseRegion(
       onEnter: (_) {
         if (mounted) setState(() => _hovered = true);
@@ -1786,94 +2154,96 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                             text: note.body,
                             delta: note.richTextDelta,
                           ),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                      height: 36,
-                      child: Row(
-                        children: [
-                          if (note.checklist.isNotEmpty)
-                            _MetaPill(
-                              icon: LucideIcons.squareCheck,
-                              label:
-                                  '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
-                            ),
-                          if (note.conflicted)
-                            _MetaPill(
-                              icon: LucideIcons.circleAlert,
-                              label: l10n.t('conflict'),
-                              color: scheme.error,
-                            ),
-                          if (note.dirty)
-                            _MetaPill(
-                              icon: LucideIcons.cloudUpload,
-                              label: l10n.t('synced'),
-                              color: scheme.tertiary,
-                            ),
-                          if (note.reminderAt != null)
-                            _MetaPill(
-                              icon: LucideIcons.bell,
-                              label: _formatReminder(note.reminderAt!, l10n),
-                              color: scheme.primary,
-                            ),
-                          if (note.shared)
-                            _MetaPill(
-                              icon: LucideIcons.users,
-                              label: l10n.t('shared'),
-                              color: scheme.primary,
-                            ),
-                          const Spacer(),
-                          if (_hovered && showHoverActions)
-                            AnimatedOpacity(
-                              opacity: 1,
-                              duration: const Duration(milliseconds: 120),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (note.state != 'active')
-                                    AppIconButton(
-                                      tooltip: l10n.t('restore'),
-                                      icon: LucideIcons.rotateCcw,
-                                      onPressed: widget.onRestore,
-                                    ),
-                                  if (note.state == 'active')
-                                    AppIconButton(
-                                      tooltip: l10n.t('archiveAction'),
-                                      icon: LucideIcons.archive,
-                                      onPressed: widget.onArchive,
-                                    ),
-                                  if (note.state == 'active' &&
-                                      note.reminderAt == null)
-                                    AppIconButton(
-                                      tooltip: l10n.t('collaboratorInvite'),
-                                      icon: note.shared
-                                          ? LucideIcons.users
-                                          : LucideIcons.userPlus,
-                                      onPressed: widget.onInvite,
-                                    ),
-                                  if (note.state != 'trashed')
-                                    AppIconButton(
-                                      tooltip: l10n.t('reminder'),
-                                      icon: LucideIcons.bell,
-                                      onPressed: widget.onReminder,
-                                    ),
-                                  if (note.state != 'trashed')
-                                    AppIconButton(
-                                      tooltip: l10n.t('trash'),
-                                      icon: LucideIcons.trash,
-                                      onPressed: widget.onTrash,
-                                    )
-                                  else
-                                    AppIconButton(
-                                      tooltip: l10n.t('deleteForever'),
-                                      icon: LucideIcons.trash2,
-                                      onPressed: widget.onDeleteForever,
-                                    ),
-                                ],
+                    if (showFooter) ...[
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        height: 36,
+                        child: Row(
+                          children: [
+                            if (note.checklist.isNotEmpty)
+                              _MetaPill(
+                                icon: LucideIcons.squareCheck,
+                                label:
+                                    '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
                               ),
-                            ),
-                        ],
+                            if (note.conflicted)
+                              _MetaPill(
+                                icon: LucideIcons.circleAlert,
+                                label: l10n.t('conflict'),
+                                color: scheme.error,
+                              ),
+                            if (note.dirty)
+                              _MetaPill(
+                                icon: LucideIcons.cloudUpload,
+                                label: l10n.t('synced'),
+                                color: scheme.tertiary,
+                              ),
+                            if (note.reminderAt != null)
+                              _MetaPill(
+                                icon: LucideIcons.bell,
+                                label: _formatReminder(note.reminderAt!, l10n),
+                                color: scheme.primary,
+                              ),
+                            if (note.shared)
+                              _MetaPill(
+                                icon: LucideIcons.users,
+                                label: l10n.t('shared'),
+                                color: scheme.primary,
+                              ),
+                            const Spacer(),
+                            if (_hovered && showHoverActions)
+                              AnimatedOpacity(
+                                opacity: 1,
+                                duration: const Duration(milliseconds: 120),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (note.state != 'active')
+                                      AppIconButton(
+                                        tooltip: l10n.t('restore'),
+                                        icon: LucideIcons.rotateCcw,
+                                        onPressed: widget.onRestore,
+                                      ),
+                                    if (note.state == 'active')
+                                      AppIconButton(
+                                        tooltip: l10n.t('archiveAction'),
+                                        icon: LucideIcons.archive,
+                                        onPressed: widget.onArchive,
+                                      ),
+                                    if (note.state == 'active' &&
+                                        note.reminderAt == null)
+                                      AppIconButton(
+                                        tooltip: l10n.t('collaboratorInvite'),
+                                        icon: note.shared
+                                            ? LucideIcons.users
+                                            : LucideIcons.userPlus,
+                                        onPressed: widget.onInvite,
+                                      ),
+                                    if (note.state != 'trashed')
+                                      AppIconButton(
+                                        tooltip: l10n.t('reminder'),
+                                        icon: LucideIcons.bell,
+                                        onPressed: widget.onReminder,
+                                      ),
+                                    if (note.state != 'trashed')
+                                      AppIconButton(
+                                        tooltip: l10n.t('trash'),
+                                        icon: LucideIcons.trash,
+                                        onPressed: widget.onTrash,
+                                      )
+                                    else
+                                      AppIconButton(
+                                        tooltip: l10n.t('deleteForever'),
+                                        icon: LucideIcons.trash2,
+                                        onPressed: widget.onDeleteForever,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

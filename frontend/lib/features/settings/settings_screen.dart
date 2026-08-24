@@ -129,6 +129,9 @@ class SettingsScreen extends ConsumerWidget {
                               onLanguageChanged: (value) => ref
                                   .read(appPreferencesProvider.notifier)
                                   .setLanguage(value),
+                              onNoteOverviewLayoutChanged: (value) => ref
+                                  .read(appPreferencesProvider.notifier)
+                                  .setNoteOverviewLayout(value),
                             ),
                           ),
                           _DesktopSettingsPage(
@@ -197,6 +200,9 @@ class SettingsScreen extends ConsumerWidget {
                       onLanguageChanged: (value) => ref
                           .read(appPreferencesProvider.notifier)
                           .setLanguage(value),
+                      onNoteOverviewLayoutChanged: (value) => ref
+                          .read(appPreferencesProvider.notifier)
+                          .setNoteOverviewLayout(value),
                     ),
                     const SizedBox(height: 18),
                     _BillingPanel(
@@ -302,12 +308,14 @@ class _AppearanceSettings extends StatelessWidget {
     required this.prefs,
     required this.onThemeChanged,
     required this.onLanguageChanged,
+    required this.onNoteOverviewLayoutChanged,
   });
 
   final AppL10n l10n;
   final AppPreferences prefs;
   final ValueChanged<ThemeMode> onThemeChanged;
   final ValueChanged<String> onLanguageChanged;
+  final ValueChanged<NoteOverviewLayout> onNoteOverviewLayoutChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -335,6 +343,27 @@ class _AppearanceSettings extends StatelessWidget {
                 value: ThemeMode.dark,
                 label: l10n.t('dark'),
                 icon: LucideIcons.moon,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        _SettingsSection(
+          icon: LucideIcons.layoutGrid,
+          title: l10n.t('noteLayout'),
+          child: _PreferenceOptionGroup<NoteOverviewLayout>(
+            value: prefs.noteOverviewLayout,
+            onChanged: onNoteOverviewLayoutChanged,
+            options: [
+              _PreferenceOption(
+                value: NoteOverviewLayout.cards,
+                label: l10n.t('cardsView'),
+                icon: LucideIcons.grid2X2,
+              ),
+              _PreferenceOption(
+                value: NoteOverviewLayout.list,
+                label: l10n.t('listView'),
+                icon: LucideIcons.list,
               ),
             ],
           ),

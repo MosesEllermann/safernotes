@@ -12,22 +12,28 @@ final appPreferencesProvider =
   AppPreferencesController.new,
 );
 
+enum NoteOverviewLayout { cards, list }
+
 class AppPreferences {
   const AppPreferences({
     required this.languageCode,
     required this.themeMode,
+    this.noteOverviewLayout = NoteOverviewLayout.cards,
   });
 
   final String languageCode;
   final ThemeMode themeMode;
+  final NoteOverviewLayout noteOverviewLayout;
 
   AppPreferences copyWith({
     String? languageCode,
     ThemeMode? themeMode,
+    NoteOverviewLayout? noteOverviewLayout,
   }) {
     return AppPreferences(
       languageCode: languageCode ?? this.languageCode,
       themeMode: themeMode ?? this.themeMode,
+      noteOverviewLayout: noteOverviewLayout ?? this.noteOverviewLayout,
     );
   }
 }
@@ -35,15 +41,21 @@ class AppPreferences {
 class AppPreferencesController extends AsyncNotifier<AppPreferences> {
   static const _languageKey = 'zk.pref.language';
   static const _themeKey = 'zk.pref.theme';
+  static const _noteOverviewLayoutKey = 'zk.pref.note_overview_layout';
 
   @override
   Future<AppPreferences> build() async {
     final prefs = await SharedPreferences.getInstance();
     final language = prefs.getString(_languageKey) ?? _detectLanguage();
     final theme = prefs.getString(_themeKey) ?? 'system';
+    final noteOverviewLayout =
+        prefs.getString(_noteOverviewLayoutKey) ?? 'cards';
     return AppPreferences(
       languageCode: language,
       themeMode: _themeFromString(theme),
+      noteOverviewLayout: noteOverviewLayout == 'list'
+          ? NoteOverviewLayout.list
+          : NoteOverviewLayout.cards,
     );
   }
 
@@ -60,6 +72,16 @@ class AppPreferencesController extends AsyncNotifier<AppPreferences> {
     await prefs.setString(_themeKey, _themeToString(mode));
     state = AsyncData(
         (state.valueOrNull ?? await build()).copyWith(themeMode: mode));
+  }
+
+  Future<void> setNoteOverviewLayout(NoteOverviewLayout layout) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_noteOverviewLayoutKey, layout.name);
+    state = AsyncData(
+      (state.valueOrNull ?? await build()).copyWith(
+        noteOverviewLayout: layout,
+      ),
+    );
   }
 
   String _detectLanguage() {

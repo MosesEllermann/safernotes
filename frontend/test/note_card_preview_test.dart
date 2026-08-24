@@ -59,6 +59,54 @@ void main() {
     final richText = tester.widget<RichText>(preview);
     expect(_containsBoldSpan(richText.text), isTrue);
   });
+
+  testWidgets('cards without metadata do not reserve footer space',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1200, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final plain = _plainNote(localId: 'plain-card', shared: false);
+    final shared = _plainNote(localId: 'shared-card', shared: true);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([plain, shared]),
+          ),
+        ],
+        child: const MaterialApp(home: NotesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final plainHeight = tester
+        .getSize(find.byKey(const ValueKey('compact-note-drag-plain-card')))
+        .height;
+    final sharedHeight = tester
+        .getSize(find.byKey(const ValueKey('compact-note-drag-shared-card')))
+        .height;
+    expect(sharedHeight, greaterThan(plainHeight));
+  });
+}
+
+PlainNote _plainNote({required String localId, required bool shared}) {
+  return PlainNote(
+    localId: localId,
+    title: 'Same title',
+    body: 'Same body',
+    checklist: const [],
+    updatedAt: DateTime.utc(2026, 8, 24),
+    pinned: false,
+    color: 0xffffffff,
+    sortOrder: 0,
+    dirty: false,
+    version: 1,
+    shared: shared,
+  );
 }
 
 bool _containsBoldSpan(InlineSpan span) {

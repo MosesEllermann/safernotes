@@ -84,7 +84,14 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   void didUpdateWidget(covariant NoteEditorPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.note.localId != widget.note.localId) {
+      final previousDraft = _draftFrom(oldWidget.note);
       _autosave?.cancel();
+      unawaited(
+        ref.read(notesControllerProvider.notifier).saveDraft(
+              draft: previousDraft,
+              syncImmediately: true,
+            ),
+      );
       _bodyChanges.cancel();
       _title.dispose();
       _body.dispose();
@@ -339,7 +346,11 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   }
 
   PlainNote _draft() {
-    return _currentNote().copyWith(
+    return _draftFrom(_currentNote());
+  }
+
+  PlainNote _draftFrom(PlainNote note) {
+    return note.copyWith(
       title: _title.text.trim(),
       body: _checklistMode ? '' : documentPlainText(_body.document),
       richTextDelta: _checklistMode
