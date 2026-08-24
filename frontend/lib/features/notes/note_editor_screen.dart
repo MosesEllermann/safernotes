@@ -147,6 +147,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       onBackground: _showBackgroundSheet,
       onUndo: _undo,
       onRedo: _redo,
+      showFormatting: !_checklistMode,
       canUndo: _checklistMode ? _history.canUndo : _body.hasUndo,
       canRedo: _checklistMode ? _history.canRedo : _body.hasRedo,
       activeActions: _activeFormattingActions(),
@@ -286,7 +287,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                             ? Padding(
                                 key: const ValueKey('checklist'),
                                 padding:
-                                    const EdgeInsets.fromLTRB(20, 10, 20, 16),
+                                    const EdgeInsets.fromLTRB(20, 0, 20, 16),
                                 child: checklist,
                               )
                             : Padding(
@@ -442,6 +443,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   }
 
   void _applyFormat(String action) {
+    if (_checklistMode) return;
     if (action == 'link') {
       unawaited(_showLinkSheet());
       return;
@@ -661,6 +663,7 @@ class _Toolbar extends StatelessWidget {
     required this.onBackground,
     required this.onUndo,
     required this.onRedo,
+    required this.showFormatting,
     required this.canUndo,
     required this.canRedo,
     required this.activeActions,
@@ -670,6 +673,7 @@ class _Toolbar extends StatelessWidget {
   final VoidCallback onBackground;
   final VoidCallback onUndo;
   final VoidCallback onRedo;
+  final bool showFormatting;
   final bool canUndo;
   final bool canRedo;
   final Set<String> activeActions;
@@ -707,14 +711,16 @@ class _Toolbar extends StatelessWidget {
                       icon: LucideIcons.redo2,
                       onPressed: canRedo ? onRedo : null,
                     ),
-                    const SizedBox(width: 8),
-                    for (final item in buttons)
-                      AppIconButton(
-                        tooltip: item.tooltip,
-                        icon: item.icon,
-                        selected: activeActions.contains(item.action),
-                        onPressed: () => onFormat(item.action),
-                      ),
+                    if (showFormatting) ...[
+                      const SizedBox(width: 8),
+                      for (final item in buttons)
+                        AppIconButton(
+                          tooltip: item.tooltip,
+                          icon: item.icon,
+                          selected: activeActions.contains(item.action),
+                          onPressed: () => onFormat(item.action),
+                        ),
+                    ],
                   ],
                 ),
               ),
@@ -1344,24 +1350,10 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = ref.watch(l10nProvider);
     final unchecked = widget.items.where((item) => !item.done).toList();
     final checked = widget.items.where((item) => item.done).toList();
     return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            l10n.t('checklist'),
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          _buildAnimatedItems(context, unchecked, checked, l10n),
-        ],
-      ),
+      child: _buildAnimatedItems(context, unchecked, checked),
     );
   }
 
@@ -1369,7 +1361,6 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
     BuildContext context,
     List<ChecklistItem> unchecked,
     List<ChecklistItem> checked,
-    AppL10n l10n,
   ) {
     final checkedOffset = unchecked.length * _rowHeight +
         _addHeight +
@@ -1430,7 +1421,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
               top: unchecked.length * _rowHeight,
               height: _addHeight,
               child: _ChecklistAddButton(
-                label: l10n.t('addTask'),
+                label: ref.watch(l10nProvider).t('addTask'),
                 onPressed: () => _insertItem(),
               ),
             ),

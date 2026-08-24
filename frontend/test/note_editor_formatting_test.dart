@@ -140,6 +140,44 @@ void main() {
     expect(addY, lessThan(doneY));
   });
 
+  testWidgets('checklist starts at the top and hides rich text actions',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final note = _checklistNote();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([note]),
+          ),
+        ],
+        child: _editorApp(note),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final checklistTop =
+        tester.getTopLeft(find.byKey(const ValueKey('checklist'))).dy;
+    final firstCheckboxTop = tester
+        .getTopLeft(find.byWidgetPredicate(
+          (widget) => widget is Checkbox && widget.value == false,
+        ))
+        .dy;
+
+    expect(firstCheckboxTop - checklistTop, lessThan(12));
+    expect(find.byTooltip('Fett'), findsNothing);
+    expect(find.byTooltip('Kursiv'), findsNothing);
+    expect(find.byTooltip('Durchstreichen'), findsNothing);
+    expect(find.byTooltip('Link'), findsNothing);
+    expect(find.byTooltip('Codeblock'), findsNothing);
+    expect(find.byTooltip('Checkliste'), findsNothing);
+    expect(find.byTooltip('Formatierung löschen'), findsNothing);
+    expect(find.byTooltip('Rückgängig'), findsOneWidget);
+    expect(find.byTooltip('Wiederholen'), findsOneWidget);
+    expect(find.byTooltip('Hintergrund'), findsOneWidget);
+  });
+
   testWidgets('checked rows animate below the add row and back up',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
