@@ -14,6 +14,7 @@ from apps.authentication.views import (
     LoginView,
     PasswordChangeView,
     RecoveryCompleteView,
+    RecoveryKeyView,
     RecoveryStartView,
     RegisterView,
 )
@@ -41,6 +42,7 @@ def registration_payload(email="new@example.com"):
         "encrypted_master_key": encrypted_payload(),
         "encrypted_private_encryption_key": encrypted_payload(),
         "encrypted_private_signing_key": encrypted_payload(),
+        "recovery_wrapper": encrypted_payload(),
         "default_tenant_name_ciphertext": encrypted_payload(),
     }
 
@@ -67,6 +69,17 @@ def test_register_view_returns_tokens(db):
     assert response.data["default_tenant"]
     assert response.data["email_verified"] is False
     assert EmailVerificationCode.objects.filter(user__email="new@example.com").exists()
+
+
+def test_register_requires_encrypted_recovery_wrapper(db, django_user_model):
+    payload = registration_payload(email="missing-recovery@example.com")
+    payload.pop("recovery_wrapper")
+    request = APIRequestFactory().post("/api/v1/auth/register", payload, format="json")
+    attach_session(request)
+    response = RegisterView.as_view()(request)
+
+    assert response.status_code == 400
+    assert not django_user_model.objects.filter(email="missing-recovery@example.com").exists()
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
@@ -198,6 +211,127 @@ def test_recovery_start_sends_localized_email(db, django_user_model):
     assert "Passwort zurückzusetzen" in mail.outbox[0].alternatives[0][0]
 
 
+def test_recovery_key_status_and_rotation_only_update_wrapper(db, django_user_model):
+    from django.utils import timezone
+
+    from apps.authentication.models import KeyMaterial, RecoveryCode
+
+    user = django_user_model.objects.create_user(
+        email="rotate-recovery@example.com", password="password"
+    )
+    material = KeyMaterial.objects.create(
+        user=user,
+        kdf_params={"m": 65536, "t": 3, "p": 1},
+        password_salt=b"salt",
+        public_encryption_key=b"public-encryption-key",
+        public_signing_key=b"public-signing-key",
+        encrypted_master_key=encrypted_payload(),
+        encrypted_private_encryption_key=encrypted_payload(),
+        encrypted_private_signing_key=encrypted_payload(),
+        recovery_wrapper=encrypted_payload(),
+    )
+    code = RecoveryCode.objects.create(
+        user=user,
+        code_hash=hash_token("123456"),
+        expires_at=timezone.now() + timedelta(minutes=15),
+    )
+
+    status_request = APIRequestFactory().get("/api/v1/auth/recovery-key")
+    force_authenticate(status_request, user=user)
+    status_response = RecoveryKeyView.as_view()(status_request)
+
+    assert status_response.status_code == 200
+    assert status_response.data == {"configured": True, "key_version": 1}
+
+    replacement = {**encrypted_payload(), "ciphertext": "rotated-wrapper"}
+    update_request = APIRequestFactory().patch(
+        "/api/v1/auth/recovery-key",
+        {"recovery_wrapper": replacement},
+        format="json",
+    )
+    force_authenticate(update_request, user=user)
+    update_response = RecoveryKeyView.as_view()(update_request)
+
+    assert update_response.status_code == 200
+    assert "recovery_key" not in update_response.data
+    material.refresh_from_db()
+    assert material.recovery_wrapper["ciphertext"] == "rotated-wrapper"
+    assert material.encrypted_master_key["ciphertext"] == "ciphertext"
+    assert material.key_version == 2
+    code.refresh_from_db()
+    assert code.used_at is not None
+
+
+def test_recovery_key_can_be_added_to_existing_account(db, django_user_model):
+    from apps.authentication.models import KeyMaterial
+
+    user = django_user_model.objects.create_user(
+        email="add-recovery@example.com", password="password"
+    )
+    material = KeyMaterial.objects.create(
+        user=user,
+        kdf_params={"m": 65536, "t": 3, "p": 1},
+        password_salt=b"salt",
+        public_encryption_key=b"public-encryption-key",
+        public_signing_key=b"public-signing-key",
+        encrypted_master_key=encrypted_payload(),
+        encrypted_private_encryption_key=encrypted_payload(),
+        encrypted_private_signing_key=encrypted_payload(),
+    )
+    status_request = APIRequestFactory().get("/api/v1/auth/recovery-key")
+    force_authenticate(status_request, user=user)
+
+    status_response = RecoveryKeyView.as_view()(status_request)
+
+    assert status_response.data["configured"] is False
+
+    update_request = APIRequestFactory().patch(
+        "/api/v1/auth/recovery-key",
+        {"recovery_wrapper": encrypted_payload()},
+        format="json",
+    )
+    force_authenticate(update_request, user=user)
+
+    update_response = RecoveryKeyView.as_view()(update_request)
+
+    assert update_response.status_code == 200
+    assert update_response.data["configured"] is True
+    material.refresh_from_db()
+    assert material.recovery_wrapper["ciphertext"] == "ciphertext"
+
+
+def test_recovery_key_update_rejects_plaintext_key(db, django_user_model):
+    from apps.authentication.models import KeyMaterial
+
+    user = django_user_model.objects.create_user(
+        email="plaintext-recovery@example.com", password="password"
+    )
+    material = KeyMaterial.objects.create(
+        user=user,
+        kdf_params={"m": 65536, "t": 3, "p": 1},
+        password_salt=b"salt",
+        public_encryption_key=b"public-encryption-key",
+        public_signing_key=b"public-signing-key",
+        encrypted_master_key=encrypted_payload(),
+        encrypted_private_encryption_key=encrypted_payload(),
+        encrypted_private_signing_key=encrypted_payload(),
+    )
+    request = APIRequestFactory().patch(
+        "/api/v1/auth/recovery-key",
+        {
+            "recovery_key": "must-never-reach-the-server",
+            "recovery_wrapper": encrypted_payload(),
+        },
+        format="json",
+    )
+    force_authenticate(request, user=user)
+    response = RecoveryKeyView.as_view()(request)
+
+    assert response.status_code == 400
+    material.refresh_from_db()
+    assert material.recovery_wrapper is None
+
+
 def test_password_change_rewraps_master_key(db, django_user_model):
     from apps.authentication.models import KeyMaterial
 
@@ -265,9 +399,7 @@ def test_email_verification_confirm_marks_user_verified(db, django_user_model):
 def test_email_verification_resend_sends_email_for_unverified_user(db, django_user_model):
     from apps.authentication.models import EmailVerificationCode
 
-    user = django_user_model.objects.create_user(
-        email="resend@example.com", password="password"
-    )
+    user = django_user_model.objects.create_user(email="resend@example.com", password="password")
     request = APIRequestFactory().post(
         "/api/v1/auth/email/verification/resend",
         {},

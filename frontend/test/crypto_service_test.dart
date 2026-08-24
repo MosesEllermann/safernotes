@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hashlib/src/algorithms/argon2/argon2_32bit.dart'
     as hashlib_legacy_web_argon2;
@@ -29,6 +30,33 @@ void main() {
     );
 
     expect(unlocked, material.masterKey);
+  });
+
+  test('recovery-key rotation wraps the same master key with a new local key',
+      () async {
+    final crypto = CryptoService();
+    final masterKey = crypto.randomBytes(32);
+
+    final first = await crypto.createRecoveryKey(masterKey: masterKey);
+    final second = await crypto.createRecoveryKey(masterKey: masterKey);
+
+    expect(first.recoveryKey, isNot(second.recoveryKey));
+    expect(first.recoveryWrapper.ciphertext,
+        isNot(second.recoveryWrapper.ciphertext));
+    expect(
+      await crypto.unlockMasterKeyWithRecovery(
+        recoveryKey: second.recoveryKey,
+        recoveryWrapper: second.recoveryWrapper,
+      ),
+      masterKey,
+    );
+    await expectLater(
+      crypto.unlockMasterKeyWithRecovery(
+        recoveryKey: first.recoveryKey,
+        recoveryWrapper: second.recoveryWrapper,
+      ),
+      throwsA(isA<SecretBoxAuthenticationError>()),
+    );
   });
 
   test('existing native Argon2 material still unlocks', () async {

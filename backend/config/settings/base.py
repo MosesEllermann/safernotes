@@ -40,7 +40,8 @@ env = environ.Env(
     EMAIL_USE_TLS=(bool, False),
     EMAIL_USE_SSL=(bool, False),
     DEFAULT_FROM_EMAIL=(str, "Safernotes <noreply@localhost>"),
-    APP_BASE_URL=(str, "http://localhost:3000"),
+    APP_BASE_URL=(str, "https://app.safernotes.com"),
+    WEBSITE_BASE_URL=(str, "https://safernotes.com"),
 )
 
 if (ROOT_DIR / ".env").exists():
@@ -58,8 +59,10 @@ EMAIL_USE_TLS = env("EMAIL_USE_TLS")
 EMAIL_USE_SSL = env("EMAIL_USE_SSL")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 APP_BASE_URL = env("APP_BASE_URL")
+WEBSITE_BASE_URL = env("WEBSITE_BASE_URL")
 
 INSTALLED_APPS = [
+    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -110,6 +113,30 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    }
+]
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": [

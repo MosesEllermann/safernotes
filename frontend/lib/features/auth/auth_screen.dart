@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
+import 'package:safernotes_app/features/auth/recovery_key_dialog.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
@@ -160,15 +160,24 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       }
       final controller = ref.read(authControllerProvider.notifier);
       if (_registering) {
-        final recoveryKey = await controller.register(
-          email: _email.text.trim(),
+        final material = await controller.prepareRegistration(
           password: _password.text,
           workspaceName: _workspace.text.trim(),
-          locale: ref.read(l10nProvider).languageCode,
         );
-        if (mounted && recoveryKey != null) {
-          await _showRecoveryKeyDialog(recoveryKey);
-        }
+        if (!mounted) return;
+        final confirmed = await showRecoveryKeyConfirmationDialog(
+          context: context,
+          l10n: ref.read(l10nProvider),
+          recoveryKey: material.recoveryKey,
+          rotating: false,
+        );
+        if (!confirmed || !mounted) return;
+        await controller.completeRegistration(
+          email: _email.text.trim(),
+          password: _password.text,
+          locale: ref.read(l10nProvider).languageCode,
+          material: material,
+        );
       } else {
         await controller.login(
           email: _email.text.trim(),
@@ -216,99 +225,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           newPassword: _newPassword.text,
           recoveryWrapper: challenge.recoveryWrapper,
         );
-  }
-
-  Future<void> _showRecoveryKeyDialog(String recoveryKey) {
-    final l10n = ref.read(l10nProvider);
-    return showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        final scheme = Theme.of(context).colorScheme;
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(20),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 480),
-            child: Material(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              borderRadius: BorderRadius.circular(24),
-              clipBehavior: Clip.antiAlias,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(22, 20, 22, 22),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        const _AuthMark(icon: LucideIcons.keyRound),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            l10n.t('saveRecoveryKey'),
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(fontWeight: FontWeight.w800),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      l10n.t('recoveryKeyHint'),
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            height: 1.35,
-                          ),
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: scheme.surfaceContainerHighest
-                            .withValues(alpha: 0.52),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: SelectableText(
-                        recoveryKey,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.w700,
-                              height: 1.35,
-                            ),
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            onPressed: () => Clipboard.setData(
-                              ClipboardData(text: recoveryKey),
-                            ),
-                            icon: const Icon(LucideIcons.copy),
-                            label: Text(l10n.t('copy')),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            child: Text(l10n.t('done')),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
   }
 
   String _cleanError(String value, AppL10n l10n, bool recovering) {

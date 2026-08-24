@@ -1,13 +1,35 @@
 from __future__ import annotations
 
+from html.parser import HTMLParser
+
+import pytest
+from django.core import mail
 from django.test import override_settings
 from rest_framework.test import APIRequestFactory
 
 from apps.core.abuse import increment_metadata_limit
 from apps.core.checks import production_configuration_check
-from apps.core.emails import _send
+from apps.core.emails import _send, send_recovery_code_email, send_verification_code_email
 from apps.core.security import redact_value
 from apps.core.views import HealthLiveView, HealthReadyView
+
+
+class _LinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            href = dict(attrs).get("href")
+            if href:
+                self.links.append(href)
+
+
+def _html_links(message):
+    parser = _LinkParser()
+    parser.feed(message.alternatives[0][0])
+    return parser.links
 
 
 def test_redact_value_removes_tokens_and_ciphertext():
@@ -78,6 +100,71 @@ def test_send_email_does_not_silence_delivery_errors(monkeypatch):
     )
 
     assert calls == [False]
+
+
+@pytest.mark.parametrize(
+    ("locale", "sender", "expected_subject", "expected_label"),
+    [
+        (
+            "en",
+            send_verification_code_email,
+            "Your Safernotes verification code",
+            "Verification code",
+        ),
+        (
+            "de",
+            send_verification_code_email,
+            "Dein Safernotes Bestätigungscode",
+            "Bestätigungscode",
+        ),
+        (
+            "en",
+            send_recovery_code_email,
+            "Your Safernotes password reset code",
+            "Recovery code",
+        ),
+        (
+            "de",
+            send_recovery_code_email,
+            "Dein Safernotes Code zum Zurücksetzen des Passworts",
+            "Wiederherstellungscode",
+        ),
+    ],
+)
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    APP_BASE_URL="https://app.safernotes.com/",
+    WEBSITE_BASE_URL="https://safernotes.com/",
+)
+def test_code_emails_have_production_safe_links_in_every_locale(
+    db,
+    django_user_model,
+    locale,
+    sender,
+    expected_subject,
+    expected_label,
+):
+    from apps.users.models import Profile
+
+    user = django_user_model.objects.create_user(
+        email=f"{locale}-{expected_label.split()[0]}@example.com",
+        password="strong-password",
+    )
+    Profile.objects.create(user=user, locale=locale)
+
+    sender(user, "123456")
+
+    message = mail.outbox[0]
+    assert message.subject == expected_subject
+    assert f"{expected_label}: 123456" in message.body
+    assert "https://app.safernotes.com" in message.body
+    assert "https://safernotes.com" in message.body
+    assert set(_html_links(message)) == {
+        "https://app.safernotes.com",
+        "https://safernotes.com",
+    }
+    assert "localhost" not in message.body
+    assert "localhost" not in message.alternatives[0][0]
 
 
 @override_settings(

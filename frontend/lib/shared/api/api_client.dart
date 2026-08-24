@@ -19,7 +19,7 @@ class ApiException implements Exception {
 class ApiClient {
   ApiClient({
     http.Client? httpClient,
-    this.baseUrl = 'http://127.0.0.1:8000',
+    this.baseUrl = 'https://api.safernotes.com',
     this.requestTimeout = const Duration(seconds: 5),
   }) : _http = httpClient ?? http.Client();
 
@@ -114,6 +114,23 @@ class ApiClient {
     });
   }
 
+  Future<Map<String, dynamic>> fetchRecoveryKeyStatus({
+    required String accessToken,
+  }) {
+    return _get('/api/v1/auth/recovery-key', accessToken);
+  }
+
+  Future<Map<String, dynamic>> updateRecoveryKey({
+    required String accessToken,
+    required EncryptedEnvelope recoveryWrapper,
+  }) {
+    return _patch(
+      '/api/v1/auth/recovery-key',
+      {'recovery_wrapper': recoveryWrapper.toJson()},
+      accessToken: accessToken,
+    );
+  }
+
   Future<Map<String, dynamic>> updatePreferences({
     required String accessToken,
     required String locale,
@@ -189,6 +206,28 @@ class ApiClient {
         'encrypted_note_key': encryptedNoteKey.toJson(),
         'invitation_signature': invitationSignature,
       },
+      accessToken: accessToken,
+    );
+  }
+
+  Future<Map<String, dynamic>> fetchShareInvitation({
+    required String accessToken,
+    required String invitationId,
+  }) {
+    return _get(
+      '/api/v1/notes/invitations/$invitationId/',
+      accessToken,
+    );
+  }
+
+  Future<Map<String, dynamic>> decideShareInvitation({
+    required String accessToken,
+    required String invitationId,
+    required String decision,
+  }) {
+    return _post(
+      '/api/v1/notes/invitations/$invitationId/decide/',
+      {'decision': decision},
       accessToken: accessToken,
     );
   }

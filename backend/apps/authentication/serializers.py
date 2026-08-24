@@ -29,7 +29,7 @@ class RegistrationSerializer(serializers.Serializer):
     encrypted_master_key = EncryptedEnvelopeField()
     encrypted_private_encryption_key = EncryptedEnvelopeField()
     encrypted_private_signing_key = EncryptedEnvelopeField()
-    recovery_wrapper = EncryptedEnvelopeField(required=False)
+    recovery_wrapper = EncryptedEnvelopeField()
     device_name_ciphertext = EncryptedEnvelopeField(required=False)
     device_public_signing_key = serializers.CharField(required=False)
     default_tenant_name_ciphertext = EncryptedEnvelopeField()
@@ -175,6 +175,17 @@ class RecoveryCompleteSerializer(serializers.Serializer):
     kdf_params = serializers.JSONField()
     password_salt = serializers.CharField()
     encrypted_master_key = EncryptedEnvelopeField()
+
+
+class RecoveryKeyUpdateSerializer(serializers.Serializer):
+    recovery_wrapper = EncryptedEnvelopeField()
+
+    def to_internal_value(self, data):
+        if "recovery_key" in data:
+            raise serializers.ValidationError(
+                {"recovery_key": "Plaintext recovery keys are forbidden."}
+            )
+        return super().to_internal_value(data)
 
 
 class EmailVerificationConfirmSerializer(serializers.Serializer):

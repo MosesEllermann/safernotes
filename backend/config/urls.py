@@ -5,8 +5,10 @@ from __future__ import annotations
 from django.urls import include, path
 
 from apps.core.views import HealthLiveView, HealthReadyView
+from apps.users.admin_site import owner_admin_site
 
 urlpatterns = [
+    path("owner-admin/", owner_admin_site.urls),
     path("api/v1/health/live", HealthLiveView.as_view(), name="health-live"),
     path("api/v1/health/ready", HealthReadyView.as_view(), name="health-ready"),
     path("api/v1/auth/", include("apps.authentication.urls")),

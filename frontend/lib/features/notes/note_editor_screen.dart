@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:uuid/uuid.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
+import 'package:safernotes_app/features/notes/note_editor_state.dart';
 import 'package:safernotes_app/features/notes/notes_controller.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
 import 'package:safernotes_app/shared/api/api_client.dart';
@@ -55,12 +56,14 @@ InputDecoration _borderlessInput(String hint) {
 class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   final _uuid = const Uuid();
   late TextEditingController _title;
-  late _MarkdownEditingController _body;
+  late TextEditingController _body;
   late List<ChecklistItem> _checklist;
   late bool _pinned;
   late int _color;
   late bool _checklistMode;
   late DateTime? _reminderAt;
+  late EditorHistory<_EditorSnapshot> _history;
+  bool _restoringHistory = false;
   Timer? _autosave;
 
   static const _colors = [
@@ -81,8 +84,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   @override
   void didUpdateWidget(covariant NoteEditorPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.note.localId != widget.note.localId ||
-        oldWidget.note.updatedAt != widget.note.updatedAt) {
+    if (oldWidget.note.localId != widget.note.localId) {
       _autosave?.cancel();
       _title.dispose();
       _body.dispose();
@@ -93,14 +95,18 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   void _hydrate(PlainNote note) {
     _title = TextEditingController(
         text: note.title == 'Untitled note' ? '' : note.title);
-    _body = _MarkdownEditingController(text: note.body);
-    _checklist = [...note.checklist];
+    _body = TextEditingController(text: note.body);
+    _checklist = orderChecklistItems(note.checklist);
     _checklistMode = note.checklist.isNotEmpty && note.body.trim().isEmpty;
     _pinned = note.pinned;
     _color = note.color;
     _reminderAt = note.reminderAt;
-    _title.addListener(_scheduleSave);
-    _body.addListener(_scheduleSave);
+    _history = EditorHistory<_EditorSnapshot>(
+      initialValue: _snapshot(),
+      sameContent: (previous, next) => previous.hasSameContent(next),
+    );
+    _title.addListener(_handleControllerChange);
+    _body.addListener(_handleControllerChange);
   }
 
   @override
@@ -127,6 +133,11 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     final toolbar = _Toolbar(
       onFormat: _applyFormat,
       onBackground: _showBackgroundSheet,
+      onUndo: _undo,
+      onRedo: _redo,
+      canUndo: _history.canUndo,
+      canRedo: _history.canRedo,
+      activeActions: _activeFormattingActions(),
     );
     final divider = Divider(
       height: 1,
@@ -145,11 +156,25 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
             const _FormatIntent('italic'),
         LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyI):
             const _FormatIntent('italic'),
+        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyZ):
+            const _HistoryIntent(redo: false),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ):
+            const _HistoryIntent(redo: false),
+        LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.shift,
+            LogicalKeyboardKey.keyZ): const _HistoryIntent(redo: true),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.shift,
+            LogicalKeyboardKey.keyZ): const _HistoryIntent(redo: true),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyY):
+            const _HistoryIntent(redo: true),
       },
       child: Actions(
         actions: {
           _FormatIntent: CallbackAction<_FormatIntent>(onInvoke: (intent) {
             _applyFormat(intent.action);
+            return null;
+          }),
+          _HistoryIntent: CallbackAction<_HistoryIntent>(onInvoke: (intent) {
+            intent.redo ? _redo() : _undo();
             return null;
           }),
         },
@@ -192,10 +217,10 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                         tooltip: _pinned ? l10n.t('unpin') : l10n.t('pin'),
                         icon: _pinned ? LucideIcons.pin : LucideIcons.pinOff,
                         selected: _pinned,
-                        onPressed: () {
-                          setState(() => _pinned = !_pinned);
-                          _scheduleSave(immediate: true);
-                        },
+                        onPressed: () => _recordMutation(
+                          () => _pinned = !_pinned,
+                          immediate: true,
+                        ),
                       ),
                       if (_reminderAt == null)
                         AppIconButton(
@@ -238,8 +263,9 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                       final checklist = _ChecklistEditor(
                         items: _checklist,
                         onChanged: (items) {
-                          setState(() => _checklist = items);
-                          _scheduleSave();
+                          _recordMutation(
+                            () => _checklist = orderChecklistItems(items),
+                          );
                         },
                       );
                       return AnimatedSwitcher(
@@ -285,6 +311,70 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     );
   }
 
+  _EditorSnapshot _snapshot() {
+    return _EditorSnapshot(
+      title: _title.value,
+      body: _body.value,
+      checklist: [..._checklist],
+      pinned: _pinned,
+      color: _color,
+      checklistMode: _checklistMode,
+      reminderAt: _reminderAt,
+    );
+  }
+
+  void _handleControllerChange() {
+    if (_restoringHistory) return;
+    final contentChanged = _history.record(_snapshot());
+    if (mounted) setState(() {});
+    if (contentChanged) _scheduleSave();
+  }
+
+  void _recordMutation(VoidCallback mutation, {bool immediate = false}) {
+    _restoringHistory = true;
+    setState(mutation);
+    _restoringHistory = false;
+    if (_history.record(_snapshot())) {
+      _scheduleSave(immediate: immediate);
+    }
+  }
+
+  void _undo() {
+    final snapshot = _history.undo();
+    if (snapshot != null) _restoreSnapshot(snapshot);
+  }
+
+  void _redo() {
+    final snapshot = _history.redo();
+    if (snapshot != null) _restoreSnapshot(snapshot);
+  }
+
+  void _restoreSnapshot(_EditorSnapshot snapshot) {
+    _autosave?.cancel();
+    _restoringHistory = true;
+    setState(() {
+      _title.value = snapshot.title;
+      _body.value = snapshot.body;
+      _checklist = [...snapshot.checklist];
+      _pinned = snapshot.pinned;
+      _color = snapshot.color;
+      _checklistMode = snapshot.checklistMode;
+      _reminderAt = snapshot.reminderAt;
+    });
+    _restoringHistory = false;
+    _scheduleSave();
+  }
+
+  Set<String> _activeFormattingActions() {
+    final value = _body.value;
+    return {
+      if (MarkdownFormatting.isActive(value, MarkdownFormat.bold)) 'bold',
+      if (MarkdownFormatting.isActive(value, MarkdownFormat.italic)) 'italic',
+      if (MarkdownFormatting.isActive(value, MarkdownFormat.strike)) 'strike',
+      if (MarkdownFormatting.isLinkActive(value)) 'link',
+    };
+  }
+
   PlainNote _currentNote() {
     final notes = ref.read(notesControllerProvider).valueOrNull;
     if (notes == null) return widget.note;
@@ -319,73 +409,57 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   }
 
   void _applyFormat(String action) {
-    final selection = _body.selection;
-    final text = _body.text;
     if (action == 'link') {
       unawaited(_showLinkSheet());
       return;
     }
     if (action == 'codeblock') {
-      _applyCodeBlock();
+      _body.value = MarkdownFormatting.codeBlock(_body.value);
       return;
     }
     if (action == 'check') {
-      final range = _safeSelectionRange(selection, text);
+      final text = _body.text;
+      final range = MarkdownFormatting.safeRange(_body.selection, text);
       final selected = range.isCollapsed ? '' : range.textInside(text);
-      final replacement = _switchToChecklist(selected);
-      _body.value = TextEditingValue(
-        text: text.replaceRange(range.start, range.end, replacement),
-        selection: TextSelection.collapsed(offset: range.start),
-      );
-      _scheduleSave();
+      final lines = selected.trim().isEmpty ? [''] : selected.split('\n');
+      _recordMutation(() {
+        _checklistMode = true;
+        for (final line in lines) {
+          _checklist = insertUncheckedItem(
+            _checklist,
+            ChecklistItem(
+              id: _uuid.v4(),
+              text: line.replaceFirst(RegExp(r'^[-*]\s*'), ''),
+              done: false,
+              indent: 0,
+            ),
+          );
+        }
+        _body.value = _body.value.copyWith(
+          text: text.replaceRange(range.start, range.end, ''),
+          selection: TextSelection.collapsed(offset: range.start),
+          composing: TextRange.empty,
+        );
+      });
       return;
     }
-
-    final range = action == 'clear'
-        ? _rangeForClear(selection, text)
-        : _rangeForInlineFormat(selection, text);
-    if (range == null) return;
-    final selected = range.textInside(text);
-    if (selected.trim().isEmpty) return;
-    final edit = switch (action) {
-      'bold' => _inlineMarkdownEdit(text, range, '**'),
-      'italic' => _inlineMarkdownEdit(text, range, '_'),
-      'strike' => _inlineMarkdownEdit(text, range, '~~'),
-      'clear' =>
-        _TextEdit(range: range, replacement: _clearMarkdownSyntax(selected)),
-      _ => _TextEdit(range: range, replacement: selected),
+    _body.value = switch (action) {
+      'bold' => MarkdownFormatting.toggle(_body.value, MarkdownFormat.bold),
+      'italic' => MarkdownFormatting.toggle(_body.value, MarkdownFormat.italic),
+      'strike' => MarkdownFormatting.toggle(_body.value, MarkdownFormat.strike),
+      'clear' => MarkdownFormatting.clear(_body.value),
+      _ => _body.value,
     };
-    _body.value = TextEditingValue(
-      text:
-          text.replaceRange(edit.range.start, edit.range.end, edit.replacement),
-      selection: TextSelection.collapsed(
-          offset: edit.range.start + edit.replacement.length),
-    );
-    _scheduleSave();
-  }
-
-  void _applyCodeBlock() {
-    final text = _body.text;
-    final range = _safeSelectionRange(_body.selection, text);
-    final selected = range.isCollapsed ? '' : range.textInside(text);
-    final replacement =
-        selected.trim().isEmpty ? '```\n\n```' : '```\n$selected\n```';
-    final caretOffset = selected.trim().isEmpty
-        ? range.start + 4
-        : range.start + replacement.length;
-    _body.value = TextEditingValue(
-      text: text.replaceRange(range.start, range.end, replacement),
-      selection: TextSelection.collapsed(offset: caretOffset),
-    );
-    _scheduleSave();
   }
 
   Future<void> _showLinkSheet() async {
     final text = _body.text;
     final selection = _body.selection;
     final link = _linkAroundSelection(selection, text);
-    final fallbackRange = _rangeForInlineFormat(selection, text) ??
-        _safeSelectionRange(selection, text);
+    final safeRange = MarkdownFormatting.safeRange(selection, text);
+    final fallbackRange = safeRange.isCollapsed
+        ? MarkdownFormatting.wordRangeAt(text, safeRange.start) ?? safeRange
+        : safeRange;
     final editRange = link?.range ?? fallbackRange;
     final selected = editRange.isCollapsed ? '' : editRange.textInside(text);
     final initialLabel = link?.label ?? selected;
@@ -409,11 +483,10 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       selection:
           TextSelection.collapsed(offset: editRange.start + replacement.length),
     );
-    _scheduleSave();
   }
 
   _ExistingLink? _linkAroundSelection(TextSelection selection, String text) {
-    final range = _safeSelectionRange(selection, text);
+    final range = MarkdownFormatting.safeRange(selection, text);
     final expression = RegExp(r'\[([^\]]*)\]\(([^)]*)\)');
     for (final match in expression.allMatches(text)) {
       final touchesCollapsed = range.isCollapsed &&
@@ -441,90 +514,6 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     return 'https://$trimmed';
   }
 
-  TextRange _safeSelectionRange(TextSelection selection, String text) {
-    final start = selection.start < 0 ? text.length : selection.start;
-    final end = selection.end < 0 ? text.length : selection.end;
-    return TextRange(start: start, end: end);
-  }
-
-  TextRange? _rangeForInlineFormat(TextSelection selection, String text) {
-    final range = _safeSelectionRange(selection, text);
-    if (!range.isCollapsed) return range;
-    return _wordRangeAt(text, range.start);
-  }
-
-  TextRange? _rangeForClear(TextSelection selection, String text) {
-    final range = _safeSelectionRange(selection, text);
-    if (!range.isCollapsed) return range;
-    if (text.trim().isEmpty) return null;
-    return _lineRangeAt(text, range.start);
-  }
-
-  TextRange? _wordRangeAt(String text, int offset) {
-    if (text.isEmpty) return null;
-    var start = offset.clamp(0, text.length);
-    var end = start;
-    while (start > 0 && _isWordCharacter(text.codeUnitAt(start - 1))) {
-      start--;
-    }
-    while (end < text.length && _isWordCharacter(text.codeUnitAt(end))) {
-      end++;
-    }
-    if (start == end) return null;
-    return TextRange(start: start, end: end);
-  }
-
-  TextRange _lineRangeAt(String text, int offset) {
-    final safeOffset = offset.clamp(0, text.length);
-    final lineStart =
-        text.lastIndexOf('\n', safeOffset == 0 ? 0 : safeOffset - 1) + 1;
-    final nextBreak = text.indexOf('\n', safeOffset);
-    final lineEnd = nextBreak == -1 ? text.length : nextBreak;
-    return TextRange(start: lineStart, end: lineEnd);
-  }
-
-  bool _isWordCharacter(int codeUnit) {
-    return (codeUnit >= 48 && codeUnit <= 57) ||
-        (codeUnit >= 65 && codeUnit <= 90) ||
-        (codeUnit >= 97 && codeUnit <= 122) ||
-        codeUnit == 45 ||
-        codeUnit == 95 ||
-        codeUnit >= 128;
-  }
-
-  _TextEdit _inlineMarkdownEdit(String text, TextRange range, String marker) {
-    final beforeStart = range.start - marker.length;
-    final afterEnd = range.end + marker.length;
-    final hasWrappingMarkers = beforeStart >= 0 &&
-        afterEnd <= text.length &&
-        text.substring(beforeStart, range.start) == marker &&
-        text.substring(range.end, afterEnd) == marker;
-    if (hasWrappingMarkers) {
-      return _TextEdit(
-        range: TextRange(start: beforeStart, end: afterEnd),
-        replacement: range.textInside(text),
-      );
-    }
-    return _TextEdit(
-      range: range,
-      replacement: '$marker${range.textInside(text)}$marker',
-    );
-  }
-
-  String _clearMarkdownSyntax(String value) {
-    return value
-        .replaceAllMapped(RegExp(r'\[(.*?)\]\((.*?)\)'), (match) {
-          final label = match.group(1)?.trim() ?? '';
-          final url = match.group(2)?.trim() ?? '';
-          if (label.isEmpty) return url;
-          if (url.isEmpty || label == url) return label;
-          return '$label $url';
-        })
-        .replaceAll(RegExp(r'(\*\*|__|~~|`|<u>|</u>|```)', multiLine: true), '')
-        .replaceAll(RegExp(r'^#{1,3}\s+', multiLine: true), '')
-        .replaceAll(RegExp(r'^>\s+', multiLine: true), '');
-  }
-
   Future<void> _showBackgroundSheet() async {
     final color = await showModalBottomSheet<int>(
       context: context,
@@ -536,24 +525,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       ),
     );
     if (color == null || !mounted) return;
-    setState(() => _color = color);
-    _scheduleSave(immediate: true);
-  }
-
-  String _switchToChecklist(String selected) {
-    final lines = selected.trim().isEmpty ? [''] : selected.split('\n');
-    setState(() {
-      _checklistMode = true;
-      _checklist = [
-        ..._checklist,
-        ...lines.map((line) => ChecklistItem(
-            id: _uuid.v4(),
-            text: line.replaceFirst(RegExp(r'^[-*]\s*'), ''),
-            done: false,
-            indent: 0)),
-      ];
-    });
-    return '';
+    _recordMutation(() => _color = color, immediate: true);
   }
 
   void _showShareSheet(PlainNote note) {
@@ -593,8 +565,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       _showReminderFeedback(true, duplicated: true);
       return;
     }
-    setState(() => _reminderAt = selected);
-    _scheduleSave(immediate: true);
+    _recordMutation(() => _reminderAt = selected, immediate: true);
     _showReminderFeedback(selected != null);
   }
 
@@ -643,10 +614,20 @@ class _Toolbar extends StatelessWidget {
   const _Toolbar({
     required this.onFormat,
     required this.onBackground,
+    required this.onUndo,
+    required this.onRedo,
+    required this.canUndo,
+    required this.canRedo,
+    required this.activeActions,
   });
 
   final ValueChanged<String> onFormat;
   final VoidCallback onBackground;
+  final VoidCallback onUndo;
+  final VoidCallback onRedo;
+  final bool canUndo;
+  final bool canRedo;
+  final Set<String> activeActions;
 
   @override
   Widget build(BuildContext context) {
@@ -671,10 +652,22 @@ class _Toolbar extends StatelessWidget {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
+                    AppIconButton(
+                      tooltip: 'Rückgängig',
+                      icon: LucideIcons.undo2,
+                      onPressed: canUndo ? onUndo : null,
+                    ),
+                    AppIconButton(
+                      tooltip: 'Wiederholen',
+                      icon: LucideIcons.redo2,
+                      onPressed: canRedo ? onRedo : null,
+                    ),
+                    const SizedBox(width: 8),
                     for (final item in buttons)
                       AppIconButton(
                         tooltip: item.tooltip,
                         icon: item.icon,
+                        selected: activeActions.contains(item.action),
                         onPressed: () => onFormat(item.action),
                       ),
                   ],
@@ -1279,7 +1272,7 @@ class _EditorReminderPickTile extends StatelessWidget {
 class _BodyEditor extends StatelessWidget {
   const _BodyEditor({required this.controller, required this.hint});
 
-  final _MarkdownEditingController controller;
+  final TextEditingController controller;
   final String hint;
 
   @override
@@ -1295,257 +1288,6 @@ class _BodyEditor extends StatelessWidget {
       style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.5),
     );
   }
-}
-
-class _MarkdownEditingController extends TextEditingController {
-  _MarkdownEditingController({super.text});
-
-  @override
-  TextSpan buildTextSpan({
-    required BuildContext context,
-    TextStyle? style,
-    required bool withComposing,
-  }) {
-    final base = style ?? DefaultTextStyle.of(context).style;
-    final spans = <InlineSpan>[];
-    var inCodeBlock = false;
-    for (final line in text.split('\n')) {
-      if (line.trim() == '```') {
-        spans.add(TextSpan(text: line, style: _hiddenStyle(base)));
-        inCodeBlock = !inCodeBlock;
-      } else {
-        spans.addAll(
-          _lineSpans(context, base, line, inCodeBlock: inCodeBlock),
-        );
-      }
-      spans.add(const TextSpan(text: '\n'));
-    }
-    if (spans.isNotEmpty) spans.removeLast();
-    return TextSpan(style: base, children: spans);
-  }
-
-  TextStyle _hiddenStyle(TextStyle base) {
-    return base.copyWith(
-        color: Colors.transparent, fontSize: 0.01, height: 0.01);
-  }
-
-  List<TextSpan> _lineSpans(
-    BuildContext context,
-    TextStyle base,
-    String line, {
-    required bool inCodeBlock,
-  }) {
-    final hiddenStyle = _hiddenStyle(base);
-    if (inCodeBlock) {
-      return [
-        TextSpan(
-          text: line,
-          style: base.copyWith(
-            fontFamily: 'monospace',
-            backgroundColor: Theme.of(context)
-                .colorScheme
-                .surfaceContainerHighest
-                .withValues(alpha: 0.58),
-          ),
-        ),
-      ];
-    }
-    var index = 0;
-    var lineStyle = base;
-    if (line.startsWith('# ')) {
-      lineStyle = base.copyWith(fontSize: 28, fontWeight: FontWeight.w700);
-      index = 2;
-    } else if (line.startsWith('## ')) {
-      lineStyle = base.copyWith(fontSize: 23, fontWeight: FontWeight.w700);
-      index = 3;
-    } else if (line.startsWith('### ')) {
-      lineStyle = base.copyWith(fontSize: 19, fontWeight: FontWeight.w700);
-      index = 4;
-    } else if (line.startsWith('> ')) {
-      lineStyle = base.copyWith(
-        fontStyle: FontStyle.italic,
-        color: base.color?.withValues(alpha: 0.72),
-      );
-      index = 2;
-    }
-
-    final spans = <TextSpan>[];
-    if (index > 0) {
-      spans.add(TextSpan(text: line.substring(0, index), style: hiddenStyle));
-    }
-
-    var bold = false;
-    var italic = false;
-    var strike = false;
-    var underline = false;
-    var code = false;
-    while (index < line.length) {
-      if (line.startsWith('**', index)) {
-        spans.add(TextSpan(text: '**', style: hiddenStyle));
-        bold = !bold;
-        index += 2;
-        continue;
-      }
-      if (line.startsWith('~~', index)) {
-        spans.add(TextSpan(text: '~~', style: hiddenStyle));
-        strike = !strike;
-        index += 2;
-        continue;
-      }
-      if (line.startsWith('<u>', index)) {
-        spans.add(TextSpan(text: '<u>', style: hiddenStyle));
-        underline = true;
-        index += 3;
-        continue;
-      }
-      if (line.startsWith('</u>', index)) {
-        spans.add(TextSpan(text: '</u>', style: hiddenStyle));
-        underline = false;
-        index += 4;
-        continue;
-      }
-      if (line.startsWith('```', index)) {
-        spans.add(TextSpan(text: '```', style: hiddenStyle));
-        code = !code;
-        index += 3;
-        continue;
-      }
-      if (line.startsWith('`', index)) {
-        spans.add(TextSpan(text: '`', style: hiddenStyle));
-        code = !code;
-        index += 1;
-        continue;
-      }
-      if (_isItalicMarker(line, index)) {
-        spans.add(TextSpan(text: '_', style: hiddenStyle));
-        italic = !italic;
-        index += 1;
-        continue;
-      }
-      final link = _markdownLinkAt(line, index);
-      if (link != null) {
-        spans
-          ..add(TextSpan(text: '[', style: hiddenStyle))
-          ..add(TextSpan(
-            text: link.label,
-            style: _inlineStyle(
-              context,
-              lineStyle,
-              bold: bold,
-              italic: italic,
-              strike: strike,
-              underline: true,
-              code: code,
-              link: true,
-            ),
-          ))
-          ..add(TextSpan(text: '](${link.url})', style: hiddenStyle));
-        index = link.end;
-        continue;
-      }
-
-      final next = _nextMarkdownBoundary(line, index);
-      spans.add(TextSpan(
-        text: line.substring(index, next),
-        style: _inlineStyle(
-          context,
-          lineStyle,
-          bold: bold,
-          italic: italic,
-          strike: strike,
-          underline: underline,
-          code: code,
-        ),
-      ));
-      index = next;
-    }
-    return spans;
-  }
-
-  TextStyle _inlineStyle(
-    BuildContext context,
-    TextStyle base, {
-    required bool bold,
-    required bool italic,
-    required bool strike,
-    required bool underline,
-    required bool code,
-    bool link = false,
-  }) {
-    final decorations = <TextDecoration>[
-      if (strike) TextDecoration.lineThrough,
-      if (underline || link) TextDecoration.underline,
-    ];
-    return base.copyWith(
-      backgroundColor: link
-          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
-          : base.backgroundColor,
-      color: link ? Theme.of(context).colorScheme.primary : base.color,
-      fontWeight: bold ? FontWeight.w700 : base.fontWeight,
-      fontStyle: italic ? FontStyle.italic : base.fontStyle,
-      fontFamily: code ? 'monospace' : base.fontFamily,
-      decoration: decorations.isEmpty
-          ? base.decoration
-          : TextDecoration.combine(decorations),
-    );
-  }
-
-  int _nextMarkdownBoundary(String line, int start) {
-    for (var i = start + 1; i < line.length; i++) {
-      if (line.startsWith('**', i) ||
-          line.startsWith('~~', i) ||
-          line.startsWith('<u>', i) ||
-          line.startsWith('</u>', i) ||
-          line.startsWith('```', i) ||
-          line.startsWith('`', i) ||
-          line.startsWith('[', i) ||
-          _isItalicMarker(line, i)) {
-        return i;
-      }
-    }
-    return line.length;
-  }
-
-  bool _isItalicMarker(String line, int index) {
-    if (!line.startsWith('_', index)) return false;
-    final beforeIsWord =
-        index > 0 && _isInlineWordCharacter(line.codeUnitAt(index - 1));
-    final afterIsWord = index + 1 < line.length &&
-        _isInlineWordCharacter(line.codeUnitAt(index + 1));
-    return beforeIsWord != afterIsWord;
-  }
-
-  bool _isInlineWordCharacter(int codeUnit) {
-    return (codeUnit >= 48 && codeUnit <= 57) ||
-        (codeUnit >= 65 && codeUnit <= 90) ||
-        (codeUnit >= 97 && codeUnit <= 122) ||
-        codeUnit >= 128;
-  }
-
-  _MarkdownLink? _markdownLinkAt(String line, int index) {
-    if (!line.startsWith('[', index)) return null;
-    final labelEnd = line.indexOf('](', index + 1);
-    if (labelEnd == -1) return null;
-    final urlEnd = line.indexOf(')', labelEnd + 2);
-    if (urlEnd == -1) return null;
-    return _MarkdownLink(
-      label: line.substring(index + 1, labelEnd),
-      url: line.substring(labelEnd + 2, urlEnd),
-      end: urlEnd + 1,
-    );
-  }
-}
-
-class _MarkdownLink {
-  const _MarkdownLink({
-    required this.label,
-    required this.url,
-    required this.end,
-  });
-
-  final String label;
-  final String url;
-  final int end;
 }
 
 class _ChecklistEditor extends ConsumerStatefulWidget {
@@ -1567,87 +1309,147 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   @override
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                l10n.t('checklist'),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+    final unchecked = widget.items.where((item) => !item.done).toList();
+    final checked = widget.items.where((item) => item.done).toList();
+    final orderKey = [
+      ...unchecked.map((item) => item.id),
+      '|',
+      ...checked.map((item) => item.id),
+    ].join(':');
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            l10n.t('checklist'),
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SizeTransition(
+                sizeFactor: animation,
+                alignment: Alignment.topLeft,
+                child: child,
               ),
             ),
-            AppIconButton(
-              tooltip: l10n.t('addTask'),
-              icon: LucideIcons.plus,
-              onPressed: () {
-                final item = ChecklistItem(
-                    id: const Uuid().v4(), text: '', done: false, indent: 0);
-                setState(() => _focusItemId = item.id);
-                widget.onChanged([...widget.items, item]);
-              },
+            child: Column(
+              key: ValueKey(orderKey),
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildSection(unchecked, done: false),
+                _ChecklistAddButton(
+                  label: l10n.t('addTask'),
+                  onPressed: () => _insertItem(),
+                ),
+                if (checked.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(40, 18, 0, 8),
+                    child: Text(
+                      'Erledigt (${checked.length})',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  _buildSection(checked, done: true),
+                ],
+              ],
             ),
-          ],
-        ),
-        ReorderableListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          buildDefaultDragHandles: false,
-          itemCount: widget.items.length,
-          onReorderItem: (oldIndex, newIndex) {
-            final next = [...widget.items];
-            final item = next.removeAt(oldIndex);
-            next.insert(newIndex, item);
-            widget.onChanged(next);
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSection(List<ChecklistItem> items, {required bool done}) {
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      buildDefaultDragHandles: false,
+      itemCount: items.length,
+      onReorderItem: (oldIndex, newIndex) {
+        widget.onChanged(reorderChecklistSection(
+          widget.items,
+          done: done,
+          oldIndex: oldIndex,
+          newIndex: newIndex,
+        ));
+      },
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return _ChecklistRow(
+          key: ValueKey(item.id),
+          index: index,
+          item: item,
+          autofocus: item.id == _focusItemId,
+          onChanged: (updated) =>
+              widget.onChanged(updateChecklistItem(widget.items, updated)),
+          onDelete: () => widget.onChanged(
+            widget.items.where((candidate) => candidate.id != item.id).toList(),
+          ),
+          onInsertAfter: () => _insertItem(after: item),
+          onFocused: () {
+            if (_focusItemId == item.id) {
+              setState(() => _focusItemId = null);
+            }
           },
-          itemBuilder: (context, index) {
-            final item = widget.items[index];
-            return _ChecklistRow(
-              key: ValueKey(item.id),
-              index: index,
-              item: item,
-              autofocus: item.id == _focusItemId,
-              onChanged: (updated) {
-                final next = [...widget.items]..[index] = updated;
-                widget.onChanged(next);
-              },
-              onDelete: () {
-                final next = [...widget.items]..removeAt(index);
-                widget.onChanged(next);
-              },
-              onInsertAfter: () {
-                final next = [...widget.items];
-                final inserted = ChecklistItem(
-                  id: const Uuid().v4(),
-                  text: '',
-                  done: false,
-                  indent: item.indent,
-                );
-                next.insert(
-                  index + 1,
-                  inserted,
-                );
-                setState(() => _focusItemId = inserted.id);
-                widget.onChanged(next);
-              },
-              onFocused: () {
-                if (_focusItemId == item.id) {
-                  setState(() => _focusItemId = null);
-                }
-              },
-            );
-          },
+        );
+      },
+    );
+  }
+
+  void _insertItem({ChecklistItem? after}) {
+    final inserted = ChecklistItem(
+      id: const Uuid().v4(),
+      text: '',
+      done: false,
+      indent: after?.done == false ? after!.indent : 0,
+    );
+    setState(() => _focusItemId = inserted.id);
+    widget.onChanged(insertUncheckedItem(
+      widget.items,
+      inserted,
+      afterItemId: after?.done == false ? after!.id : null,
+    ));
+  }
+}
+
+class _ChecklistAddButton extends StatelessWidget {
+  const _ChecklistAddButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 24, top: 2),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          key: const ValueKey('checklist-add'),
+          onPressed: onPressed,
+          icon: const Icon(LucideIcons.plus, size: 18),
+          label: Text(label),
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          ),
         ),
-      ],
+      ),
     );
   }
 }
 
-class _ChecklistRow extends StatelessWidget {
+class _ChecklistRow extends StatefulWidget {
   const _ChecklistRow({
     super.key,
     required this.index,
@@ -1668,13 +1470,41 @@ class _ChecklistRow extends StatelessWidget {
   final VoidCallback onFocused;
 
   @override
+  State<_ChecklistRow> createState() => _ChecklistRowState();
+}
+
+class _ChecklistRowState extends State<_ChecklistRow> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.item.text,
+  )..selection = TextSelection.collapsed(offset: widget.item.text.length);
+
+  @override
+  void didUpdateWidget(covariant _ChecklistRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.item.text != _controller.text) {
+      final offset =
+          _controller.selection.extentOffset.clamp(0, widget.item.text.length);
+      _controller.value = TextEditingValue(
+        text: widget.item.text,
+        selection: TextSelection.collapsed(offset: offset),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(left: item.indent * 20.0, bottom: 6),
+      padding: EdgeInsets.only(left: widget.item.indent * 20.0, bottom: 6),
       child: Row(
         children: [
           ReorderableDragStartListener(
-            index: index,
+            index: widget.index,
             child: Icon(
               LucideIcons.gripVertical,
               size: 16,
@@ -1683,47 +1513,50 @@ class _ChecklistRow extends StatelessWidget {
           ),
           Checkbox(
             visualDensity: VisualDensity.compact,
-            value: item.done,
+            value: widget.item.done,
             onChanged: (value) =>
-                onChanged(item.copyWith(done: value ?? false)),
+                widget.onChanged(widget.item.copyWith(done: value ?? false)),
           ),
           Expanded(
             child: TextField(
-              autofocus: autofocus,
-              controller: TextEditingController(text: item.text)
-                ..selection = TextSelection.collapsed(offset: item.text.length),
+              autofocus: widget.autofocus,
+              controller: _controller,
               decoration: _borderlessInput('Task'),
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    decoration: item.done ? TextDecoration.lineThrough : null,
-                    color: item.done
+                    decoration:
+                        widget.item.done ? TextDecoration.lineThrough : null,
+                    color: widget.item.done
                         ? Theme.of(context)
                             .colorScheme
                             .onSurface
                             .withValues(alpha: 0.56)
                         : null,
                   ),
-              onChanged: (value) => onChanged(item.copyWith(text: value)),
-              onSubmitted: (_) => onInsertAfter(),
-              onTap: onFocused,
+              onChanged: (value) =>
+                  widget.onChanged(widget.item.copyWith(text: value)),
+              onSubmitted: (_) => widget.onInsertAfter(),
+              onTap: widget.onFocused,
             ),
           ),
           AppIconButton(
             tooltip: 'Outdent',
             icon: LucideIcons.outdent,
-            onPressed: item.indent == 0
+            onPressed: widget.item.indent == 0
                 ? null
-                : () => onChanged(item.copyWith(indent: item.indent - 1)),
+                : () => widget.onChanged(
+                    widget.item.copyWith(indent: widget.item.indent - 1)),
           ),
           AppIconButton(
             tooltip: 'Indent',
             icon: LucideIcons.indent,
-            onPressed: () => onChanged(item.copyWith(
-                indent: item.indent + 1 > 4 ? 4 : item.indent + 1)),
+            onPressed: () => widget.onChanged(widget.item.copyWith(
+                indent:
+                    widget.item.indent + 1 > 4 ? 4 : widget.item.indent + 1)),
           ),
           AppIconButton(
             tooltip: 'Delete',
             icon: LucideIcons.trash,
-            onPressed: onDelete,
+            onPressed: widget.onDelete,
           ),
         ],
       ),
@@ -2182,11 +2015,53 @@ class _FormatIntent extends Intent {
   final String action;
 }
 
-class _TextEdit {
-  const _TextEdit({required this.range, required this.replacement});
+class _HistoryIntent extends Intent {
+  const _HistoryIntent({required this.redo});
 
-  final TextRange range;
-  final String replacement;
+  final bool redo;
+}
+
+class _EditorSnapshot {
+  const _EditorSnapshot({
+    required this.title,
+    required this.body,
+    required this.checklist,
+    required this.pinned,
+    required this.color,
+    required this.checklistMode,
+    required this.reminderAt,
+  });
+
+  final TextEditingValue title;
+  final TextEditingValue body;
+  final List<ChecklistItem> checklist;
+  final bool pinned;
+  final int color;
+  final bool checklistMode;
+  final DateTime? reminderAt;
+
+  bool hasSameContent(_EditorSnapshot other) {
+    if (title.text != other.title.text ||
+        body.text != other.body.text ||
+        pinned != other.pinned ||
+        color != other.color ||
+        checklistMode != other.checklistMode ||
+        reminderAt != other.reminderAt ||
+        checklist.length != other.checklist.length) {
+      return false;
+    }
+    for (var index = 0; index < checklist.length; index += 1) {
+      final left = checklist[index];
+      final right = other.checklist[index];
+      if (left.id != right.id ||
+          left.text != right.text ||
+          left.done != right.done ||
+          left.indent != right.indent) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
 
 Color _noteColorFor(BuildContext context, int color) {

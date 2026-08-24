@@ -31,22 +31,25 @@ class AuthController extends AsyncNotifier<AppSession?> {
     );
   }
 
-  Future<String?> register({
-    required String email,
+  Future<RegistrationKeyMaterial> prepareRegistration({
     required String password,
     required String workspaceName,
+  }) {
+    return ref.read(cryptoServiceProvider).createRegistrationMaterial(
+          password: password,
+          deviceName: 'Primary device',
+          tenantName: workspaceName,
+        );
+  }
+
+  Future<void> completeRegistration({
+    required String email,
+    required String password,
     required String locale,
+    required RegistrationKeyMaterial material,
   }) async {
     state = const AsyncLoading();
-    String? recoveryKey;
     state = await AsyncValue.guard(() async {
-      final crypto = ref.read(cryptoServiceProvider);
-      final material = await crypto.createRegistrationMaterial(
-        password: password,
-        deviceName: 'Primary device',
-        tenantName: workspaceName,
-      );
-      recoveryKey = material.recoveryKey;
       final response = await ref.read(apiClientProvider).register(
             email: email,
             password: password,
@@ -64,7 +67,6 @@ class AuthController extends AsyncNotifier<AppSession?> {
       await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
       return session;
     });
-    return state.valueOrNull == null ? null : recoveryKey;
   }
 
   Future<void> login({

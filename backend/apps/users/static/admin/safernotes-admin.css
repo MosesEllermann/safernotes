@@ -1,0 +1,104 @@
+:root {
+  --primary: #176b52;
+  --secondary: #125541;
+  --accent: #dff3ea;
+  --header-bg: #10231d;
+  --header-color: #ffffff;
+  --body-bg: #f5f7f6;
+  --body-fg: #17211e;
+  --hairline-color: #d4ddd9;
+  --border-color: #c3cfca;
+  --link-fg: #0d664b;
+  --link-hover-color: #084b37;
+  --button-bg: #176b52;
+  --button-hover-bg: #125541;
+  --default-button-bg: #176b52;
+  --default-button-hover-bg: #125541;
+}
+
+body {
+  letter-spacing: 0;
+}
+
+#header {
+  min-height: 56px;
+  padding: 10px 24px;
+}
+
+.safernotes-brand {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+}
+
+.safernotes-brand__name {
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.safernotes-brand__label {
+  color: #b8d8cc;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+#content {
+  padding: 24px;
+}
+
+.module,
+.inline-group,
+#changelist-filter {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+#changelist .results {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+#changelist table thead th {
+  background: #e9efec;
+  color: #24332e;
+}
+
+#changelist table tbody tr:nth-child(even) {
+  background: #f0f4f2;
+}
+
+input,
+select,
+textarea {
+  border-color: #9aaca5;
+  border-radius: 4px;
+}
+
+.button,
+input[type="submit"],
+input[type="button"],
+.submit-row input,
+a.button {
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.readonly {
+  color: #25332e;
+}
+
+@media (max-width: 767px) {
+  #header,
+  #content {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .safernotes-brand__label {
+    display: none;
+  }
+}

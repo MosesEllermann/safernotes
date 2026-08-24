@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
+import 'package:safernotes_app/features/auth/recovery_key_dialog.dart';
 import 'package:safernotes_app/shared/api/api_client.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
 import 'package:safernotes_app/shared/app/app_preferences.dart';
@@ -624,9 +625,19 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
   final _newPassword = TextEditingController();
   final _confirmPassword = TextEditingController();
   var _busy = false;
+  var _recoveryBusy = false;
   var _obscure = true;
+  late Future<bool> _recoveryStatusFuture;
   String? _error;
   String? _success;
+  String? _recoveryError;
+  String? _recoverySuccess;
+
+  @override
+  void initState() {
+    super.initState();
+    _recoveryStatusFuture = _loadRecoveryStatus();
+  }
 
   @override
   void dispose() {
@@ -674,6 +685,109 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
+            ),
+            const SizedBox(height: 24),
+            FutureBuilder<bool>(
+              future: _recoveryStatusFuture,
+              builder: (context, snapshot) {
+                final configured = snapshot.data;
+                final loading =
+                    snapshot.connectionState == ConnectionState.waiting;
+                return Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color:
+                        scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            configured == true
+                                ? LucideIcons.shieldCheck
+                                : LucideIcons.shieldAlert,
+                            size: 18,
+                            color: configured == true
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              l10n.t('recoveryKey'),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          if (loading)
+                            const SizedBox.square(
+                              dimension: 17,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          else if (configured != null)
+                            Text(
+                              l10n.t(configured
+                                  ? 'recoveryConfigured'
+                                  : 'recoveryNotConfigured'),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .labelMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        l10n.t('recoverySettingsDescription'),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              height: 1.4,
+                            ),
+                      ),
+                      if (snapshot.hasError) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          l10n.t('recoveryStatusError'),
+                          style: TextStyle(color: scheme.error),
+                        ),
+                      ],
+                      if (_recoveryError != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          _recoveryError!,
+                          style: TextStyle(color: scheme.error),
+                        ),
+                      ],
+                      if (_recoverySuccess != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          _recoverySuccess!,
+                          style: TextStyle(color: scheme.primary),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      _SettingsActionButton(
+                        label: l10n.t(configured == true
+                            ? 'rotateRecoveryKey'
+                            : 'addRecoveryKey'),
+                        icon: configured == true
+                            ? LucideIcons.refreshCw
+                            : LucideIcons.keyRound,
+                        busy: _recoveryBusy,
+                        onPressed:
+                            loading || configured == null || _recoveryBusy
+                                ? null
+                                : () => _setRecoveryKey(configured),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 28),
             Text(
@@ -753,6 +867,58 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
         ),
       ),
     );
+  }
+
+  Future<bool> _loadRecoveryStatus() async {
+    final session = ref.read(authControllerProvider).valueOrNull;
+    if (session == null) throw StateError('Not signed in.');
+    final response = await ref.read(apiClientProvider).fetchRecoveryKeyStatus(
+          accessToken: session.accessToken,
+        );
+    return response['configured'] == true;
+  }
+
+  Future<void> _setRecoveryKey(bool rotating) async {
+    final l10n = ref.read(l10nProvider);
+    final session = ref.read(authControllerProvider).valueOrNull;
+    if (session == null) return;
+    setState(() {
+      _recoveryBusy = true;
+      _recoveryError = null;
+      _recoverySuccess = null;
+    });
+    try {
+      final recovery = await ref.read(cryptoServiceProvider).createRecoveryKey(
+            masterKey: session.masterKey,
+          );
+      if (!mounted) return;
+      final confirmed = await showRecoveryKeyConfirmationDialog(
+        context: context,
+        l10n: l10n,
+        recoveryKey: recovery.recoveryKey,
+        rotating: rotating,
+      );
+      if (!confirmed || !mounted) return;
+      await ref.read(apiClientProvider).updateRecoveryKey(
+            accessToken: session.accessToken,
+            recoveryWrapper: recovery.recoveryWrapper,
+          );
+      if (!mounted) return;
+      setState(() {
+        _recoveryStatusFuture = Future.value(true);
+        _recoverySuccess = l10n.t(
+          rotating ? 'recoveryKeyUpdated' : 'recoveryKeyAdded',
+        );
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _recoveryError = _cleanPasswordError(error.toString(), l10n);
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _recoveryBusy = false);
+    }
   }
 
   Future<void> _changePassword() async {

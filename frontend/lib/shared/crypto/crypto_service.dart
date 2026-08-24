@@ -194,8 +194,7 @@ class CryptoService {
       passwordSalt,
       params: kdfParams,
     );
-    final recoveryKeyBytes = randomBytes(32);
-    final recoveryKey = base64UrlNoPad(recoveryKeyBytes);
+    final recovery = await createRecoveryKey(masterKey: masterKey);
     final encryptionPair = await _x25519.newKeyPair();
     final signingPair = await _ed25519.newKeyPair();
     final encryptionPublic = await encryptionPair.extractPublicKey();
@@ -208,7 +207,7 @@ class CryptoService {
 
     return RegistrationKeyMaterial(
       masterKey: masterKey,
-      recoveryKey: recoveryKey,
+      recoveryKey: recovery.recoveryKey,
       kdfAlgorithm: passwordKdfAlgorithm,
       kdfParams: kdfParams,
       passwordSalt: base64UrlNoPad(passwordSalt),
@@ -226,12 +225,21 @@ class CryptoService {
         base64UrlNoPad(signingPrivate),
         masterKey,
       ),
+      recoveryWrapper: recovery.recoveryWrapper,
+      deviceNameCiphertext: await encryptString(deviceName, masterKey),
+      defaultTenantNameCiphertext: await encryptString(tenantName, masterKey),
+    );
+  }
+
+  Future<({String recoveryKey, EncryptedEnvelope recoveryWrapper})>
+      createRecoveryKey({required List<int> masterKey}) async {
+    final recoveryKeyBytes = randomBytes(32);
+    return (
+      recoveryKey: base64UrlNoPad(recoveryKeyBytes),
       recoveryWrapper: await encryptString(
         base64UrlNoPad(masterKey),
         recoveryKeyBytes,
       ),
-      deviceNameCiphertext: await encryptString(deviceName, masterKey),
-      defaultTenantNameCiphertext: await encryptString(tenantName, masterKey),
     );
   }
 

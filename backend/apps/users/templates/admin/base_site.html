@@ -1,0 +1,18 @@
+{% extends "admin/base.html" %}
+{% load static %}
+
+{% block title %}{{ title }} | Safernotes admin{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'admin/safernotes-admin.css' %}">
+{% endblock %}
+
+{% block branding %}
+  <div class="safernotes-brand">
+    <span class="safernotes-brand__name">Safernotes</span>
+    <span class="safernotes-brand__label">Operations</span>
+  </div>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

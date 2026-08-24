@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
@@ -30,6 +31,7 @@ EMAIL_COPY = {
             title="Your verification code",
             body="Enter this six-digit code in Safernotes to confirm your email address.",
             code_label="Verification code",
+            button_label="Open Safernotes",
             footer="The code expires in 30 minutes. If you did not create this account, you can ignore this email.",
         ),
         "de": MailCopy(
@@ -38,6 +40,7 @@ EMAIL_COPY = {
             title="Dein Bestätigungscode",
             body="Gib diesen sechsstelligen Code in Safernotes ein, um deine E-Mail-Adresse zu bestätigen.",
             code_label="Bestätigungscode",
+            button_label="Safernotes öffnen",
             footer="Der Code läuft in 30 Minuten ab. Wenn du dieses Konto nicht erstellt hast, kannst du diese E-Mail ignorieren.",
         ),
     },
@@ -48,6 +51,7 @@ EMAIL_COPY = {
             title="Reset your password",
             body="Use this six-digit code together with your recovery key to reset your Safernotes password.",
             code_label="Recovery code",
+            button_label="Open Safernotes",
             footer="The code expires in 15 minutes. If you did not request a reset, you can ignore this email.",
         ),
         "de": MailCopy(
@@ -56,6 +60,7 @@ EMAIL_COPY = {
             title="Passwort zurücksetzen",
             body="Verwende diesen sechsstelligen Code zusammen mit deinem Recovery-Key, um dein Safernotes Passwort zurückzusetzen.",
             code_label="Wiederherstellungscode",
+            button_label="Safernotes öffnen",
             footer="Der Code läuft in 15 Minuten ab. Wenn du keinen Reset angefordert hast, kannst du diese E-Mail ignorieren.",
         ),
     },
@@ -120,15 +125,8 @@ def send_share_invitation_email(invitation: ShareInvitation) -> None:
     locale = user_locale(invitation.recipient_user)
     sender = invitation.sender_user.email
     copy = _copy(role_template, locale, sender=sender)
-    app_url = getattr(settings, "APP_BASE_URL", "http://localhost:3000")
-    plain = "\n\n".join(
-        [
-            copy.title,
-            copy.body,
-            app_url,
-            copy.footer,
-        ]
-    )
+    app_url = public_app_url(invitation=str(invitation.id))
+    plain = _plain_body(copy=copy, action_url=app_url)
     _send(
         to=invitation.recipient_user.email,
         subject=copy.subject,
@@ -140,13 +138,42 @@ def send_share_invitation_email(invitation: ShareInvitation) -> None:
 def _send_code_email(*, user: User, code: str, template: str) -> None:
     locale = user_locale(user)
     copy = _copy(template, locale)
-    plain = "\n\n".join([copy.title, copy.body, f"{copy.code_label}: {code}", copy.footer])
+    app_url = public_app_url()
+    plain = _plain_body(
+        copy=copy,
+        code_line=f"{copy.code_label}: {code}",
+        action_url=app_url,
+    )
     _send(
         to=user.email,
         subject=copy.subject,
         text_body=plain,
-        html_body=_render_html(copy=copy, code=code),
+        html_body=_render_html(copy=copy, code=code, button_url=app_url),
     )
+
+
+def public_app_url(**query: str) -> str:
+    base_url = _public_base_url("APP_BASE_URL", "https://app.safernotes.com")
+    return f"{base_url}?{urlencode(query)}" if query else base_url
+
+
+def public_website_url() -> str:
+    return _public_base_url("WEBSITE_BASE_URL", "https://safernotes.com")
+
+
+def _public_base_url(setting_name: str, default: str) -> str:
+    configured = str(getattr(settings, setting_name, default) or "").strip()
+    return (configured or default).rstrip("/")
+
+
+def _plain_body(*, copy: MailCopy, code_line: str = "", action_url: str = "") -> str:
+    sections = [copy.title, copy.body]
+    if code_line:
+        sections.append(code_line)
+    if action_url:
+        sections.append(action_url)
+    sections.extend([copy.footer, public_website_url()])
+    return "\n\n".join(sections)
 
 
 def _copy(template: str, locale: str, **format_values: str) -> MailCopy:
@@ -250,7 +277,7 @@ def _render_html(*, copy: MailCopy, code: str = "", button_url: str = "") -> str
               </td>
             </tr>
           </table>
-          <div class="email-brand" style="margin-top:18px;font-size:12px;line-height:18px;color:#94a3b8;">Safernotes</div>
+          <div class="email-brand" style="margin-top:18px;font-size:12px;line-height:18px;color:#94a3b8;"><a href="{escape(public_website_url())}" style="color:inherit;text-decoration:none;">Safernotes</a></div>
         </td>
       </tr>
     </table>

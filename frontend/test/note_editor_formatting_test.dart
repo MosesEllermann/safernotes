@@ -34,8 +34,63 @@ void main() {
     expect(find.byTooltip('Checkliste'), findsOneWidget);
     expect(find.byTooltip('Formatierung löschen'), findsOneWidget);
     expect(find.byTooltip('Hintergrund'), findsOneWidget);
+    expect(find.byTooltip('Rückgängig'), findsOneWidget);
+    expect(find.byTooltip('Wiederholen'), findsOneWidget);
 
     expect(find.byTooltip('underline'), findsNothing);
+  });
+
+  testWidgets('undo and redo restore body edits', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final note = _note();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([note]),
+          ),
+        ],
+        child: MaterialApp(home: NoteEditorPanel(note: note)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final body = find.widgetWithText(TextField, note.body);
+    await tester.enterText(body, 'Updated body');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Rückgängig'));
+    await tester.pump();
+    expect(find.widgetWithText(TextField, note.body), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Wiederholen'));
+    await tester.pump();
+    expect(find.widgetWithText(TextField, 'Updated body'), findsOneWidget);
+  });
+
+  testWidgets('checklist add control sits between open and checked items',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final note = _checklistNote();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([note]),
+          ),
+        ],
+        child: MaterialApp(home: NoteEditorPanel(note: note)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final openY = tester.getCenter(find.widgetWithText(TextField, 'Open')).dy;
+    final addY =
+        tester.getCenter(find.byKey(const ValueKey('checklist-add'))).dy;
+    final doneY = tester.getCenter(find.widgetWithText(TextField, 'Done')).dy;
+    expect(openY, lessThan(addY));
+    expect(addY, lessThan(doneY));
   });
 }
 
@@ -45,6 +100,24 @@ PlainNote _note() {
     title: 'Formatting',
     body: 'A note with **bold**, _italic_, and [link](https://example.com).',
     checklist: const [],
+    updatedAt: DateTime.utc(2026, 8, 20),
+    pinned: false,
+    color: 0xffffffff,
+    sortOrder: 0,
+    dirty: false,
+    version: 1,
+  );
+}
+
+PlainNote _checklistNote() {
+  return PlainNote(
+    localId: 'checklist-note',
+    title: 'Checklist',
+    body: '',
+    checklist: const [
+      ChecklistItem(id: 'done', text: 'Done', done: true, indent: 0),
+      ChecklistItem(id: 'open', text: 'Open', done: false, indent: 0),
+    ],
     updatedAt: DateTime.utc(2026, 8, 20),
     pinned: false,
     color: 0xffffffff,

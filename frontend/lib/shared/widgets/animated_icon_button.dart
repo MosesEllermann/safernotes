@@ -56,7 +56,7 @@ class _AppIconButtonState extends State<AppIconButton> {
               height: 36,
               decoration: BoxDecoration(
                 color: active
-                    ? scheme.surfaceContainerHighest.withValues(alpha: 0.72)
+                    ? scheme.surfaceContainerHighest
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -64,8 +64,8 @@ class _AppIconButtonState extends State<AppIconButton> {
                 widget.icon,
                 size: 18,
                 color: widget.onPressed == null
-                    ? scheme.onSurface.withValues(alpha: 0.28)
-                    : scheme.onSurface.withValues(alpha: 0.72),
+                    ? scheme.onSurface.withValues(alpha: 0.38)
+                    : scheme.onSurface.withValues(alpha: 0.86),
               ),
             ),
           ),

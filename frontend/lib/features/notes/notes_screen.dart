@@ -18,7 +18,9 @@ final noteSearchProvider = StateProvider<String>((ref) => '');
 final sideNavExpandedProvider = StateProvider<bool>((ref) => true);
 
 class NotesScreen extends ConsumerStatefulWidget {
-  const NotesScreen({super.key});
+  const NotesScreen({super.key, this.invitationId});
+
+  final String? invitationId;
 
   @override
   ConsumerState<NotesScreen> createState() => _NotesScreenState();
@@ -26,6 +28,7 @@ class NotesScreen extends ConsumerStatefulWidget {
 
 class _NotesScreenState extends ConsumerState<NotesScreen> {
   final Map<String, Timer> _reminderTimers = {};
+  var _invitationHandled = false;
 
   @override
   void initState() {
@@ -34,6 +37,96 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       final notes = next.valueOrNull;
       if (notes != null) _scheduleReminders(notes);
     }, fireImmediately: true);
+    if (widget.invitationId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_reviewInvitation(widget.invitationId!));
+      });
+    }
+  }
+
+  Future<void> _reviewInvitation(String invitationId) async {
+    if (_invitationHandled || !mounted) return;
+    _invitationHandled = true;
+    final session = ref.read(authControllerProvider).valueOrNull;
+    if (session == null) return;
+
+    try {
+      final invitation = await _loadInvitation(
+        invitationId: invitationId,
+        accessToken: session.accessToken,
+      );
+      if (!mounted) return;
+      if (invitation['status'] != 'pending') {
+        _showInvitationMessage('Diese Einladung ist nicht mehr offen.');
+        return;
+      }
+      final decision = await showDialog<_InvitationDecision>(
+        context: context,
+        builder: (_) => _InvitationDialog(
+          role: invitation['role'] as String? ?? 'viewer',
+        ),
+      );
+      if (decision == null || !mounted) return;
+      await _decideInvitation(
+        invitationId: invitationId,
+        accessToken: session.accessToken,
+        decision: decision,
+      );
+      if (decision == _InvitationDecision.accept) {
+        await ref.read(notesControllerProvider.notifier).pullRemote();
+      }
+      if (mounted) {
+        _showInvitationMessage(
+          decision == _InvitationDecision.accept
+              ? 'Einladung angenommen.'
+              : 'Einladung abgelehnt.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        _showInvitationMessage(_invitationErrorMessage(error));
+      }
+    }
+  }
+
+  void _showInvitationMessage(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<Map<String, dynamic>> _loadInvitation({
+    required String invitationId,
+    required String accessToken,
+  }) async {
+    return ref.read(apiClientProvider).fetchShareInvitation(
+          invitationId: invitationId,
+          accessToken: accessToken,
+        );
+  }
+
+  Future<void> _decideInvitation({
+    required String invitationId,
+    required String accessToken,
+    required _InvitationDecision decision,
+  }) async {
+    await ref.read(apiClientProvider).decideShareInvitation(
+          invitationId: invitationId,
+          accessToken: accessToken,
+          decision: decision.name,
+        );
+  }
+
+  String _invitationErrorMessage(Object error) {
+    if (error is TimeoutException ||
+        error is ApiException && error.statusCode == 0) {
+      return 'Der Server ist gerade nicht erreichbar.';
+    }
+    if (error is ApiException && error.statusCode == 404) {
+      return 'Diese Einladung wurde nicht gefunden oder gehört zu einem anderen Konto.';
+    }
+    if (error is ApiException) return error.message;
+    return 'Einladung konnte nicht geöffnet werden.';
   }
 
   @override
@@ -234,6 +327,47 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         .take(3)
         .join(', ');
     return checklist.isEmpty ? 'Zeit für deine Notiz.' : checklist;
+  }
+}
+
+enum _InvitationDecision { accept, decline }
+
+class _InvitationDialog extends StatelessWidget {
+  const _InvitationDialog({required this.role});
+
+  final String role;
+
+  @override
+  Widget build(BuildContext context) {
+    final german = Localizations.localeOf(context).languageCode == 'de';
+    final canEdit = role == 'editor';
+    return AlertDialog(
+      icon: const Icon(LucideIcons.userRoundPlus),
+      title: Text(german ? 'Einladung zu einer Notiz' : 'Note invitation'),
+      content: Text(
+        german
+            ? canEdit
+                ? 'Du wurdest eingeladen, eine verschlüsselte Notiz anzusehen und zu bearbeiten.'
+                : 'Du wurdest eingeladen, eine verschlüsselte Notiz anzusehen.'
+            : canEdit
+                ? 'You were invited to view and edit an encrypted note.'
+                : 'You were invited to view an encrypted note.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(
+            _InvitationDecision.decline,
+          ),
+          child: Text(german ? 'Ablehnen' : 'Decline'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(
+            _InvitationDecision.accept,
+          ),
+          child: Text(german ? 'Annehmen' : 'Accept'),
+        ),
+      ],
+    );
   }
 }
 

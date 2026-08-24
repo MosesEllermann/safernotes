@@ -54,12 +54,34 @@ const _strings = {
     'noRecovery': 'No recovery key is available for this account.',
     'badRecoveryCode': 'The recovery code is invalid or expired.',
     'badRecoveryKey': 'The recovery key could not unlock this vault.',
-    'vaultUnlockFailed':
-        'This password could not unlock your encrypted vault.',
+    'vaultUnlockFailed': 'This password could not unlock your encrypted vault.',
     'saveRecoveryKey': 'Save your recovery key',
     'recoveryKeyHint':
         'Keep this key somewhere safe. It is required to reset your password without losing notes.',
+    'recoveryOnboardingTitle': 'Save your recovery key',
+    'recoveryOnboardingBody':
+        'This is the only way to recover your encrypted notes if you forget your password. Save it in a password manager or another secure place before creating your account.',
+    'recoveryRotationTitle': 'Save your new recovery key',
+    'recoveryRotationBody':
+        'A new recovery key has been generated on this device. Save it securely before replacing your current key.',
+    'recoveryKeyNeverStored':
+        'Safernotes never sends or stores this key. Only an encrypted wrapper is uploaded.',
+    'oldRecoveryKeyInvalid':
+        'After continuing, your previous recovery key can no longer recover this vault.',
+    'savedRecoveryConfirmation': 'I saved this recovery key in a secure place.',
+    'recoveryConfigured': 'Configured',
+    'recoveryNotConfigured': 'Not configured',
+    'recoverySettingsDescription':
+        'Your recovery key restores access to encrypted notes after a forgotten password. Rotating it immediately invalidates the previous key.',
+    'addRecoveryKey': 'Add recovery key',
+    'rotateRecoveryKey': 'Rotate recovery key',
+    'recoveryKeyAdded': 'Recovery key added.',
+    'recoveryKeyUpdated': 'Recovery key rotated.',
+    'recoveryStatusError': 'Recovery-key status could not be loaded.',
     'copy': 'Copy',
+    'copied': 'Copied',
+    'cancel': 'Cancel',
+    'continueAction': 'Continue',
     'done': 'Done',
     'back': 'Back',
     'security': 'Security',
@@ -145,7 +167,32 @@ const _strings = {
     'saveRecoveryKey': 'Recovery-Key speichern',
     'recoveryKeyHint':
         'Bewahre diesen Key sicher auf. Du brauchst ihn, um dein Passwort ohne Notizverlust zurückzusetzen.',
+    'recoveryOnboardingTitle': 'Recovery-Key sicher speichern',
+    'recoveryOnboardingBody':
+        'Nur mit diesem Key kannst du deine verschlüsselten Notizen wiederherstellen, falls du dein Passwort vergisst. Speichere ihn vor der Kontoerstellung in einem Passwortmanager oder an einem anderen sicheren Ort.',
+    'recoveryRotationTitle': 'Neuen Recovery-Key speichern',
+    'recoveryRotationBody':
+        'Auf diesem Gerät wurde ein neuer Recovery-Key erzeugt. Speichere ihn sicher, bevor dein bisheriger Key ersetzt wird.',
+    'recoveryKeyNeverStored':
+        'Safernotes überträgt oder speichert diesen Key niemals. Hochgeladen wird nur ein verschlüsselter Wrapper.',
+    'oldRecoveryKeyInvalid':
+        'Nach dem Fortfahren kann dein bisheriger Recovery-Key diesen Tresor nicht mehr wiederherstellen.',
+    'savedRecoveryConfirmation':
+        'Ich habe diesen Recovery-Key an einem sicheren Ort gespeichert.',
+    'recoveryConfigured': 'Eingerichtet',
+    'recoveryNotConfigured': 'Nicht eingerichtet',
+    'recoverySettingsDescription':
+        'Mit deinem Recovery-Key erhältst du nach einem vergessenen Passwort wieder Zugriff auf verschlüsselte Notizen. Beim Rotieren wird der bisherige Key sofort ungültig.',
+    'addRecoveryKey': 'Recovery-Key hinzufügen',
+    'rotateRecoveryKey': 'Recovery-Key ändern',
+    'recoveryKeyAdded': 'Recovery-Key hinzugefügt.',
+    'recoveryKeyUpdated': 'Recovery-Key geändert.',
+    'recoveryStatusError':
+        'Der Status des Recovery-Keys konnte nicht geladen werden.',
     'copy': 'Kopieren',
+    'copied': 'Kopiert',
+    'cancel': 'Abbrechen',
+    'continueAction': 'Weiter',
     'done': 'Fertig',
     'back': 'Zurück',
     'security': 'Sicherheit',

@@ -25,6 +25,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
   final _uuid = const Uuid();
   Timer? _syncTimer;
   Timer? _debounce;
+  Future<void> _saveQueue = Future.value();
 
   @override
   Future<List<PlainNote>> build() async {
@@ -80,6 +81,21 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
   Future<void> saveDraft({
     required PlainNote draft,
     bool syncImmediately = false,
+  }) {
+    final snapshot = draft.copyWith(checklist: [...draft.checklist]);
+    final queued = _saveQueue.then<void>(
+      (_) => _saveDraft(snapshot, syncImmediately: syncImmediately),
+    );
+    _saveQueue = queued.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return queued;
+  }
+
+  Future<void> _saveDraft(
+    PlainNote draft, {
+    required bool syncImmediately,
   }) async {
     final existing =
         state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();

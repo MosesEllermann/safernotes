@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from html.parser import HTMLParser
+from urllib.parse import parse_qs, urlparse
+
 import pytest
 from django.core import mail
 from django.test import override_settings
@@ -21,6 +24,18 @@ from apps.notifications.serializers import (
     EncryptedNotificationFanoutSerializer,
     NotificationSerializer,
 )
+
+
+class _EmailLinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            href = dict(attrs).get("href")
+            if href:
+                self.links.append(href)
 
 
 def encrypted_payload():
@@ -327,9 +342,32 @@ def test_share_invitation_accepts_recipient_email(db, django_user_model):
     assert serializer.validated_data["recipient_user"] == recipient
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
-def test_share_invitation_sends_localized_email(db, django_user_model):
-    from apps.notes.models import Note
+@pytest.mark.parametrize(
+    ("locale", "role", "expected_subject"),
+    [
+        ("en", "editor", "owner-mail@example.com invited you to edit a note"),
+        ("en", "viewer", "owner-mail@example.com invited you to view a note"),
+        (
+            "de",
+            "editor",
+            "owner-mail@example.com hat dich eingeladen, eine Notiz zu bearbeiten",
+        ),
+        ("de", "viewer", "owner-mail@example.com hat eine Notiz mit dir geteilt"),
+    ],
+)
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    APP_BASE_URL="https://app.safernotes.com/",
+    WEBSITE_BASE_URL="https://safernotes.com/",
+)
+def test_share_invitation_email_has_safe_acceptance_link_in_every_locale(
+    db,
+    django_user_model,
+    locale,
+    role,
+    expected_subject,
+):
+    from apps.notes.models import Note, ShareInvitation
     from apps.tenants.models import Organization
     from apps.users.models import Profile
 
@@ -337,9 +375,9 @@ def test_share_invitation_sends_localized_email(db, django_user_model):
         email="owner-mail@example.com", password="strong-password"
     )
     recipient = django_user_model.objects.create_user(
-        email="recipient-mail@example.com", password="strong-password"
+        email=f"recipient-{locale}-{role}@example.com", password="strong-password"
     )
-    Profile.objects.create(user=recipient, locale="de")
+    Profile.objects.create(user=recipient, locale=locale)
     tenant = Organization.objects.create(name_ciphertext=encrypted_payload(), owner_user=owner)
     note = Note.objects.create(
         tenant=tenant,
@@ -353,7 +391,7 @@ def test_share_invitation_sends_localized_email(db, django_user_model):
         {
             "note": str(note.id),
             "recipient_user": recipient.email,
-            "role": "editor",
+            "role": role,
             "encrypted_note_key": encrypted_payload(),
             "invitation_signature": "signature",
         },
@@ -365,11 +403,88 @@ def test_share_invitation_sends_localized_email(db, django_user_model):
 
     assert response.status_code == 201
     assert len(mail.outbox) == 1
-    assert (
-        mail.outbox[0].subject
-        == "owner-mail@example.com hat dich eingeladen, eine Notiz zu bearbeiten"
+    message = mail.outbox[0]
+    invitation = ShareInvitation.objects.get()
+    parser = _EmailLinkParser()
+    parser.feed(message.alternatives[0][0])
+    invitation_links = [
+        link for link in parser.links if link.startswith("https://app.safernotes.com")
+    ]
+
+    assert message.subject == expected_subject
+    assert len(invitation_links) == 1
+    parsed = urlparse(invitation_links[0])
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "app.safernotes.com"
+    assert parse_qs(parsed.query) == {"invitation": [str(invitation.id)]}
+    assert invitation_links[0] in message.body
+    assert "https://safernotes.com" in parser.links
+    assert "localhost" not in message.body
+    assert "localhost" not in message.alternatives[0][0]
+    assert str(note.id) not in invitation_links[0]
+    assert "ciphertext" not in invitation_links[0]
+    assert "signature" not in invitation_links[0]
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_invitation_link_id_opens_recipient_acceptance_flow(db, django_user_model):
+    from apps.notes.models import Note, NoteKeyGrant, ShareInvitation
+    from apps.tenants.models import Organization
+
+    owner = django_user_model.objects.create_user(
+        email="flow-owner@example.com", password="strong-password"
     )
-    assert "gemeinsam zu bearbeiten" in mail.outbox[0].alternatives[0][0]
+    recipient = django_user_model.objects.create_user(
+        email="flow-recipient@example.com", password="strong-password"
+    )
+    stranger = django_user_model.objects.create_user(
+        email="flow-stranger@example.com", password="strong-password"
+    )
+    tenant = Organization.objects.create(name_ciphertext=encrypted_payload(), owner_user=owner)
+    note = Note.objects.create(
+        tenant=tenant,
+        owner_user=owner,
+        encrypted_payload=encrypted_payload(),
+        payload_hash=b"server-hash",
+        client_updated_at="2026-06-09T00:00:00Z",
+    )
+    invitation = ShareInvitation.objects.create(
+        note=note,
+        sender_user=owner,
+        recipient_user=recipient,
+        role="viewer",
+        encrypted_note_key=encrypted_payload(),
+        invitation_signature=b"signature",
+    )
+
+    retrieve = APIRequestFactory().get(f"/api/v1/notes/invitations/{invitation.id}/")
+    force_authenticate(retrieve, user=recipient)
+    retrieve_response = ShareInvitationViewSet.as_view({"get": "retrieve"})(
+        retrieve, pk=invitation.id
+    )
+
+    hidden = APIRequestFactory().get(f"/api/v1/notes/invitations/{invitation.id}/")
+    force_authenticate(hidden, user=stranger)
+    hidden_response = ShareInvitationViewSet.as_view({"get": "retrieve"})(hidden, pk=invitation.id)
+
+    accept = APIRequestFactory().post(
+        f"/api/v1/notes/invitations/{invitation.id}/decide/",
+        {"decision": "accept"},
+        format="json",
+    )
+    force_authenticate(accept, user=recipient)
+    accept_response = ShareInvitationViewSet.as_view({"post": "decide"})(accept, pk=invitation.id)
+
+    invitation.refresh_from_db()
+    assert retrieve_response.status_code == 200
+    assert retrieve_response.data["id"] == str(invitation.id)
+    assert hidden_response.status_code == 404
+    assert accept_response.status_code == 200
+    assert invitation.status == "accepted"
+    assert NoteKeyGrant.objects.filter(
+        source_invitation=invitation,
+        recipient_user=recipient,
+    ).exists()
 
 
 def test_share_invitation_contacts_include_sent_and_received(db, django_user_model):

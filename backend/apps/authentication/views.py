@@ -16,6 +16,7 @@ from apps.authentication.serializers import (
     LoginSerializer,
     PasswordChangeSerializer,
     RecoveryCompleteSerializer,
+    RecoveryKeyUpdateSerializer,
     RecoveryStartSerializer,
     RefreshSerializer,
     RegistrationSerializer,
@@ -279,6 +280,45 @@ class RecoveryCompleteView(views.APIView):
                 "default_tenant": str(user.default_tenant_id) if user.default_tenant_id else None,
                 "email_verified": user.email_verified_at is not None,
                 "key_material": KeyMaterialSerializer(material).data,
+            }
+        )
+
+
+class RecoveryKeyView(views.APIView):
+    def get(self, request):
+        material = request.user.key_material
+        return response.Response(
+            {
+                "configured": bool(material.recovery_wrapper),
+                "key_version": material.key_version,
+            }
+        )
+
+    @transaction.atomic
+    def patch(self, request):
+        serializer = RecoveryKeyUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        material = request.user.key_material
+        was_configured = bool(material.recovery_wrapper)
+        material.recovery_wrapper = serializer.validated_data["recovery_wrapper"]
+        material.key_version += 1
+        material.save(update_fields=["recovery_wrapper", "key_version", "updated_at"])
+        RecoveryCode.objects.filter(
+            user=request.user,
+            used_at__isnull=True,
+        ).update(used_at=timezone.now(), updated_at=timezone.now())
+        record_audit_event(
+            event_type=(
+                "auth.recovery_key_rotated" if was_configured else "auth.recovery_key_created"
+            ),
+            actor_user=request.user,
+            target_type="user",
+            target_id=request.user.id,
+        )
+        return response.Response(
+            {
+                "configured": True,
+                "key_version": material.key_version,
             }
         )
 
