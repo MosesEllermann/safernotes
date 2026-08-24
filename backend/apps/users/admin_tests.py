@@ -75,6 +75,8 @@ def test_owner_admin_requires_superuser_access(client, django_user_model):
     owner_response = client.get(index_url)
     assert owner_response.status_code == 200
     assert b"Owner dashboard" in owner_response.content
+    assert b"safernotes-admin.css" in owner_response.content
+    assert b"safernotes-brand__label" in owner_response.content
 
 
 def test_user_admin_shows_only_operational_metadata(
