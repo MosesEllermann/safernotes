@@ -162,6 +162,8 @@ class PlainNote {
         'conflicted': conflicted,
         'reminderAt': reminderAt?.toUtc().toIso8601String(),
         'shared': shared,
+        if (noteKey != null) 'noteKey': noteKey,
+        if (shareRole != null) 'shareRole': shareRole,
       };
 
   factory PlainNote.fromPlainJson(Map<String, dynamic> json) {
@@ -201,7 +203,7 @@ class PlainNote {
     return PlainNote(
       localId: localId,
       remoteId: remoteId,
-      title: json['title'] as String? ?? 'Untitled note',
+      title: json['title'] as String? ?? '',
       body: json['body'] as String? ?? '',
       richTextDelta: _decodeRichTextDelta(json['richTextDelta']),
       checklist: (json['checklist'] as List? ?? [])

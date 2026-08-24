@@ -32,7 +32,8 @@ class AuthController extends AsyncNotifier<AppSession?> {
       privateEncryptionKey: saved['privateEncryptionKey'] as String? ?? '',
       emailVerified: saved['emailVerified'] as bool? ?? true,
     );
-    if (session.privateEncryptionKey.isEmpty) {
+    if (session.privateEncryptionKey.isEmpty ||
+        session.publicEncryptionKey.isEmpty) {
       try {
         final me =
             await ref.read(apiClientProvider).fetchMe(session.accessToken);
@@ -52,6 +53,33 @@ class AuthController extends AsyncNotifier<AppSession?> {
       }
     }
     return session;
+  }
+
+  Future<AppSession> ensureEncryptionKeys() async {
+    final current = state.valueOrNull;
+    if (current == null) throw StateError('Not signed in.');
+    if (current.privateEncryptionKey.isNotEmpty &&
+        current.publicEncryptionKey.isNotEmpty) {
+      return current;
+    }
+
+    final me = await ref.read(apiClientProvider).fetchMe(current.accessToken);
+    final material = Map<String, dynamic>.from(me['key_material'] as Map);
+    final refreshed = current.copyWith(
+      userId: me['id'] as String? ?? current.userId,
+      publicEncryptionKey: material['public_encryption_key'] as String? ?? '',
+      privateEncryptionKey: await _privateKeyFromResponse(
+        {'key_material': material},
+        current.masterKey,
+      ),
+    );
+    if (refreshed.privateEncryptionKey.isEmpty ||
+        refreshed.publicEncryptionKey.isEmpty) {
+      throw StateError('Encryption keys are unavailable.');
+    }
+    state = AsyncData(refreshed);
+    await ref.read(offlineStoreProvider).saveSessionJson(refreshed.toJson());
+    return refreshed;
   }
 
   Future<RegistrationKeyMaterial> prepareRegistration({

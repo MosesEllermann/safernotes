@@ -58,6 +58,16 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         accessToken: session.accessToken,
       );
       if (!mounted) return;
+      final noteId = invitation['note'] as String?;
+      if (invitation['status'] == 'accepted' && noteId != null) {
+        await _importSharedNote(noteId);
+        if (mounted) {
+          _showInvitationMessage(
+            ref.read(l10nProvider).t('invitationAccepted'),
+          );
+        }
+        return;
+      }
       if (invitation['status'] != 'pending') {
         _showInvitationMessage(ref.read(l10nProvider).t('invitationClosed'));
         return;
@@ -69,13 +79,20 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         ),
       );
       if (decision == null || !mounted) return;
-      await _decideInvitation(
+      final result = await _decideInvitation(
         invitationId: invitationId,
         accessToken: session.accessToken,
         decision: decision,
       );
       if (decision == _InvitationDecision.accept) {
-        await ref.read(notesControllerProvider.notifier).pullRemote();
+        final accepted = result['invitation'] is Map
+            ? Map<String, dynamic>.from(result['invitation'] as Map)
+            : invitation;
+        final acceptedNoteId = accepted['note'] as String? ?? noteId;
+        if (acceptedNoteId == null) {
+          throw StateError('Accepted invitation did not include a note.');
+        }
+        await _importSharedNote(acceptedNoteId);
       }
       if (mounted) {
         _showInvitationMessage(
@@ -107,16 +124,23 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         );
   }
 
-  Future<void> _decideInvitation({
+  Future<Map<String, dynamic>> _decideInvitation({
     required String invitationId,
     required String accessToken,
     required _InvitationDecision decision,
   }) async {
-    await ref.read(apiClientProvider).decideShareInvitation(
+    return ref.read(apiClientProvider).decideShareInvitation(
           invitationId: invitationId,
           accessToken: accessToken,
           decision: decision.name,
         );
+  }
+
+  Future<void> _importSharedNote(String noteId) async {
+    await ref.read(authControllerProvider.notifier).ensureEncryptionKeys();
+    await ref
+        .read(notesControllerProvider.notifier)
+        .pullRemote(requiredNoteId: noteId);
   }
 
   String _invitationErrorMessage(Object error) {
@@ -128,6 +152,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       return ref.read(l10nProvider).t('invitationNotFound');
     }
     if (error is ApiException) return error.message;
+    if (error is StateError) {
+      return ref.read(l10nProvider).t('sharedNoteImportFailed');
+    }
     return ref.read(l10nProvider).t('invitationOpenFailed');
   }
 
@@ -1659,6 +1686,8 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
     final bg = brandNoteSurfaceColor(context, note.color);
     final isPlainWhite = note.color == 0xffffffff;
     final showHoverActions = MediaQuery.sizeOf(context).width >= 700;
+    final displayTitle =
+        note.title.trim() == 'Untitled note' ? '' : note.title.trim();
     return MouseRegion(
       onEnter: (_) {
         if (mounted) setState(() => _hovered = true);
@@ -1694,41 +1723,44 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            note.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
+                    if (displayTitle.isNotEmpty || note.pinned) ...[
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              displayTitle,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
                           ),
-                        ),
-                        AnimatedOpacity(
-                          opacity: _hovered || note.pinned ? 1 : 0,
-                          duration: const Duration(milliseconds: 120),
-                          child: AppIconButton(
-                            tooltip:
-                                note.pinned ? l10n.t('unpin') : l10n.t('pin'),
-                            icon: note.pinned
-                                ? LucideIcons.pin
-                                : LucideIcons.pinOff,
-                            selected: note.pinned,
-                            onPressed: widget.onTogglePin,
+                          AnimatedOpacity(
+                            opacity: _hovered || note.pinned ? 1 : 0,
+                            duration: const Duration(milliseconds: 120),
+                            child: AppIconButton(
+                              tooltip:
+                                  note.pinned ? l10n.t('unpin') : l10n.t('pin'),
+                              icon: note.pinned
+                                  ? LucideIcons.pin
+                                  : LucideIcons.pinOff,
+                              selected: note.pinned,
+                              onPressed: widget.onTogglePin,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     note.checklist.isNotEmpty && note.body.trim().isEmpty
                         ? _ChecklistPreview(items: note.checklist)
-                        : _FormattedPreview(text: note.body),
+                        : _FormattedPreview(
+                            text: note.body,
+                            delta: note.richTextDelta,
+                          ),
                     const SizedBox(height: 14),
                     SizedBox(
                       height: 36,
@@ -1762,7 +1794,7 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                             _MetaPill(
                               icon: LucideIcons.users,
                               label: l10n.t('shared'),
-                              color: scheme.secondary,
+                              color: scheme.primary,
                             ),
                           const Spacer(),
                           if (_hovered && showHoverActions)
@@ -1962,13 +1994,17 @@ class _ChecklistPreview extends StatelessWidget {
 }
 
 class _FormattedPreview extends StatelessWidget {
-  const _FormattedPreview({required this.text});
+  const _FormattedPreview({required this.text, this.delta});
 
   final String text;
+  final List<Map<String, dynamic>>? delta;
 
   @override
   Widget build(BuildContext context) {
     final base = Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35);
+    if (delta != null && delta!.isNotEmpty) {
+      return _buildDeltaPreview(context, base);
+    }
     final lines = text.trim().isEmpty ? [''] : text.trim().split('\n').toList();
     final visibleLines = <({String line, bool code})>[];
     var inCodeBlock = false;
@@ -2000,6 +2036,134 @@ class _FormattedPreview extends StatelessWidget {
       maxLines: 7,
       overflow: TextOverflow.ellipsis,
     );
+  }
+
+  Widget _buildDeltaPreview(BuildContext context, TextStyle? base) {
+    final lines = <TextSpan>[];
+    var current = <InlineSpan>[];
+    var orderedIndex = 1;
+
+    void finishLine(Map<String, dynamic> blockAttributes) {
+      if (lines.length >= 7) return;
+      final list = blockAttributes['list'];
+      final prefix = switch (list) {
+        'bullet' => '\u2022 ',
+        'ordered' => '${orderedIndex++}. ',
+        _ => '',
+      };
+      if (list != 'ordered') orderedIndex = 1;
+      lines.add(
+        TextSpan(
+          style: _blockStyle(context, base, blockAttributes),
+          children: [
+            if (prefix.isNotEmpty)
+              TextSpan(
+                text: prefix,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ...current,
+          ],
+        ),
+      );
+      current = <InlineSpan>[];
+    }
+
+    for (final operation in delta!) {
+      if (lines.length >= 7) break;
+      final insert = operation['insert'];
+      if (insert is! String) continue;
+      final attributes = operation['attributes'] is Map
+          ? Map<String, dynamic>.from(operation['attributes'] as Map)
+          : <String, dynamic>{};
+      final parts = insert.split('\n');
+      for (var index = 0; index < parts.length; index += 1) {
+        if (parts[index].isNotEmpty) {
+          current.add(
+            TextSpan(
+              text: parts[index],
+              style: _inlineStyle(context, base, attributes),
+            ),
+          );
+        }
+        if (index != parts.length - 1) finishLine(attributes);
+        if (lines.length >= 7) break;
+      }
+    }
+    if (current.isNotEmpty && lines.length < 7) {
+      finishLine(const <String, dynamic>{});
+    }
+    if (lines.isEmpty) lines.add(TextSpan(text: '', style: base));
+
+    return Text.rich(
+      TextSpan(
+        children: [
+          for (var index = 0; index < lines.length; index += 1) ...[
+            lines[index],
+            if (index != lines.length - 1) const TextSpan(text: '\n'),
+          ],
+        ],
+      ),
+      maxLines: 7,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  TextStyle? _inlineStyle(
+    BuildContext context,
+    TextStyle? base,
+    Map<String, dynamic> attributes,
+  ) {
+    final decorations = <TextDecoration>[
+      if (attributes['strike'] == true) TextDecoration.lineThrough,
+      if (attributes['underline'] == true || attributes['link'] != null)
+        TextDecoration.underline,
+    ];
+    return base?.copyWith(
+      fontWeight:
+          attributes['bold'] == true ? FontWeight.w700 : FontWeight.normal,
+      fontStyle:
+          attributes['italic'] == true ? FontStyle.italic : FontStyle.normal,
+      decoration:
+          decorations.isEmpty ? null : TextDecoration.combine(decorations),
+      color: attributes['link'] != null
+          ? Theme.of(context).colorScheme.primary
+          : null,
+      fontFamily: attributes['code'] == true ? 'monospace' : null,
+      backgroundColor: attributes['code'] == true
+          ? Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
+              .withValues(alpha: 0.58)
+          : null,
+    );
+  }
+
+  TextStyle? _blockStyle(
+    BuildContext context,
+    TextStyle? base,
+    Map<String, dynamic> attributes,
+  ) {
+    final header = attributes['header'];
+    if (header == 1) {
+      return base?.copyWith(fontSize: 18, fontWeight: FontWeight.w700);
+    }
+    if (header == 2) {
+      return base?.copyWith(fontSize: 16, fontWeight: FontWeight.w700);
+    }
+    if (header == 3) return base?.copyWith(fontWeight: FontWeight.w700);
+    if (attributes['code-block'] == true) {
+      return base?.copyWith(
+        fontFamily: 'monospace',
+        backgroundColor: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: 0.58),
+      );
+    }
+    return base;
   }
 
   TextStyle? _styleFor(

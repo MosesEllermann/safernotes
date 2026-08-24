@@ -112,7 +112,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
         : draft.version;
     final nextDraft = draft.copyWith(
       remoteId: remoteId,
-      title: draft.title.trim().isEmpty ? 'Untitled note' : draft.title.trim(),
+      title: draft.title.trim(),
       updatedAt: DateTime.now().toUtc(),
       dirty: true,
       version: version,
@@ -152,7 +152,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     return synced;
   }
 
-  Future<void> pullRemote() async {
+  Future<void> pullRemote({String? requiredNoteId}) async {
     final session = ref.read(authControllerProvider).valueOrNull;
     if (session == null) return;
     ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
@@ -170,6 +170,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
           note.shareRole != 'owner' &&
           !remoteIds.contains(note.remoteId) &&
           !note.dirty);
+      Object? requiredNoteError;
       for (final item in remote) {
         final localMatch = merged[item.id];
         if (localMatch != null && localMatch.dirty) continue;
@@ -222,7 +223,8 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
             shareRole: item.currentUserRole,
           );
           merged[item.id] = remoteNote;
-        } catch (_) {
+        } catch (error) {
+          if (item.id == requiredNoteId) requiredNoteError = error;
           if (localMatch != null) merged[item.id] = localMatch;
         }
       }
@@ -231,11 +233,19 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       state = AsyncData(notes);
       await refreshPresence();
       ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
+      if (requiredNoteId != null &&
+          (requiredNoteError != null ||
+              !notes.any((note) => note.remoteId == requiredNoteId))) {
+        throw StateError(
+          'Shared note import failed: ${requiredNoteError ?? 'note missing'}',
+        );
+      }
     } catch (error) {
       ref.read(syncStatusProvider.notifier).state =
           error is ApiException && error.statusCode == 409
               ? SyncStatus.conflict
               : SyncStatus.offline;
+      if (requiredNoteId != null) rethrow;
     }
   }
 

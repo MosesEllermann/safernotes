@@ -132,6 +132,7 @@ const _strings = {
     'task': 'Task',
     'indentTask': 'Indent',
     'outdentTask': 'Outdent',
+    'reorderTask': 'Reorder task',
     'deleteTask': 'Delete task',
     'moreActions': 'More actions',
     'archiveNote': 'Archive note',
@@ -159,6 +160,7 @@ const _strings = {
     'italic': 'Italic',
     'strikethrough': 'Strikethrough',
     'codeBlock': 'Code block',
+    'bulletList': 'Bullet list',
     'save': 'Save',
     'removeLink': 'Remove link',
     'image': 'Image',
@@ -177,8 +179,7 @@ const _strings = {
     'emailConfirmBanner': 'Please confirm your email address.',
     'enterCode': 'Enter code',
     'emailConfirmTitle': 'Confirm email',
-    'emailConfirmDescription':
-        'Enter the six-digit code we sent to {email}.',
+    'emailConfirmDescription': 'Enter the six-digit code we sent to {email}.',
     'resend': 'Resend',
     'confirm': 'Confirm',
     'codeResent': 'A new code has been sent.',
@@ -196,6 +197,8 @@ const _strings = {
     'invitationNotFound':
         'This invitation was not found or belongs to another account.',
     'invitationOpenFailed': 'The invitation could not be opened.',
+    'sharedNoteImportFailed':
+        'The invitation was accepted, but the shared note could not be decrypted. Open the link again to retry.',
     'ownerInviteOnly': 'Only the owner of this note can invite collaborators.',
     'checkRecipient': 'Check the email address or user ID.',
     'userNotFound': 'No user was found with this email address or user ID.',
@@ -212,8 +215,7 @@ const _strings = {
     'sharedReminderDescription':
         'Reminders are personal and cannot be shared with collaborators. Cancel or create a personal reminder copy.',
     'duplicateAsReminder': 'Duplicate as reminder',
-    'reminderDuplicateAdded':
-        'A personal copy is now shown under Reminders.',
+    'reminderDuplicateAdded': 'A personal copy is now shown under Reminders.',
     'reminderAdded': 'The note is now shown under Reminders.',
     'reminderRemoved': 'The reminder was removed.',
     'reminderDefaultBody': 'Time for your note.',
@@ -360,6 +362,7 @@ const _strings = {
     'task': 'Aufgabe',
     'indentTask': 'Einrücken',
     'outdentTask': 'Ausrücken',
+    'reorderTask': 'Aufgabe verschieben',
     'deleteTask': 'Aufgabe löschen',
     'moreActions': 'Weitere Aktionen',
     'archiveNote': 'Notiz archivieren',
@@ -387,6 +390,7 @@ const _strings = {
     'italic': 'Kursiv',
     'strikethrough': 'Durchstreichen',
     'codeBlock': 'Codeblock',
+    'bulletList': 'Aufzählung',
     'save': 'Speichern',
     'removeLink': 'Link entfernen',
     'image': 'Bild',
@@ -426,11 +430,11 @@ const _strings = {
     'invitationNotFound':
         'Diese Einladung wurde nicht gefunden oder gehört zu einem anderen Konto.',
     'invitationOpenFailed': 'Einladung konnte nicht geöffnet werden.',
-    'ownerInviteOnly':
-        'Nur Besitzer dieser Notiz können Mitarbeiter einladen.',
+    'sharedNoteImportFailed':
+        'Die Einladung wurde angenommen, aber die geteilte Notiz konnte nicht entschlüsselt werden. Öffne den Link erneut, um es noch einmal zu versuchen.',
+    'ownerInviteOnly': 'Nur Besitzer dieser Notiz können Mitarbeiter einladen.',
     'checkRecipient': 'Bitte prüfe die E-Mail oder User-ID.',
-    'userNotFound':
-        'Kein Nutzer mit dieser E-Mail oder User-ID gefunden.',
+    'userNotFound': 'Kein Nutzer mit dieser E-Mail oder User-ID gefunden.',
     'inviteFailed': 'Einladen ist fehlgeschlagen. Bitte versuche es erneut.',
     'userIdOrEmail': 'User-ID oder E-Mail',
     'canEdit': 'Bearbeiten',
@@ -466,8 +470,7 @@ const _strings = {
     'selectPlan': 'Auswählen',
     'checkoutOpen': 'Checkout öffnen',
     'copyLink': 'Link kopieren',
-    'checkoutUnavailable':
-        'Checkout ist noch nicht konfiguriert ({status}).',
+    'checkoutUnavailable': 'Checkout ist noch nicht konfiguriert ({status}).',
     'authIntro':
         'Private Notizen, Checklisten und Erinnerungen bleiben lokal verschlüsselt und klar organisiert.',
     'recoveryIntro':

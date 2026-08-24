@@ -22,6 +22,9 @@ void main() {
       sortOrder: 0,
       dirty: true,
       version: 1,
+      shared: true,
+      noteKey: 'encrypted-local-note-key',
+      shareRole: 'viewer',
     );
 
     final offline = PlainNote.fromPlainJson(note.toPlainJson());
@@ -34,6 +37,8 @@ void main() {
     );
 
     expect(offline.richTextDelta, note.richTextDelta);
+    expect(offline.noteKey, note.noteKey);
+    expect(offline.shareRole, note.shareRole);
     expect(remote.richTextDelta, note.richTextDelta);
     expect(note.encryptedPayloadJson()['schema'], 3);
   });

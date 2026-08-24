@@ -100,3 +100,26 @@ List<ChecklistItem> insertUncheckedItem(
   ordered.insert(insertionIndex, inserted.copyWith(done: false));
   return ordered;
 }
+
+List<ChecklistItem> moveChecklistItemBefore(
+  List<ChecklistItem> items, {
+  required String movingId,
+  required String targetId,
+}) {
+  final ordered = orderChecklistItems(items);
+  final movingIndex = ordered.indexWhere((item) => item.id == movingId);
+  final targetIndexBeforeMove =
+      ordered.indexWhere((item) => item.id == targetId);
+  if (movingIndex < 0 || targetIndexBeforeMove < 0 || movingId == targetId) {
+    return ordered;
+  }
+  final moving = ordered[movingIndex];
+  final target = ordered[targetIndexBeforeMove];
+  if (moving.done != target.done) return ordered;
+
+  ordered.removeAt(movingIndex);
+  final targetIndex = ordered.indexWhere((item) => item.id == targetId);
+  if (targetIndex < 0) return orderChecklistItems(items);
+  ordered.insert(targetIndex, moving);
+  return ordered;
+}

@@ -34,6 +34,7 @@ void main() {
     expect(find.byTooltip('Strikethrough'), findsOneWidget);
     expect(find.byTooltip('Link'), findsOneWidget);
     expect(find.byTooltip('Code block'), findsOneWidget);
+    expect(find.byTooltip('Bullet list'), findsOneWidget);
     expect(find.byTooltip('Checklist'), findsOneWidget);
     expect(find.byTooltip('Clear formatting'), findsOneWidget);
     expect(find.byTooltip('Background'), findsOneWidget);
@@ -230,6 +231,7 @@ void main() {
     expect(find.byTooltip('Indent'), findsNWidgets(2));
     expect(find.byTooltip('Outdent'), findsNWidgets(2));
     expect(find.byTooltip('Delete task'), findsNWidgets(2));
+    expect(find.byTooltip('Reorder task'), findsNWidgets(2));
     expect(
       tester.getSize(find.byKey(const ValueKey('indent-open-1'))),
       const Size(40, 40),
@@ -249,6 +251,7 @@ void main() {
     expect(find.byTooltip('Strikethrough'), findsNothing);
     expect(find.byTooltip('Link'), findsNothing);
     expect(find.byTooltip('Code block'), findsNothing);
+    expect(find.byTooltip('Bullet list'), findsNothing);
     expect(find.byTooltip('Checklist'), findsNothing);
     expect(find.byTooltip('Clear formatting'), findsNothing);
     expect(find.byTooltip('Undo'), findsOneWidget);
@@ -287,6 +290,50 @@ void main() {
 
     expect(find.text('Archive note'), findsOneWidget);
     expect(find.text('Move to trash'), findsOneWidget);
+  });
+
+  testWidgets('mobile checklist uses swipe gestures instead of indent buttons',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({});
+    final note = _checklistNote();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([note]),
+          ),
+        ],
+        child: _editorApp(note),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Indent'), findsNothing);
+    expect(find.byTooltip('Outdent'), findsNothing);
+    expect(find.byTooltip('Reorder task'), findsNWidgets(2));
+    final field = find.widgetWithText(TextField, 'Open');
+    final initialX = tester.getTopLeft(field).dx;
+
+    await tester.drag(
+      find.byTooltip('Reorder task').last,
+      const Offset(120, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(field).dx, initialX);
+
+    await tester.drag(
+      find.byKey(const ValueKey('swipe-indent-open')),
+      const Offset(120, 0),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.getTopLeft(field).dx, initialX + 18);
   });
 
   testWidgets('checked rows animate below the add row and back up',

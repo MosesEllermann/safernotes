@@ -94,7 +94,8 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
 
   void _hydrate(PlainNote note) {
     _title = TextEditingController(
-        text: note.title == 'Untitled note' ? '' : note.title);
+      text: note.title == 'Untitled note' ? '' : note.title,
+    );
     _body = quill.QuillController(
       document: noteDocument(
         delta: note.richTextDelta,
@@ -339,7 +340,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
 
   PlainNote _draft() {
     return _currentNote().copyWith(
-      title: _title.text.trim().isEmpty ? 'Untitled note' : _title.text.trim(),
+      title: _title.text.trim(),
       body: _checklistMode ? '' : documentPlainText(_body.document),
       richTextDelta: _checklistMode
           ? null
@@ -431,6 +432,9 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       if (attributes.containsKey(quill.Attribute.strikeThrough.key)) 'strike',
       if (attributes.containsKey(quill.Attribute.link.key)) 'link',
       if (attributes.containsKey(quill.Attribute.codeBlock.key)) 'codeblock',
+      if (attributes[quill.Attribute.list.key]?.value ==
+          quill.Attribute.ul.value)
+        'bullet',
     };
   }
 
@@ -475,6 +479,10 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     }
     if (action == 'codeblock') {
       _toggleQuillAttribute(quill.Attribute.codeBlock);
+      return;
+    }
+    if (action == 'bullet') {
+      _toggleQuillAttribute(quill.Attribute.ul);
       return;
     }
     if (action == 'check') {
@@ -716,6 +724,7 @@ class _Toolbar extends StatelessWidget {
           'strike', LucideIcons.strikethrough, l10n.t('strikethrough')),
       _ToolbarItem('link', LucideIcons.link, l10n.t('link')),
       _ToolbarItem('codeblock', LucideIcons.squareCode, l10n.t('codeBlock')),
+      _ToolbarItem('bullet', LucideIcons.list, l10n.t('bulletList')),
       _ToolbarItem('check', LucideIcons.squareCheck, l10n.t('checklist')),
       _ToolbarItem(
           'clear', LucideIcons.removeFormatting, l10n.t('clearFormatting')),
@@ -1440,25 +1449,36 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                 right: 0,
                 top: positions[item.id] ?? 0,
                 height: _rowHeight,
-                child: _ChecklistRow(
-                  key: ValueKey(item.id),
-                  item: item,
-                  l10n: l10n,
-                  autofocus: item.id == _focusItemId,
-                  onChanged: (updated) => widget.onChanged(
-                    updateChecklistItem(widget.items, updated),
+                child: DragTarget<String>(
+                  onWillAcceptWithDetails: (details) => details.data != item.id,
+                  onAcceptWithDetails: (details) => widget.onChanged(
+                    moveChecklistItemBefore(
+                      widget.items,
+                      movingId: details.data,
+                      targetId: item.id,
+                    ),
                   ),
-                  onDelete: () => widget.onChanged(
-                    widget.items
-                        .where((candidate) => candidate.id != item.id)
-                        .toList(),
+                  builder: (context, candidates, _) => _ChecklistRow(
+                    key: ValueKey(item.id),
+                    item: item,
+                    l10n: l10n,
+                    autofocus: item.id == _focusItemId,
+                    dropTargeted: candidates.isNotEmpty,
+                    onChanged: (updated) => widget.onChanged(
+                      updateChecklistItem(widget.items, updated),
+                    ),
+                    onDelete: () => widget.onChanged(
+                      widget.items
+                          .where((candidate) => candidate.id != item.id)
+                          .toList(),
+                    ),
+                    onInsertAfter: () => _insertItem(after: item),
+                    onFocused: () {
+                      if (_focusItemId == item.id) {
+                        setState(() => _focusItemId = null);
+                      }
+                    },
                   ),
-                  onInsertAfter: () => _insertItem(after: item),
-                  onFocused: () {
-                    if (_focusItemId == item.id) {
-                      setState(() => _focusItemId = null);
-                    }
-                  },
                 ),
               ),
             AnimatedPositioned(
@@ -1552,6 +1572,7 @@ class _ChecklistRow extends StatefulWidget {
     required this.item,
     required this.l10n,
     required this.autofocus,
+    required this.dropTargeted,
     required this.onChanged,
     required this.onDelete,
     required this.onInsertAfter,
@@ -1561,6 +1582,7 @@ class _ChecklistRow extends StatefulWidget {
   final ChecklistItem item;
   final AppL10n l10n;
   final bool autofocus;
+  final bool dropTargeted;
   final ValueChanged<ChecklistItem> onChanged;
   final VoidCallback onDelete;
   final VoidCallback onInsertAfter;
@@ -1574,6 +1596,9 @@ class _ChecklistRowState extends State<_ChecklistRow> {
   late final TextEditingController _controller = TextEditingController(
     text: widget.item.text,
   )..selection = TextSelection.collapsed(offset: widget.item.text.length);
+  Offset? _swipeOrigin;
+  double _swipeOffset = 0;
+  bool _dragHandleActive = false;
 
   @override
   void didUpdateWidget(covariant _ChecklistRow oldWidget) {
@@ -1596,10 +1621,45 @@ class _ChecklistRowState extends State<_ChecklistRow> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    final mobile = MediaQuery.sizeOf(context).width < 700;
+    final row = AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
       padding: EdgeInsets.only(left: widget.item.indent * 18.0, bottom: 2),
+      decoration: BoxDecoration(
+        color: widget.dropTargeted
+            ? Theme.of(context)
+                .colorScheme
+                .primaryContainer
+                .withValues(alpha: 0.48)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+      ),
       child: Row(
         children: [
+          Listener(
+            onPointerDown: (_) {
+              _dragHandleActive = true;
+              _swipeOrigin = null;
+            },
+            onPointerUp: (_) => _dragHandleActive = false,
+            onPointerCancel: (_) => _dragHandleActive = false,
+            child: Draggable<String>(
+              data: widget.item.id,
+              feedback: Material(
+                color: Colors.transparent,
+                child: Icon(
+                  LucideIcons.gripVertical,
+                  size: 22,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              childWhenDragging: Opacity(
+                opacity: 0.28,
+                child: _ChecklistDragHandle(l10n: widget.l10n),
+              ),
+              child: _ChecklistDragHandle(l10n: widget.l10n),
+            ),
+          ),
           Checkbox(
             visualDensity: VisualDensity.compact,
             value: widget.item.done,
@@ -1627,26 +1687,28 @@ class _ChecklistRowState extends State<_ChecklistRow> {
               onTap: widget.onFocused,
             ),
           ),
-          _ChecklistActionButton(
-            key: ValueKey('outdent-${widget.item.id}'),
-            tooltip: widget.l10n.t('outdentTask'),
-            icon: LucideIcons.indentDecrease,
-            onPressed: widget.item.indent == 0
-                ? null
-                : () => widget.onChanged(
-                      widget.item.copyWith(indent: widget.item.indent - 1),
-                    ),
-          ),
-          _ChecklistActionButton(
-            key: ValueKey('indent-${widget.item.id}'),
-            tooltip: widget.l10n.t('indentTask'),
-            icon: LucideIcons.indentIncrease,
-            onPressed: widget.item.indent >= 4
-                ? null
-                : () => widget.onChanged(
-                      widget.item.copyWith(indent: widget.item.indent + 1),
-                    ),
-          ),
+          if (!mobile) ...[
+            _ChecklistActionButton(
+              key: ValueKey('outdent-${widget.item.id}'),
+              tooltip: widget.l10n.t('outdentTask'),
+              icon: LucideIcons.indentDecrease,
+              onPressed: widget.item.indent == 0
+                  ? null
+                  : () => widget.onChanged(
+                        widget.item.copyWith(indent: widget.item.indent - 1),
+                      ),
+            ),
+            _ChecklistActionButton(
+              key: ValueKey('indent-${widget.item.id}'),
+              tooltip: widget.l10n.t('indentTask'),
+              icon: LucideIcons.indentIncrease,
+              onPressed: widget.item.indent >= 4
+                  ? null
+                  : () => widget.onChanged(
+                        widget.item.copyWith(indent: widget.item.indent + 1),
+                      ),
+            ),
+          ],
           const SizedBox(width: 4),
           _ChecklistActionButton(
             key: ValueKey('delete-${widget.item.id}'),
@@ -1655,6 +1717,95 @@ class _ChecklistRowState extends State<_ChecklistRow> {
             onPressed: widget.onDelete,
           ),
         ],
+      ),
+    );
+    if (!mobile) return row;
+    return Listener(
+      key: ValueKey('swipe-indent-${widget.item.id}'),
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        if (_dragHandleActive) return;
+        _swipeOrigin = event.position;
+        _swipeOffset = 0;
+      },
+      onPointerMove: (event) {
+        final origin = _swipeOrigin;
+        if (origin == null) return;
+        final delta = event.position - origin;
+        if (delta.dx.abs() <= delta.dy.abs()) return;
+        setState(() => _swipeOffset = delta.dx.clamp(-52.0, 52.0));
+      },
+      onPointerUp: (_) => _finishSwipe(),
+      onPointerCancel: (_) => _cancelSwipe(),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            left: 8,
+            child: AnimatedOpacity(
+              opacity: _swipeOffset > 8 ? 1 : 0,
+              duration: const Duration(milliseconds: 80),
+              child: const Icon(LucideIcons.indentIncrease, size: 20),
+            ),
+          ),
+          Positioned(
+            right: 8,
+            child: AnimatedOpacity(
+              opacity: _swipeOffset < -8 ? 1 : 0,
+              duration: const Duration(milliseconds: 80),
+              child: const Icon(LucideIcons.indentDecrease, size: 20),
+            ),
+          ),
+          AnimatedContainer(
+            duration: _swipeOrigin == null
+                ? const Duration(milliseconds: 150)
+                : Duration.zero,
+            curve: Curves.easeOutCubic,
+            transform: Matrix4.translationValues(_swipeOffset, 0, 0),
+            child: row,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _finishSwipe() {
+    final offset = _swipeOffset;
+    _cancelSwipe();
+    if (offset >= 42 && widget.item.indent < 4) {
+      widget.onChanged(widget.item.copyWith(indent: widget.item.indent + 1));
+    } else if (offset <= -42 && widget.item.indent > 0) {
+      widget.onChanged(widget.item.copyWith(indent: widget.item.indent - 1));
+    }
+  }
+
+  void _cancelSwipe() {
+    if (!mounted) return;
+    setState(() {
+      _swipeOrigin = null;
+      _swipeOffset = 0;
+    });
+  }
+}
+
+class _ChecklistDragHandle extends StatelessWidget {
+  const _ChecklistDragHandle({required this.l10n});
+
+  final AppL10n l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: l10n.t('reorderTask'),
+      child: SizedBox(
+        key: const ValueKey('checklist-drag-handle'),
+        width: 32,
+        height: 40,
+        child: Icon(
+          LucideIcons.gripVertical,
+          size: 20,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }

@@ -307,7 +307,7 @@ dd {
   bottom: 0;
   overflow: hidden;
   width: 26%;
-  aspect-ratio: 9 / 19.5;
+  aspect-ratio: 896 / 2000;
   background: var(--dark);
   border: 6px solid #342832;
   border-radius: 30px;
@@ -316,8 +316,8 @@ dd {
 
 .mobile-shot img {
   height: 100%;
-  filter: hue-rotate(146deg) saturate(0.92);
   object-fit: cover;
+  object-position: top;
 }
 
 .platform-status {

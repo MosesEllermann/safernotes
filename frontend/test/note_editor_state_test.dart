@@ -57,6 +57,34 @@ void main() {
 
       expect(result.map((item) => item.id), ['open', 'new', 'done']);
     });
+
+    test('drag reorders items inside the same checklist section', () {
+      final items = [
+        _item('a'),
+        _item('b'),
+        _item('done', done: true),
+      ];
+
+      final reordered = moveChecklistItemBefore(
+        items,
+        movingId: 'b',
+        targetId: 'a',
+      );
+
+      expect(reordered.map((item) => item.id), ['b', 'a', 'done']);
+    });
+
+    test('drag keeps open and completed checklist sections separate', () {
+      final items = [_item('open'), _item('done', done: true)];
+
+      final reordered = moveChecklistItemBefore(
+        items,
+        movingId: 'done',
+        targetId: 'open',
+      );
+
+      expect(reordered.map((item) => item.id), ['open', 'done']);
+    });
   });
 
   test('editor history is bounded and clears redo after a new edit', () {

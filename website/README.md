@@ -8,8 +8,8 @@ server required.
 - `index.html`: product landing page with desktop/mobile preview, platform availability, security, pricing, and CTA
 - `downloads.html`: device-aware download recommendations for web, Android, and iOS
 - `downloads.js`: local device detection and platform tab switching
-- `assets/app-preview.png`: desktop product image based on the live Safernotes interface
-- `assets/app-mobile.png`: mobile product image based on the responsive Flutter layout
+- `assets/product-desktop.png`: real desktop product screenshot
+- `assets/product-mobile.png`: real mobile product screenshot
 - `privacy.html`: professionally structured privacy policy placeholder
 - `impressum.html`: professionally structured legal notice placeholder
 - `styles.css`: shared responsive design system
