@@ -297,7 +297,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                             ? Padding(
                                 key: const ValueKey('checklist'),
                                 padding:
-                                    const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                                    const EdgeInsets.fromLTRB(20, 8, 20, 16),
                                 child: checklist,
                               )
                             : Padding(
@@ -1354,7 +1354,7 @@ class _ChecklistEditor extends ConsumerStatefulWidget {
 class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   String? _focusItemId;
 
-  static const _rowHeight = 50.0;
+  static const _rowHeight = 46.0;
   static const _addHeight = 44.0;
   static const _completedHeaderHeight = 38.0;
 

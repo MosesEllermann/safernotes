@@ -143,7 +143,12 @@ void main() {
   testWidgets('checklist starts at the top and hides rich text actions',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
-    final note = _checklistNote();
+    final note = _checklistNote().copyWith(
+      checklist: const [
+        ChecklistItem(id: 'open-1', text: 'Open one', done: false, indent: 0),
+        ChecklistItem(id: 'open-2', text: 'Open two', done: false, indent: 0),
+      ],
+    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -161,14 +166,18 @@ void main() {
         tester.getTopLeft(find.byKey(const ValueKey('editor-content'))).dy;
     final checklistTop =
         tester.getTopLeft(find.byKey(const ValueKey('checklist'))).dy;
-    final firstCheckboxTop = tester
-        .getTopLeft(find.byWidgetPredicate(
-          (widget) => widget is Checkbox && widget.value == false,
-        ))
-        .dy;
+    final openCheckboxes = find.byWidgetPredicate(
+      (widget) => widget is Checkbox && widget.value == false,
+    );
+    final firstCheckboxTop = tester.getTopLeft(openCheckboxes.first).dy;
+    final firstRowY =
+        tester.getCenter(find.widgetWithText(TextField, 'Open one')).dy;
+    final secondRowY =
+        tester.getCenter(find.widgetWithText(TextField, 'Open two')).dy;
 
     expect(checklistTop, editorTop);
-    expect(firstCheckboxTop - editorTop, lessThan(12));
+    expect(firstCheckboxTop - editorTop, inInclusiveRange(8, 16));
+    expect(secondRowY - firstRowY, 46);
     expect(find.byTooltip('Fett'), findsNothing);
     expect(find.byTooltip('Kursiv'), findsNothing);
     expect(find.byTooltip('Durchstreichen'), findsNothing);
