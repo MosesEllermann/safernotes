@@ -1,19 +1,24 @@
 :root {
   color-scheme: light;
   --font: Inter, Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --page: #fbfbfa;
-  --surface: #ffffff;
-  --surface-soft: #f2f3f2;
-  --ink: #151719;
-  --ink-soft: #4d5358;
-  --muted: #737a80;
-  --line: #e8eae9;
-  --green: #23755c;
-  --green-soft: #e4f2ec;
-  --blue: #315d80;
-  --dark: #111318;
-  --dark-surface: #1c1f25;
-  --dark-line: #32363d;
+  --page: #fbf8fa;
+  --surface: #fffdfd;
+  --surface-soft: #f7f0f5;
+  --ink: #21181f;
+  --ink-soft: #584b54;
+  --muted: #756773;
+  --line: #e7dce4;
+  --primary: #8051a8;
+  --primary-hover: #6b408f;
+  --primary-soft: #f1e4f4;
+  --accent: #746b82;
+  --accent-on-dark: #b5a8c0;
+  --accent-soft: #efe8ed;
+  --success: #5d7463;
+  --success-soft: #e3ede5;
+  --dark: #171116;
+  --dark-surface: #241b22;
+  --dark-line: #44343f;
   --max: 1120px;
 }
 
@@ -96,7 +101,7 @@ dd {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(251, 251, 250, 0.92);
+  background: rgba(251, 248, 250, 0.92);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(16px);
 }
@@ -121,14 +126,11 @@ dd {
 }
 
 .brand-mark {
-  display: grid;
+  display: block;
+  flex: 0 0 auto;
   width: 34px;
   height: 34px;
-  place-items: center;
-  background: var(--dark);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.78rem;
+  border-radius: 50%;
 }
 
 .site-nav {
@@ -162,11 +164,15 @@ dd {
 .site-nav a:hover,
 .site-footer nav a:hover,
 .text-link:hover {
-  color: var(--green);
+  color: var(--primary);
 }
 
 .header-inner > .button {
   justify-self: end;
+}
+
+.header-inner > .header-mobile-action {
+  display: none;
 }
 
 .button {
@@ -189,12 +195,12 @@ dd {
 }
 
 .button-primary {
-  background: var(--green);
+  background: var(--primary);
   color: #fff;
 }
 
 .button-primary:hover {
-  background: #195f49;
+  background: var(--primary-hover);
 }
 
 .button-dark {
@@ -203,7 +209,7 @@ dd {
 }
 
 .button-dark:hover {
-  background: #2a2d32;
+  background: #31252e;
 }
 
 .button-disabled {
@@ -235,6 +241,13 @@ dd {
 .hero-copy {
   max-width: 780px;
   margin: 0 auto;
+}
+
+.hero-logo {
+  display: block;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 22px;
 }
 
 .hero-tagline {
@@ -276,9 +289,9 @@ dd {
 .desktop-shot {
   overflow: hidden;
   background: var(--dark);
-  border: 6px solid #25282d;
+  border: 6px solid #342832;
   border-radius: 30px;
-  box-shadow: 0 26px 70px rgba(21, 23, 25, 0.16);
+  box-shadow: 0 26px 70px rgba(61, 37, 54, 0.16);
 }
 
 .desktop-shot img,
@@ -296,13 +309,14 @@ dd {
   width: 26%;
   aspect-ratio: 9 / 19.5;
   background: var(--dark);
-  border: 6px solid #25282d;
+  border: 6px solid #342832;
   border-radius: 30px;
-  box-shadow: 0 24px 60px rgba(21, 23, 25, 0.3);
+  box-shadow: 0 24px 60px rgba(61, 37, 54, 0.26);
 }
 
 .mobile-shot img {
   height: 100%;
+  filter: hue-rotate(146deg) saturate(0.92);
   object-fit: cover;
 }
 
@@ -382,9 +396,13 @@ dd {
 .section-label {
   display: block;
   margin-bottom: 24px;
-  color: var(--green);
+  color: var(--accent);
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.security-section .section-label {
+  color: var(--accent-on-dark);
 }
 
 .feature-list p {
@@ -644,7 +662,7 @@ dd {
   margin-bottom: 16px;
   place-items: center;
   background: var(--surface);
-  border: 2px dashed #aeb4b1;
+  border: 2px dashed #afa7bc;
   border-radius: 8px;
   color: var(--muted);
   font-size: 1.1rem;
@@ -682,7 +700,7 @@ a.download-option:hover {
 }
 
 a.download-option:hover h3 {
-  color: var(--green);
+  color: var(--primary);
 }
 
 .download-option p {
@@ -706,9 +724,9 @@ a.download-option:hover h3 {
 }
 
 .availability.is-available {
-  background: var(--green-soft);
-  border-color: #c2dfd3;
-  color: var(--green);
+  background: var(--success-soft);
+  border-color: #c9d9cc;
+  color: var(--success);
 }
 
 /* Legal pages share the same restrained visual language. */
@@ -730,7 +748,7 @@ a.download-option:hover h3 {
 
 .eyebrow {
   margin-bottom: 18px;
-  color: var(--green);
+  color: var(--primary);
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -823,7 +841,7 @@ a.download-option:hover h3 {
 }
 
 .inline-link {
-  color: var(--green);
+  color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 4px;
 }
@@ -940,6 +958,14 @@ a.download-option:hover h3 {
 }
 
 @media (max-width: 520px) {
+  .header-inner > .header-desktop-action {
+    display: none;
+  }
+
+  .header-inner > .header-mobile-action {
+    display: inline-flex;
+  }
+
   .header-inner,
   .hero,
   .product-section,

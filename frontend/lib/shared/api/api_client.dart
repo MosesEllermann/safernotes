@@ -86,6 +86,12 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> fetchEmailVerificationStatus({
+    required String accessToken,
+  }) {
+    return _get('/api/v1/auth/email/verification/status', accessToken);
+  }
+
   Future<Map<String, dynamic>> confirmEmailVerification({
     required String accessToken,
     required String code,

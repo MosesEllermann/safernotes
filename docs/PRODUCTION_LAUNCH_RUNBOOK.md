@@ -111,5 +111,6 @@ cd backend
 
 cd ../frontend
 ./tool/flutterw analyze
-./tool/flutterw build web --dart-define=API_BASE_URL=https://api.example.com --no-wasm-dry-run
+./tool/flutterw build web --dart-define=API_BASE_URL=https://api.safernotes.com --no-wasm-dry-run
+./tool/build_android_release.sh
 ```

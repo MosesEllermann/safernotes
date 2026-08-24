@@ -10,4 +10,4 @@ if [ ! -d web ] || [ ! -d android ] || [ ! -d ios ]; then
 fi
 
 ./tool/flutterw pub get
-./tool/flutterw run -d web-server --web-hostname=localhost --web-port=3000 --dart-define=API_BASE_URL="${API_BASE_URL:-http://127.0.0.1:8000}"
+./tool/flutterw run -d web-server --web-hostname=localhost --web-port=3000 --dart-define=API_BASE_URL="${API_BASE_URL:-https://api.safernotes.com}"

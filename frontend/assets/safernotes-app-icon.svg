@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <style>
+      .background { fill: url(#brand-gradient); }
+      .solid, .layer-1, .layer-2, .layer-3, .layer-4 { fill: #fff; }
+      .layer-1 { opacity: .7; }
+      .layer-2 { opacity: .2; }
+      .layer-3 { opacity: .6; }
+      .layer-4 { opacity: .5; }
+    </style>
+    <radialGradient id="brand-gradient" cx="-914.73" cy="607.97" fx="-914.73" fy="607.97" r="1" gradientTransform="translate(-11231.5 16935.9999) rotate(90) scale(18.5 -18.5)" gradientUnits="userSpaceOnUse">
+      <stop offset=".17" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#7451ff"/>
+    </radialGradient>
+  </defs>
+  <rect class="background" width="32" height="32"/>
+  <path class="solid" d="M8.73,16h4.53v2.27"/>
+  <path class="solid" d="M23.27,16h-4.53v-2.27"/>
+  <path class="layer-2" d="M13.26,16l5.48-4.53v2.27l-5.48,4.53v-2.27Z"/>
+  <path class="layer-4" d="M18.74,16l-5.48,4.53v-2.27s5.48-4.53,5.48-4.53v2.27Z"/>
+  <path class="layer-3" d="M8.73,16l10.01-9.07v4.53l-5.48,4.53h-4.53Z"/>
+  <path class="layer-1" d="M13.26,25.07v-4.53l5.48-4.53h4.53s-10.01,9.07-10.01,9.07"/>
+</svg>

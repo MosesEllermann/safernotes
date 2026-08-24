@@ -193,6 +193,22 @@ class AuthController extends AsyncNotifier<AppSession?> {
     state = AsyncData(next);
   }
 
+  Future<bool> refreshEmailVerificationStatus() async {
+    final session = state.valueOrNull;
+    if (session == null) return false;
+    if (session.emailVerified) return true;
+    final response =
+        await ref.read(apiClientProvider).fetchEmailVerificationStatus(
+              accessToken: session.accessToken,
+            );
+    final verified = response['email_verified'] == true;
+    if (!verified) return false;
+    final next = session.copyWith(emailVerified: true);
+    await ref.read(offlineStoreProvider).saveSessionJson(next.toJson());
+    state = AsyncData(next);
+    return true;
+  }
+
   Future<void> confirmEmailVerification(String code) async {
     final session = state.valueOrNull;
     if (session == null) throw Exception('Not signed in.');

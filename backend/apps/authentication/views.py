@@ -337,6 +337,16 @@ class EmailVerificationResendView(views.APIView):
         )
 
 
+class EmailVerificationStatusView(views.APIView):
+    def get(self, request):
+        return response.Response(
+            {
+                "email": request.user.email,
+                "email_verified": request.user.email_verified_at is not None,
+            }
+        )
+
+
 class EmailVerificationConfirmView(views.APIView):
     throttle_scope = "email_verification"
 

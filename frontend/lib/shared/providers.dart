@@ -3,10 +3,15 @@ import 'package:safernotes_app/shared/api/api_client.dart';
 import 'package:safernotes_app/shared/crypto/crypto_service.dart';
 import 'package:safernotes_app/shared/storage/offline_store.dart';
 
-const apiBaseUrl = String.fromEnvironment(
-  'API_BASE_URL',
-  defaultValue: 'http://127.0.0.1:8000',
-);
+const productionApiBaseUrl = 'https://api.safernotes.com';
+const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+final apiBaseUrl = _resolveApiBaseUrl();
+
+String _resolveApiBaseUrl() {
+  if (_configuredApiBaseUrl.isNotEmpty) return _configuredApiBaseUrl;
+  return productionApiBaseUrl;
+}
 
 final cryptoServiceProvider = Provider<CryptoService>((ref) => CryptoService());
 

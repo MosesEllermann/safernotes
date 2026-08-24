@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
+import 'package:safernotes_app/shared/app/app_l10n.dart';
 import 'package:safernotes_app/shared/api/api_client.dart';
 import 'package:safernotes_app/shared/models/note.dart';
 import 'package:safernotes_app/shared/providers.dart';
@@ -45,12 +46,6 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
 
   PlainNote createEmptyNote() {
     return _createNote();
-  }
-
-  PlainNote createReminderNote() {
-    return _createNote(
-      reminderAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
-    );
   }
 
   PlainNote createChecklistNote() {
@@ -152,7 +147,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       orElse: () => draft,
     );
     if (synced.remoteId == null) {
-      throw StateError('Die Notiz konnte noch nicht synchronisiert werden.');
+      throw StateError(ref.read(l10nProvider).t('noteNotSynced'));
     }
     return synced;
   }

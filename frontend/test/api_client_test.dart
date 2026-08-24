@@ -72,4 +72,25 @@ void main() {
     expect(body.toString(), isNot(contains('recovery_key')));
     expect(body['recovery_wrapper'], wrapper.toJson());
   });
+
+  test('email verification status uses the authenticated status endpoint',
+      () async {
+    late http.Request captured;
+    final client = ApiClient(
+      baseUrl: 'http://example.test',
+      httpClient: MockClient((request) async {
+        captured = request;
+        return http.Response('{"email_verified":true}', 200);
+      }),
+    );
+
+    final response = await client.fetchEmailVerificationStatus(
+      accessToken: 'access-token',
+    );
+
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/api/v1/auth/email/verification/status');
+    expect(captured.headers['Authorization'], 'Bearer access-token');
+    expect(response['email_verified'], isTrue);
+  });
 }

@@ -11,6 +11,7 @@ from apps.authentication.tokens import hash_token
 from apps.authentication.views import (
     EmailVerificationConfirmView,
     EmailVerificationResendView,
+    EmailVerificationStatusView,
     LoginView,
     PasswordChangeView,
     RecoveryCompleteView,
@@ -393,6 +394,28 @@ def test_email_verification_confirm_marks_user_verified(db, django_user_model):
     assert response.data["email_verified"] is True
     user.refresh_from_db()
     assert user.email_verified_at is not None
+
+
+def test_email_verification_status_reflects_confirmation_on_another_device(
+    db, django_user_model
+):
+    from django.utils import timezone
+
+    user = django_user_model.objects.create_user(
+        email="status@example.com", password="password"
+    )
+    user.email_verified_at = timezone.now()
+    user.save(update_fields=["email_verified_at", "updated_at"])
+    request = APIRequestFactory().get("/api/v1/auth/email/verification/status")
+    force_authenticate(request, user=user)
+
+    response = EmailVerificationStatusView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data == {
+        "email": "status@example.com",
+        "email_verified": True,
+    }
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")

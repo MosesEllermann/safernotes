@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -46,17 +48,20 @@ Future<void> scheduleReminderNotification({
 }) async {
   await _ensureInitialized();
   if (!scheduledAt.isAfter(DateTime.now())) return;
+  final german = PlatformDispatcher.instance.locale.languageCode == 'de';
   await _notifications.zonedSchedule(
     id: _notificationId(reminderId),
     title: title,
     body: body,
     scheduledDate: tz.TZDateTime.from(scheduledAt.toLocal(), tz.local),
     androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-    notificationDetails: const NotificationDetails(
+    notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         'note_reminders',
-        'Erinnerungen',
-        channelDescription: 'Lokale Erinnerungen für Notizen',
+        german ? 'Erinnerungen' : 'Reminders',
+        channelDescription: german
+            ? 'Lokale Erinnerungen für Notizen'
+            : 'Local reminders for notes',
         importance: Importance.high,
         priority: Priority.high,
       ),

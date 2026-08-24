@@ -33,6 +33,9 @@ cd frontend
 
 Open `http://localhost:3000`.
 
+By default, the Flutter app talks to the production API at `https://api.safernotes.com`.
+Use `API_BASE_URL=http://127.0.0.1:8000 ./tool/run_web.sh` only for intentional local backend debugging.
+
 ## Checks
 
 Backend:
@@ -49,7 +52,8 @@ Frontend:
 ```sh
 cd frontend
 ./tool/flutterw analyze
-./tool/flutterw build web --dart-define=API_BASE_URL=http://127.0.0.1:8000 --no-wasm-dry-run
+./tool/flutterw build web --dart-define=API_BASE_URL=https://api.safernotes.com --no-wasm-dry-run
+./tool/build_android_release.sh
 ```
 
 ## Security Boundary

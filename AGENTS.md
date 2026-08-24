@@ -42,13 +42,15 @@ Frontend checks:
 ```sh
 cd frontend
 ./tool/flutterw analyze
-./tool/flutterw build web --dart-define=API_BASE_URL=http://127.0.0.1:8000 --no-wasm-dry-run
+./tool/flutterw build web --dart-define=API_BASE_URL=https://api.safernotes.com --no-wasm-dry-run
+./tool/build_android_release.sh
 ```
 
 Flutter widget tests may fail inside restricted sandboxes because Flutter opens a temporary localhost socket.
 
 ## Important Caveats
 
+- Default app builds must use the online API `https://api.safernotes.com`. Local API URLs are only for deliberate debugging and must not be used for release APKs.
 - New password-derived key wrapping uses Argon2id. The client keeps PBKDF2-SHA256 unlock support for older test accounts.
 - Near-real-time collaboration is currently autosave plus polling/presence refresh. The backend has encrypted WebSocket collaboration primitives, but the Flutter client does not yet use a CRDT/WebSocket editor.
 - Share invitations require recipient user IDs in the current UI.

@@ -29,16 +29,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byTooltip('Fett'), findsOneWidget);
-    expect(find.byTooltip('Kursiv'), findsOneWidget);
-    expect(find.byTooltip('Durchstreichen'), findsOneWidget);
+    expect(find.byTooltip('Bold'), findsOneWidget);
+    expect(find.byTooltip('Italic'), findsOneWidget);
+    expect(find.byTooltip('Strikethrough'), findsOneWidget);
     expect(find.byTooltip('Link'), findsOneWidget);
-    expect(find.byTooltip('Codeblock'), findsOneWidget);
-    expect(find.byTooltip('Checkliste'), findsOneWidget);
-    expect(find.byTooltip('Formatierung löschen'), findsOneWidget);
-    expect(find.byTooltip('Hintergrund'), findsOneWidget);
-    expect(find.byTooltip('Rückgängig'), findsOneWidget);
-    expect(find.byTooltip('Wiederholen'), findsOneWidget);
+    expect(find.byTooltip('Code block'), findsOneWidget);
+    expect(find.byTooltip('Checklist'), findsOneWidget);
+    expect(find.byTooltip('Clear formatting'), findsOneWidget);
+    expect(find.byTooltip('Background'), findsOneWidget);
+    expect(find.byTooltip('Undo'), findsOneWidget);
+    expect(find.byTooltip('Redo'), findsOneWidget);
 
     expect(find.byTooltip('underline'), findsNothing);
   });
@@ -70,11 +70,11 @@ void main() {
       const TextSelection.collapsed(offset: 12),
     );
     await tester.pump();
-    await tester.tap(find.byTooltip('Rückgängig'));
+    await tester.tap(find.byTooltip('Undo'));
     await tester.pump();
     expect(documentPlainText(editor.controller.document), original);
 
-    await tester.tap(find.byTooltip('Wiederholen'));
+    await tester.tap(find.byTooltip('Redo'));
     await tester.pump();
     expect(documentPlainText(editor.controller.document), 'Updated body');
   });
@@ -104,7 +104,7 @@ void main() {
       quill.ChangeSource.local,
     );
     await tester.pump();
-    await tester.tap(find.byTooltip('Kursiv'));
+    await tester.tap(find.byTooltip('Italic'));
     await tester.pump();
 
     expect(documentPlainText(editor.controller.document), 'Gute Kaese');
@@ -113,6 +113,55 @@ void main() {
       editor.controller.document.toDelta().toJson().first['attributes'],
       {'italic': true},
     );
+  });
+
+  testWidgets('body keeps focus and scroll state while typing', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final note = _note().copyWith(body: '', clearRichTextDelta: true);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([note]),
+          ),
+        ],
+        child: _editorApp(note),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final initialEditor = tester.widget<quill.QuillEditor>(
+      find.byType(quill.QuillEditor),
+    );
+    initialEditor.focusNode.requestFocus();
+    initialEditor.controller.replaceText(
+      0,
+      0,
+      'A',
+      const TextSelection.collapsed(offset: 1),
+    );
+    await tester.pump();
+
+    final rebuiltEditor = tester.widget<quill.QuillEditor>(
+      find.byType(quill.QuillEditor),
+    );
+    expect(rebuiltEditor.focusNode, same(initialEditor.focusNode));
+    expect(
+        rebuiltEditor.scrollController, same(initialEditor.scrollController));
+    expect(rebuiltEditor.focusNode.hasFocus, isTrue);
+
+    rebuiltEditor.controller.replaceText(
+      1,
+      0,
+      'B',
+      const TextSelection.collapsed(offset: 2),
+    );
+    await tester.pump();
+
+    expect(documentPlainText(rebuiltEditor.controller.document), 'AB');
+    expect(rebuiltEditor.controller.selection.extentOffset, 2);
+    expect(rebuiltEditor.focusNode.hasFocus, isTrue);
   });
 
   testWidgets('checklist add control sits between open and checked items',
@@ -176,18 +225,68 @@ void main() {
         tester.getCenter(find.widgetWithText(TextField, 'Open two')).dy;
 
     expect(checklistTop, editorTop);
-    expect(firstCheckboxTop - editorTop, inInclusiveRange(8, 16));
-    expect(secondRowY - firstRowY, 46);
-    expect(find.byTooltip('Fett'), findsNothing);
-    expect(find.byTooltip('Kursiv'), findsNothing);
-    expect(find.byTooltip('Durchstreichen'), findsNothing);
+    expect(firstCheckboxTop - editorTop, inInclusiveRange(14, 22));
+    expect(secondRowY - firstRowY, 42);
+    expect(find.byTooltip('Indent'), findsNWidgets(2));
+    expect(find.byTooltip('Outdent'), findsNWidgets(2));
+    expect(find.byTooltip('Delete task'), findsNWidgets(2));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('indent-open-1'))),
+      const Size(40, 40),
+    );
+
+    final firstField = find.widgetWithText(TextField, 'Open one');
+    final initialX = tester.getTopLeft(firstField).dx;
+    await tester.tap(find.byKey(const ValueKey('indent-open-1')));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(firstField).dx, initialX + 18);
+
+    await tester.tap(find.byKey(const ValueKey('outdent-open-1')));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(firstField).dx, initialX);
+    expect(find.byTooltip('Bold'), findsNothing);
+    expect(find.byTooltip('Italic'), findsNothing);
+    expect(find.byTooltip('Strikethrough'), findsNothing);
     expect(find.byTooltip('Link'), findsNothing);
-    expect(find.byTooltip('Codeblock'), findsNothing);
-    expect(find.byTooltip('Checkliste'), findsNothing);
-    expect(find.byTooltip('Formatierung löschen'), findsNothing);
-    expect(find.byTooltip('Rückgängig'), findsOneWidget);
-    expect(find.byTooltip('Wiederholen'), findsOneWidget);
-    expect(find.byTooltip('Hintergrund'), findsOneWidget);
+    expect(find.byTooltip('Code block'), findsNothing);
+    expect(find.byTooltip('Checklist'), findsNothing);
+    expect(find.byTooltip('Clear formatting'), findsNothing);
+    expect(find.byTooltip('Undo'), findsOneWidget);
+    expect(find.byTooltip('Redo'), findsOneWidget);
+    expect(find.byTooltip('Background'), findsOneWidget);
+  });
+
+  testWidgets('mobile header uses larger actions and an overflow menu',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({});
+    final note = _checklistNote();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([note]),
+          ),
+        ],
+        child: _editorApp(note),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(find.byTooltip('Pin')), const Size(44, 44));
+    expect(find.byTooltip('Archive note'), findsNothing);
+    expect(find.byTooltip('Move to trash'), findsNothing);
+
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Archive note'), findsOneWidget);
+    expect(find.text('Move to trash'), findsOneWidget);
   });
 
   testWidgets('checked rows animate below the add row and back up',

@@ -6,6 +6,7 @@ from rest_framework.routers import DefaultRouter
 from apps.authentication.views import (
     EmailVerificationConfirmView,
     EmailVerificationResendView,
+    EmailVerificationStatusView,
     LoginView,
     LogoutView,
     PasswordChangeView,
@@ -29,6 +30,11 @@ urlpatterns = [
         "email/verification/resend",
         EmailVerificationResendView.as_view(),
         name="email-verification-resend",
+    ),
+    path(
+        "email/verification/status",
+        EmailVerificationStatusView.as_view(),
+        name="email-verification-status",
     ),
     path(
         "email/verification/confirm",

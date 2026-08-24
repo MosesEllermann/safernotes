@@ -10,6 +10,11 @@ import 'package:safernotes_app/shared/app/app_preferences.dart';
 import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
+enum _SettingsPage { appearance, plan, security }
+
+final _settingsPageProvider =
+    StateProvider.autoDispose<_SettingsPage>((ref) => _SettingsPage.appearance);
+
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
@@ -20,138 +25,342 @@ class SettingsScreen extends ConsumerWidget {
         const AppPreferences(languageCode: 'en', themeMode: ThemeMode.system);
     final session = ref.watch(authControllerProvider).valueOrNull;
     final wide = MediaQuery.sizeOf(context).width >= 940;
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        wide ? 40 : 20,
-                        20,
-                        wide ? 32 : 20,
-                        28,
+    if (wide) {
+      final page = ref.watch(_settingsPageProvider);
+      return Scaffold(
+        key: const ValueKey('desktop-settings'),
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(28, 18, 28, 17),
+                child: Row(
+                  children: [
+                    AppIconButton(
+                      tooltip: l10n.t('back'),
+                      icon: LucideIcons.arrowLeft,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      l10n.t('settings'),
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(
+                height: 1,
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.4),
+              ),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SizedBox(
+                      width: 236,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _SettingsNavigationItem(
+                              key: const ValueKey('settings-nav-appearance'),
+                              icon: LucideIcons.palette,
+                              label: l10n.t('appearance'),
+                              selected: page == _SettingsPage.appearance,
+                              onTap: () => ref
+                                  .read(_settingsPageProvider.notifier)
+                                  .state = _SettingsPage.appearance,
+                            ),
+                            const SizedBox(height: 4),
+                            _SettingsNavigationItem(
+                              key: const ValueKey('settings-nav-plan'),
+                              icon: LucideIcons.creditCard,
+                              label: l10n.t('plan'),
+                              selected: page == _SettingsPage.plan,
+                              onTap: () => ref
+                                  .read(_settingsPageProvider.notifier)
+                                  .state = _SettingsPage.plan,
+                            ),
+                            const SizedBox(height: 4),
+                            _SettingsNavigationItem(
+                              key: const ValueKey('settings-nav-security'),
+                              icon: LucideIcons.shieldCheck,
+                              label: l10n.t('security'),
+                              selected: page == _SettingsPage.security,
+                              onTap: () => ref
+                                  .read(_settingsPageProvider.notifier)
+                                  .state = _SettingsPage.security,
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    ),
+                    VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outlineVariant
+                          .withValues(alpha: 0.4),
+                    ),
+                    Expanded(
+                      child: IndexedStack(
+                        key: const ValueKey('desktop-settings-pages'),
+                        index: page.index,
                         children: [
-                          Row(
-                            children: [
-                              AppIconButton(
-                                tooltip: l10n.t('back'),
-                                icon: LucideIcons.arrowLeft,
-                                onPressed: () => Navigator.of(context).pop(),
-                              ),
-                              const SizedBox(width: 12),
-                              Text(
-                                l10n.t('settings'),
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(fontWeight: FontWeight.w800),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 28),
-                          _SettingsSection(
-                            icon: LucideIcons.palette,
-                            title: l10n.t('appearance'),
-                            child: _PreferenceOptionGroup<ThemeMode>(
-                              value: prefs.themeMode,
-                              onChanged: (value) => ref
+                          _DesktopSettingsPage(
+                            key: const ValueKey('settings-page-appearance'),
+                            child: _AppearanceSettings(
+                              l10n: l10n,
+                              prefs: prefs,
+                              onThemeChanged: (value) => ref
                                   .read(appPreferencesProvider.notifier)
                                   .setThemeMode(value),
-                              options: [
-                                _PreferenceOption(
-                                  value: ThemeMode.system,
-                                  label: l10n.t('system'),
-                                  icon: LucideIcons.monitorCog,
-                                ),
-                                _PreferenceOption(
-                                  value: ThemeMode.light,
-                                  label: l10n.t('light'),
-                                  icon: LucideIcons.sun,
-                                ),
-                                _PreferenceOption(
-                                  value: ThemeMode.dark,
-                                  label: l10n.t('dark'),
-                                  icon: LucideIcons.moon,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          _SettingsSection(
-                            icon: LucideIcons.languages,
-                            title: l10n.t('language'),
-                            child: _PreferenceOptionGroup<String>(
-                              value: prefs.languageCode,
-                              onChanged: (value) => ref
+                              onLanguageChanged: (value) => ref
                                   .read(appPreferencesProvider.notifier)
                                   .setLanguage(value),
-                              options: [
-                                _PreferenceOption(
-                                  value: 'en',
-                                  label: l10n.t('english'),
-                                  icon: LucideIcons.languages,
-                                ),
-                                _PreferenceOption(
-                                  value: 'de',
-                                  label: l10n.t('german'),
-                                  icon: LucideIcons.messageSquareText,
-                                ),
-                              ],
                             ),
                           ),
-                          if (!wide) ...[
-                            const SizedBox(height: 18),
-                            _BillingPanel(
+                          _DesktopSettingsPage(
+                            key: const ValueKey('settings-page-plan'),
+                            child: _BillingPanel(
                               accessToken: session?.accessToken ?? '',
                               tenant: session?.defaultTenant ?? '',
                               inset: EdgeInsets.zero,
                             ),
-                            const SizedBox(height: 18),
-                            _SecurityPanel(
+                          ),
+                          _DesktopSettingsPage(
+                            key: const ValueKey('settings-page-security'),
+                            child: _SecurityPanel(
                               email: session?.email ?? '',
                               inset: EdgeInsets.zero,
                             ),
-                          ],
+                          ),
                         ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (wide)
-              SizedBox(
-                width: 390,
-                child: CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: _BillingPanel(
-                        accessToken: session?.accessToken ?? '',
-                        tenant: session?.defaultTenant ?? '',
-                        inset: const EdgeInsets.fromLTRB(0, 20, 24, 18),
-                      ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _SecurityPanel(
-                        email: session?.email ?? '',
-                        inset: const EdgeInsets.fromLTRB(0, 0, 24, 28),
                       ),
                     ),
                   ],
                 ),
               ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      key: const ValueKey('mobile-settings'),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: SafeArea(
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        AppIconButton(
+                          tooltip: l10n.t('back'),
+                          icon: LucideIcons.arrowLeft,
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          l10n.t('settings'),
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 28),
+                    _AppearanceSettings(
+                      l10n: l10n,
+                      prefs: prefs,
+                      onThemeChanged: (value) => ref
+                          .read(appPreferencesProvider.notifier)
+                          .setThemeMode(value),
+                      onLanguageChanged: (value) => ref
+                          .read(appPreferencesProvider.notifier)
+                          .setLanguage(value),
+                    ),
+                    const SizedBox(height: 18),
+                    _BillingPanel(
+                      accessToken: session?.accessToken ?? '',
+                      tenant: session?.defaultTenant ?? '',
+                      inset: EdgeInsets.zero,
+                    ),
+                    const SizedBox(height: 18),
+                    _SecurityPanel(
+                      email: session?.email ?? '',
+                      inset: EdgeInsets.zero,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DesktopSettingsPage extends StatelessWidget {
+  const _DesktopSettingsPage({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(36, 32, 36, 48),
+      child: Align(
+        alignment: Alignment.topLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsNavigationItem extends StatelessWidget {
+  const _SettingsNavigationItem({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? scheme.surfaceContainerHighest : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: SizedBox(
+          height: 46,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 19,
+                  color: selected ? scheme.onSurface : scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: selected
+                              ? scheme.onSurface
+                              : scheme.onSurfaceVariant,
+                          fontWeight:
+                              selected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AppearanceSettings extends StatelessWidget {
+  const _AppearanceSettings({
+    required this.l10n,
+    required this.prefs,
+    required this.onThemeChanged,
+    required this.onLanguageChanged,
+  });
+
+  final AppL10n l10n;
+  final AppPreferences prefs;
+  final ValueChanged<ThemeMode> onThemeChanged;
+  final ValueChanged<String> onLanguageChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SettingsSection(
+          icon: LucideIcons.palette,
+          title: l10n.t('appearance'),
+          child: _PreferenceOptionGroup<ThemeMode>(
+            value: prefs.themeMode,
+            onChanged: onThemeChanged,
+            options: [
+              _PreferenceOption(
+                value: ThemeMode.system,
+                label: l10n.t('system'),
+                icon: LucideIcons.monitorCog,
+              ),
+              _PreferenceOption(
+                value: ThemeMode.light,
+                label: l10n.t('light'),
+                icon: LucideIcons.sun,
+              ),
+              _PreferenceOption(
+                value: ThemeMode.dark,
+                label: l10n.t('dark'),
+                icon: LucideIcons.moon,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        _SettingsSection(
+          icon: LucideIcons.languages,
+          title: l10n.t('language'),
+          child: _PreferenceOptionGroup<String>(
+            value: prefs.languageCode,
+            onChanged: onLanguageChanged,
+            options: [
+              _PreferenceOption(
+                value: 'en',
+                label: l10n.t('english'),
+                icon: LucideIcons.languages,
+              ),
+              _PreferenceOption(
+                value: 'de',
+                label: l10n.t('german'),
+                icon: LucideIcons.messageSquareText,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -201,6 +410,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = ref.watch(l10nProvider);
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: widget.inset,
@@ -228,7 +438,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Plan',
+                        l10n.t('plan'),
                         style: Theme.of(context)
                             .textTheme
                             .titleLarge
@@ -247,7 +457,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  _planTitle(plan),
+                  _planTitle(plan, l10n),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                         fontWeight: FontWeight.w700,
@@ -256,8 +466,8 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                 const SizedBox(height: 18),
                 _PlanOptionCard(
                   title: 'Essential',
-                  price: '18 €/Jahr',
-                  description: '1,50 €/Monat, jährlich abgerechnet',
+                  price: l10n.t('essentialAnnual'),
+                  description: l10n.t('essentialBilling'),
                   icon: LucideIcons.badgeCheck,
                   selected: plan == 'essential',
                   busy: _busyPlan == 'essential',
@@ -268,8 +478,8 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                 const SizedBox(height: 10),
                 _PlanOptionCard(
                   title: 'Pro',
-                  price: '60 €/Jahr',
-                  description: '5 €/Monat, mehr Speicher und Kollaboration',
+                  price: l10n.t('proAnnual'),
+                  description: l10n.t('proBilling'),
                   icon: LucideIcons.crown,
                   selected: plan == 'pro',
                   busy: _busyPlan == 'pro',
@@ -287,14 +497,15 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
     );
   }
 
-  String _planTitle(String plan) {
-    return switch (plan) {
-      'essential' => 'Aktuell: Essential',
-      'pro' => 'Aktuell: Pro',
-      'team' => 'Aktuell: Team',
-      'enterprise' => 'Aktuell: Enterprise',
-      _ => 'Aktuell: Free',
+  String _planTitle(String plan, AppL10n l10n) {
+    final name = switch (plan) {
+      'essential' => 'Essential',
+      'pro' => 'Pro',
+      'team' => 'Team',
+      'enterprise' => 'Enterprise',
+      _ => 'Free',
     };
+    return l10n.t('currentPlan', params: {'plan': name});
   }
 
   Future<void> _startCheckout(String plan) async {
@@ -311,7 +522,10 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
       if (!mounted) return;
       if (session.checkoutUrl == null || session.checkoutUrl!.isEmpty) {
         setState(() {
-          _error = 'Checkout ist noch nicht konfiguriert (${session.status}).';
+          _error = ref.read(l10nProvider).t(
+            'checkoutUnavailable',
+            params: {'status': session.status},
+          );
         });
         return;
       }
@@ -330,9 +544,10 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
     return showDialog<void>(
       context: context,
       builder: (context) {
+        final l10n = ref.read(l10nProvider);
         final scheme = Theme.of(context).colorScheme;
         return AlertDialog(
-          title: const Text('Checkout öffnen'),
+          title: Text(l10n.t('checkoutOpen')),
           content: SelectableText(
             checkoutUrl,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -342,7 +557,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Schließen'),
+              child: Text(l10n.t('close')),
             ),
             FilledButton.icon(
               onPressed: () async {
@@ -350,7 +565,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                 if (context.mounted) Navigator.of(context).pop();
               },
               icon: const Icon(LucideIcons.copy, size: 16),
-              label: const Text('Link kopieren'),
+              label: Text(l10n.t('copyLink')),
             ),
           ],
         );
@@ -380,6 +595,9 @@ class _PlanOptionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n(
+      Localizations.localeOf(context).languageCode,
+    );
     final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(14),
@@ -423,7 +641,7 @@ class _PlanOptionCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _SettingsActionButton(
-            label: selected ? 'Aktiver Plan' : 'Auswählen',
+            label: l10n.t(selected ? 'activePlan' : 'selectPlan'),
             icon: selected ? LucideIcons.check : LucideIcons.arrowUpRight,
             busy: busy,
             onPressed: selected ? null : onPressed,

@@ -12,7 +12,9 @@ import 'package:safernotes_app/shared/api/api_client.dart';
 import 'package:safernotes_app/shared/models/note.dart';
 import 'package:safernotes_app/shared/notifications/reminder_notifications.dart';
 import 'package:safernotes_app/shared/providers.dart';
+import 'package:safernotes_app/shared/theme/app_theme.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
+import 'package:safernotes_app/shared/widgets/safernotes_logo.dart';
 
 final noteSearchProvider = StateProvider<String>((ref) => '');
 final sideNavExpandedProvider = StateProvider<bool>((ref) => true);
@@ -57,7 +59,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       );
       if (!mounted) return;
       if (invitation['status'] != 'pending') {
-        _showInvitationMessage('Diese Einladung ist nicht mehr offen.');
+        _showInvitationMessage(ref.read(l10nProvider).t('invitationClosed'));
         return;
       }
       final decision = await showDialog<_InvitationDecision>(
@@ -78,8 +80,8 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       if (mounted) {
         _showInvitationMessage(
           decision == _InvitationDecision.accept
-              ? 'Einladung angenommen.'
-              : 'Einladung abgelehnt.',
+              ? ref.read(l10nProvider).t('invitationAccepted')
+              : ref.read(l10nProvider).t('invitationDeclined'),
         );
       }
     } catch (error) {
@@ -120,13 +122,13 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   String _invitationErrorMessage(Object error) {
     if (error is TimeoutException ||
         error is ApiException && error.statusCode == 0) {
-      return 'Der Server ist gerade nicht erreichbar.';
+      return ref.read(l10nProvider).t('serverUnreachable');
     }
     if (error is ApiException && error.statusCode == 404) {
-      return 'Diese Einladung wurde nicht gefunden oder gehört zu einem anderen Konto.';
+      return ref.read(l10nProvider).t('invitationNotFound');
     }
     if (error is ApiException) return error.message;
-    return 'Einladung konnte nicht geöffnet werden.';
+    return ref.read(l10nProvider).t('invitationOpenFailed');
   }
 
   @override
@@ -154,7 +156,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             ? Row(
                 children: [
                   AppIconButton(
-                    tooltip: 'Menü',
+                    tooltip: l10n.t('menu'),
                     icon: LucideIcons.panelLeft,
                     onPressed: () {
                       final expanded = ref.read(sideNavExpandedProvider);
@@ -163,22 +165,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     },
                   ),
                   const SizedBox(width: 8),
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withValues(alpha: 0.78),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      LucideIcons.notebookText,
-                      color: Theme.of(context).colorScheme.onSurface,
-                      size: 19,
-                    ),
-                  ),
+                  const SafernotesLogo(size: 38),
                   if (showLogoText) ...[
                     const SizedBox(width: 12),
                     Text(
@@ -199,7 +186,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                     width: 42,
                     child: Center(
                       child: AppIconButton(
-                        tooltip: 'Menü',
+                        tooltip: l10n.t('menu'),
                         icon: LucideIcons.menu,
                         onPressed: () => _showNavigationSheet(context, ref),
                       ),
@@ -237,8 +224,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           : _CreateNoteFab(
               onNewNote: () =>
                   _createNoteFromAction(context, ref, _CreateAction.note),
-              onNewReminder: () =>
-                  _createNoteFromAction(context, ref, _CreateAction.reminder),
+              onNewReminder: () => unawaited(_startReminderFlow(context, ref)),
               onNewList: () =>
                   _createNoteFromAction(context, ref, _CreateAction.list),
             ),
@@ -269,6 +255,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   }
 
   void _scheduleReminders(List<PlainNote> notes) {
+    final l10n = ref.read(l10nProvider);
     final now = DateTime.now();
     final nextIds = <String>{};
     for (final note in notes) {
@@ -280,14 +267,14 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       if (_reminderTimers.containsKey(key)) continue;
       unawaited(scheduleReminderNotification(
         reminderId: key,
-        title: note.title.trim().isEmpty ? 'Erinnerung' : note.title,
+        title: note.title.trim().isEmpty ? l10n.t('reminder') : note.title,
         body: _reminderBody(note),
         scheduledAt: reminderAt,
       ));
       _reminderTimers[key] = Timer(reminderAt.difference(now), () async {
         _reminderTimers.remove(key);
         final shown = await showReminderNotification(
-          title: note.title.trim().isEmpty ? 'Erinnerung' : note.title,
+          title: note.title.trim().isEmpty ? l10n.t('reminder') : note.title,
           body: _reminderBody(note),
         );
         if (!shown && mounted) {
@@ -295,11 +282,14 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
             SnackBar(
               content: Text(
                 note.title.trim().isEmpty
-                    ? 'Erinnerung'
-                    : 'Erinnerung: ${note.title}',
+                    ? l10n.t('reminder')
+                    : l10n.t(
+                        'reminderNotificationTitle',
+                        params: {'title': note.title},
+                      ),
               ),
               action: SnackBarAction(
-                label: 'Öffnen',
+                label: l10n.t('open'),
                 onPressed: () => _openEditor(context, ref, note),
               ),
             ),
@@ -326,7 +316,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
         .map((item) => item.text.trim())
         .take(3)
         .join(', ');
-    return checklist.isEmpty ? 'Zeit für deine Notiz.' : checklist;
+    return checklist.isEmpty
+        ? ref.read(l10nProvider).t('reminderDefaultBody')
+        : checklist;
   }
 }
 
@@ -339,32 +331,24 @@ class _InvitationDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final german = Localizations.localeOf(context).languageCode == 'de';
+    final l10n = AppL10n(Localizations.localeOf(context).languageCode);
     final canEdit = role == 'editor';
     return AlertDialog(
       icon: const Icon(LucideIcons.userRoundPlus),
-      title: Text(german ? 'Einladung zu einer Notiz' : 'Note invitation'),
-      content: Text(
-        german
-            ? canEdit
-                ? 'Du wurdest eingeladen, eine verschlüsselte Notiz anzusehen und zu bearbeiten.'
-                : 'Du wurdest eingeladen, eine verschlüsselte Notiz anzusehen.'
-            : canEdit
-                ? 'You were invited to view and edit an encrypted note.'
-                : 'You were invited to view an encrypted note.',
-      ),
+      title: Text(l10n.t('noteInvitation')),
+      content: Text(l10n.t(canEdit ? 'invitedToEdit' : 'invitedToView')),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(
             _InvitationDecision.decline,
           ),
-          child: Text(german ? 'Ablehnen' : 'Decline'),
+          child: Text(l10n.t('decline')),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(
             _InvitationDecision.accept,
           ),
-          child: Text(german ? 'Annehmen' : 'Accept'),
+          child: Text(l10n.t('accept')),
         ),
       ],
     );
@@ -681,21 +665,21 @@ class _SideRail extends ConsumerWidget {
           _RailButton(
             bucket: 'reminders',
             icon: LucideIcons.bell,
-            label: 'Erinnerungen',
+            label: l10n.t('reminders'),
             expanded: expanded,
           ),
           const SizedBox(height: 6),
           _RailButton(
             bucket: 'archived',
             icon: LucideIcons.archive,
-            label: 'Archiv',
+            label: l10n.t('archive'),
             expanded: expanded,
           ),
           const SizedBox(height: 6),
           _RailButton(
             bucket: 'trashed',
             icon: LucideIcons.trash,
-            label: 'Papierkorb',
+            label: l10n.t('trash'),
             expanded: expanded,
           ),
         ],
@@ -712,7 +696,10 @@ class _RailCreateButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final create = _createIntentFor(ref.watch(noteBucketProvider));
+    final create = _createIntentFor(
+      ref.watch(noteBucketProvider),
+      ref.watch(l10nProvider),
+    );
     if (create == null) return const SizedBox.shrink();
     return Tooltip(
       message: create.label,
@@ -859,15 +846,15 @@ class _MobileBottomNav extends ConsumerWidget {
           selectedIcon: const Icon(LucideIcons.notebookText),
           label: l10n.t('notes'),
         ),
-        const NavigationDestination(
-          icon: Icon(LucideIcons.bell),
-          selectedIcon: Icon(LucideIcons.bell),
-          label: 'Erinnerungen',
+        NavigationDestination(
+          icon: const Icon(LucideIcons.bell),
+          selectedIcon: const Icon(LucideIcons.bell),
+          label: l10n.t('reminders'),
         ),
-        const NavigationDestination(
-          icon: Icon(LucideIcons.trash),
-          selectedIcon: Icon(LucideIcons.trash),
-          label: 'Papierkorb',
+        NavigationDestination(
+          icon: const Icon(LucideIcons.trash),
+          selectedIcon: const Icon(LucideIcons.trash),
+          label: l10n.t('trash'),
         ),
         NavigationDestination(
           icon: const Icon(LucideIcons.settings),
@@ -897,6 +884,7 @@ class _SearchField extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 760),
@@ -904,7 +892,7 @@ class _SearchField extends ConsumerWidget {
           onChanged: (value) =>
               ref.read(noteSearchProvider.notifier).state = value,
           decoration: InputDecoration(
-            hintText: 'Search notes',
+            hintText: l10n.t('searchNotes'),
             prefixIcon: Padding(
               padding: EdgeInsets.only(left: compact ? 8 : 4),
               child: const Icon(LucideIcons.search, size: 19),
@@ -945,13 +933,57 @@ class _SearchField extends ConsumerWidget {
   }
 }
 
-class _EmailVerificationBanner extends ConsumerWidget {
+class _EmailVerificationBanner extends ConsumerStatefulWidget {
   const _EmailVerificationBanner({required this.email});
 
   final String email;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_EmailVerificationBanner> createState() =>
+      _EmailVerificationBannerState();
+}
+
+class _EmailVerificationBannerState
+    extends ConsumerState<_EmailVerificationBanner> {
+  Timer? _statusTimer;
+  AppLifecycleListener? _lifecycleListener;
+  var _refreshing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycleListener = AppLifecycleListener(onResume: _refreshStatus);
+    _statusTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _refreshStatus(),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshStatus());
+  }
+
+  @override
+  void dispose() {
+    _statusTimer?.cancel();
+    _lifecycleListener?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshStatus() async {
+    if (!mounted || _refreshing) return;
+    _refreshing = true;
+    try {
+      await ref
+          .read(authControllerProvider.notifier)
+          .refreshEmailVerificationStatus();
+    } on ApiException {
+      // The banner remains available while the device is offline.
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = ref.watch(l10nProvider);
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
@@ -960,7 +992,7 @@ class _EmailVerificationBanner extends ConsumerWidget {
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () => _showEmailVerificationDialog(context, ref, email),
+          onTap: () => _showEmailVerificationDialog(context, ref, widget.email),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(
@@ -970,7 +1002,7 @@ class _EmailVerificationBanner extends ConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Bitte bestätige deine E-Mail-Adresse.',
+                    l10n.t('emailConfirmBanner'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -980,7 +1012,7 @@ class _EmailVerificationBanner extends ConsumerWidget {
                 ),
                 const SizedBox(width: 10),
                 Text(
-                  'Code eingeben',
+                  l10n.t('enterCode'),
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                         color: scheme.primary,
                         fontWeight: FontWeight.w800,
@@ -1031,6 +1063,7 @@ class _EmailVerificationDialogState
 
   @override
   Widget build(BuildContext context) {
+    final l10n = ref.watch(l10nProvider);
     final scheme = Theme.of(context).colorScheme;
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -1062,7 +1095,7 @@ class _EmailVerificationDialogState
                     const SizedBox(width: 14),
                     Expanded(
                       child: Text(
-                        'E-Mail bestätigen',
+                        l10n.t('emailConfirmTitle'),
                         style: Theme.of(context)
                             .textTheme
                             .titleLarge
@@ -1070,7 +1103,7 @@ class _EmailVerificationDialogState
                       ),
                     ),
                     AppIconButton(
-                      tooltip: 'Schließen',
+                      tooltip: l10n.t('close'),
                       icon: LucideIcons.x,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
@@ -1078,7 +1111,10 @@ class _EmailVerificationDialogState
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Gib den sechsstelligen Code ein, den wir an ${widget.email} gesendet haben.',
+                  l10n.t(
+                    'emailConfirmDescription',
+                    params: {'email': widget.email},
+                  ),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                         height: 1.35,
@@ -1121,7 +1157,7 @@ class _EmailVerificationDialogState
                       child: OutlinedButton.icon(
                         onPressed: _busy ? null : _resend,
                         icon: const Icon(LucideIcons.send),
-                        label: const Text('Neu senden'),
+                        label: Text(l10n.t('resend')),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1135,7 +1171,7 @@ class _EmailVerificationDialogState
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(LucideIcons.circleCheck),
-                        label: const Text('Bestätigen'),
+                        label: Text(l10n.t('confirm')),
                       ),
                     ),
                   ],
@@ -1156,12 +1192,14 @@ class _EmailVerificationDialogState
     });
     try {
       await ref.read(authControllerProvider.notifier).resendEmailVerification();
-      if (mounted) setState(() => _message = 'Code wurde erneut gesendet.');
+      if (mounted) {
+        setState(() => _message = ref.read(l10nProvider).t('codeResent'));
+      }
     } catch (error) {
       if (mounted) {
         setState(() => _error = _mailErrorMessage(
               error,
-              fallback: 'Code konnte nicht gesendet werden.',
+              fallback: ref.read(l10nProvider).t('codeSendFailed'),
             ));
       }
     } finally {
@@ -1172,7 +1210,7 @@ class _EmailVerificationDialogState
   Future<void> _confirm() async {
     final code = _code.text.trim();
     if (code.length < 6) {
-      setState(() => _error = 'Bitte gib den vollständigen Code ein.');
+      setState(() => _error = ref.read(l10nProvider).t('completeCode'));
       return;
     }
     setState(() {
@@ -1189,7 +1227,7 @@ class _EmailVerificationDialogState
       if (mounted) {
         setState(() => _error = _mailErrorMessage(
               error,
-              fallback: 'Der Code ist ungültig.',
+              fallback: ref.read(l10nProvider).t('invalidCode'),
             ));
       }
     } finally {
@@ -1260,6 +1298,7 @@ class _CreateNoteFabState extends State<_CreateNoteFab>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n(Localizations.localeOf(context).languageCode);
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
@@ -1281,28 +1320,28 @@ class _CreateNoteFabState extends State<_CreateNoteFab>
             animation: _curve,
             index: 2,
             icon: LucideIcons.listChecks,
-            label: 'Neue Liste',
+            label: l10n.t('newChecklist'),
             onTap: () => _run(widget.onNewList),
           ),
           _FabOption(
             animation: _curve,
             index: 1,
             icon: LucideIcons.bellPlus,
-            label: 'Neue Erinnerung',
+            label: l10n.t('setReminder'),
             onTap: () => _run(widget.onNewReminder),
           ),
           _FabOption(
             animation: _curve,
             index: 0,
             icon: LucideIcons.filePlus2,
-            label: 'Neue Notiz',
+            label: l10n.t('newNote'),
             onTap: () => _run(widget.onNewNote),
           ),
           SizedBox(
             width: 66,
             height: 66,
             child: FloatingActionButton(
-              tooltip: 'Erstellen',
+              tooltip: l10n.t('create'),
               elevation: _open ? 1 : 3,
               backgroundColor: _open
                   ? scheme.onSurface
@@ -1433,8 +1472,9 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
   @override
   Widget build(BuildContext context) {
     final note = widget.note;
+    final l10n = AppL10n(Localizations.localeOf(context).languageCode);
     final scheme = Theme.of(context).colorScheme;
-    final bg = _noteColorFor(context, note.color);
+    final bg = brandNoteSurfaceColor(context, note.color);
     final isPlainWhite = note.color == 0xffffffff;
     final showHoverActions = MediaQuery.sizeOf(context).width >= 700;
     return MouseRegion(
@@ -1492,7 +1532,8 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                           opacity: _hovered || note.pinned ? 1 : 0,
                           duration: const Duration(milliseconds: 120),
                           child: AppIconButton(
-                            tooltip: note.pinned ? 'Loslösen' : 'Anheften',
+                            tooltip:
+                                note.pinned ? l10n.t('unpin') : l10n.t('pin'),
                             icon: note.pinned
                                 ? LucideIcons.pin
                                 : LucideIcons.pinOff,
@@ -1520,19 +1561,19 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                           if (note.conflicted)
                             _MetaPill(
                               icon: LucideIcons.circleAlert,
-                              label: 'Conflict',
+                              label: l10n.t('conflict'),
                               color: scheme.error,
                             ),
                           if (note.dirty)
                             _MetaPill(
                               icon: LucideIcons.cloudUpload,
-                              label: 'Saving',
-                              color: scheme.primary,
+                              label: l10n.t('synced'),
+                              color: scheme.tertiary,
                             ),
                           if (note.reminderAt != null)
                             _MetaPill(
                               icon: LucideIcons.bell,
-                              label: _formatReminder(note.reminderAt!),
+                              label: _formatReminder(note.reminderAt!, l10n),
                               color: scheme.primary,
                             ),
                           const Spacer(),
@@ -1545,38 +1586,38 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                                 children: [
                                   if (note.state != 'active')
                                     AppIconButton(
-                                      tooltip: 'Wiederherstellen',
+                                      tooltip: l10n.t('restore'),
                                       icon: LucideIcons.rotateCcw,
                                       onPressed: widget.onRestore,
                                     ),
                                   if (note.state == 'active')
                                     AppIconButton(
-                                      tooltip: 'Archivieren',
+                                      tooltip: l10n.t('archiveAction'),
                                       icon: LucideIcons.archive,
                                       onPressed: widget.onArchive,
                                     ),
                                   if (note.state == 'active' &&
                                       note.reminderAt == null)
                                     AppIconButton(
-                                      tooltip: 'Mitarbeiter einladen',
+                                      tooltip: l10n.t('collaboratorInvite'),
                                       icon: LucideIcons.userPlus,
                                       onPressed: widget.onInvite,
                                     ),
                                   if (note.state != 'trashed')
                                     AppIconButton(
-                                      tooltip: 'Erinnerung',
+                                      tooltip: l10n.t('reminder'),
                                       icon: LucideIcons.bell,
                                       onPressed: widget.onReminder,
                                     ),
                                   if (note.state != 'trashed')
                                     AppIconButton(
-                                      tooltip: 'Papierkorb',
+                                      tooltip: l10n.t('trash'),
                                       icon: LucideIcons.trash,
                                       onPressed: widget.onTrash,
                                     )
                                   else
                                     AppIconButton(
-                                      tooltip: 'Endgültig löschen',
+                                      tooltip: l10n.t('deleteForever'),
                                       icon: LucideIcons.trash2,
                                       onPressed: widget.onDeleteForever,
                                     ),
@@ -1681,19 +1722,6 @@ class _NoteDragFeedback extends StatelessWidget {
       ),
     );
   }
-}
-
-Color _noteColorFor(BuildContext context, int color) {
-  final dark = Theme.of(context).brightness == Brightness.dark;
-  if (!dark) return Color(color);
-  return switch (color) {
-    0xfffef3c7 => const Color(0xff3a2f13),
-    0xffdcfce7 => const Color(0xff173322),
-    0xffdbeafe => const Color(0xff173344),
-    0xfffce7f3 => const Color(0xff3a1830),
-    0xffede9fe => const Color(0xff2b2146),
-    _ => Theme.of(context).colorScheme.surfaceContainerLow,
-  };
 }
 
 class _ChecklistPreview extends StatelessWidget {
@@ -1910,14 +1938,14 @@ class _MetaPill extends StatelessWidget {
   }
 }
 
-String _formatReminder(DateTime value) {
+String _formatReminder(DateTime value, [AppL10n? l10n]) {
   final local = value.toLocal();
   final now = DateTime.now();
   final sameDay = local.year == now.year &&
       local.month == now.month &&
       local.day == now.day;
   final date = sameDay
-      ? 'Heute'
+      ? (l10n?.t('today') ?? 'Today')
       : '${local.day.toString().padLeft(2, '0')}.${local.month.toString().padLeft(2, '0')}.';
   final time =
       '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
@@ -1937,7 +1965,7 @@ class _SyncIndicator extends ConsumerWidget {
       SyncStatus.saved => (
           LucideIcons.cloudCheck,
           l10n.t('saved'),
-          Theme.of(context).colorScheme.onSurfaceVariant
+          Theme.of(context).colorScheme.tertiary
         ),
       SyncStatus.saving => (
           LucideIcons.clock3,
@@ -2058,10 +2086,11 @@ void _openSettings(BuildContext context) {
 }
 
 void _showNavigationSheet(BuildContext context, WidgetRef ref) {
+  final l10n = ref.read(l10nProvider);
   showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Menü schließen',
+    barrierLabel: l10n.t('closeMenu'),
     barrierColor: Colors.black.withValues(alpha: 0.32),
     transitionDuration: const Duration(milliseconds: 260),
     pageBuilder: (context, _, __) => Align(
@@ -2099,21 +2128,7 @@ class _NavigationSideSheet extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        LucideIcons.notebookText,
-                        color: Theme.of(context).colorScheme.onSurface,
-                        size: 20,
-                      ),
-                    ),
+                    const SafernotesLogo(size: 38),
                     const SizedBox(width: 12),
                     Text(
                       l10n.t('appName'),
@@ -2123,7 +2138,7 @@ class _NavigationSideSheet extends ConsumerWidget {
                     ),
                     const Spacer(),
                     AppIconButton(
-                      tooltip: 'Schließen',
+                      tooltip: l10n.t('close'),
                       icon: LucideIcons.x,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
@@ -2140,17 +2155,17 @@ class _NavigationSideSheet extends ConsumerWidget {
                     _MobileMenuButton(
                       bucket: 'reminders',
                       icon: LucideIcons.bell,
-                      label: 'Erinnerungen',
+                      label: l10n.t('reminders'),
                     ),
                     _MobileMenuButton(
                       bucket: 'archived',
                       icon: LucideIcons.archive,
-                      label: 'Archiv',
+                      label: l10n.t('archive'),
                     ),
                     _MobileMenuButton(
                       bucket: 'trashed',
                       icon: LucideIcons.trash,
-                      label: 'Papierkorb',
+                      label: l10n.t('trash'),
                     ),
                   ],
                 ),
@@ -2295,10 +2310,11 @@ class _MenuActionRowState extends State<_MenuActionRow> {
 }
 
 void _showAccountSideSheet(BuildContext context, WidgetRef ref, String email) {
+  final l10n = ref.read(l10nProvider);
   showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
-    barrierLabel: 'Account schliessen',
+    barrierLabel: l10n.t('closeAccount'),
     barrierColor: Colors.black.withValues(alpha: 0.34),
     transitionDuration: const Duration(milliseconds: 280),
     pageBuilder: (context, _, __) => Align(
@@ -2322,6 +2338,7 @@ class _AccountSideSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
     final initial = email.isEmpty ? '?' : email.substring(0, 1).toUpperCase();
     final scheme = Theme.of(context).colorScheme;
     return Material(
@@ -2338,13 +2355,13 @@ class _AccountSideSheet extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    Text('Profil',
+                    Text(l10n.t('profile'),
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                               fontWeight: FontWeight.w800,
                             )),
                     const Spacer(),
                     AppIconButton(
-                      tooltip: 'Schließen',
+                      tooltip: l10n.t('close'),
                       icon: LucideIcons.x,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
@@ -2377,7 +2394,7 @@ class _AccountSideSheet extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            email.isEmpty ? 'Lokaler Account' : email,
+                            email.isEmpty ? l10n.t('localAccount') : email,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
@@ -2392,7 +2409,7 @@ class _AccountSideSheet extends ConsumerWidget {
                                   size: 15, color: scheme.onSurfaceVariant),
                               const SizedBox(width: 6),
                               Text(
-                                'Angemeldet',
+                                l10n.t('signedIn'),
                                 style: Theme.of(context)
                                     .textTheme
                                     .bodyMedium
@@ -2415,7 +2432,7 @@ class _AccountSideSheet extends ConsumerWidget {
                 const SizedBox(height: 12),
                 _AccountActionTile(
                   icon: LucideIcons.settings,
-                  label: 'Einstellungen',
+                  label: l10n.t('settings'),
                   onTap: () {
                     Navigator.of(context).pop();
                     _openSettings(context);
@@ -2423,7 +2440,7 @@ class _AccountSideSheet extends ConsumerWidget {
                 ),
                 _AccountActionTile(
                   icon: LucideIcons.logOut,
-                  label: 'Logout',
+                  label: l10n.t('logout'),
                   destructive: true,
                   onTap: () {
                     Navigator.of(context).pop();
@@ -2590,7 +2607,7 @@ class _InviteSheetState extends ConsumerState<_InviteSheet> {
   Future<void> _invite() async {
     final recipient = _recipient.text.trim();
     if (recipient.isEmpty) {
-      setState(() => _error = 'Bitte gib eine E-Mail oder User-ID ein.');
+      setState(() => _error = ref.read(l10nProvider).t('recipientRequired'));
       return;
     }
     setState(() {
@@ -2616,17 +2633,18 @@ class _InviteSheetState extends ConsumerState<_InviteSheet> {
   }
 
   String _friendlyInviteError(Object error) {
+    final l10n = ref.read(l10nProvider);
     final text = error.toString();
     if (text.contains('No user found')) {
-      return 'Kein Nutzer mit dieser E-Mail oder User-ID gefunden.';
+      return l10n.t('userNotFound');
     }
     if (text.contains('Only note owners')) {
-      return 'Nur Besitzer dieser Notiz können Mitarbeiter einladen.';
+      return l10n.t('ownerInviteOnly');
     }
     if (text.contains('recipient_user')) {
-      return 'Bitte prüfe die E-Mail oder User-ID.';
+      return l10n.t('checkRecipient');
     }
-    return 'Einladen ist fehlgeschlagen. Bitte versuche es erneut.';
+    return l10n.t('inviteFailed');
   }
 }
 
@@ -2655,6 +2673,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n(Localizations.localeOf(context).languageCode);
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.only(
@@ -2697,7 +2716,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Mitarbeiter einladen',
+                              l10n.t('collaboratorInvite'),
                               style: Theme.of(context)
                                   .textTheme
                                   .titleLarge
@@ -2707,7 +2726,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                             ),
                           ),
                           AppIconButton(
-                            tooltip: 'Schließen',
+                            tooltip: l10n.t('close'),
                             icon: LucideIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
@@ -2718,7 +2737,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                         controller: recipient,
                         autofocus: true,
                         decoration: InputDecoration(
-                          hintText: 'User ID oder E-Mail',
+                          hintText: l10n.t('userIdOrEmail'),
                           prefixIcon: const Icon(LucideIcons.atSign, size: 18),
                           filled: true,
                           fillColor: scheme.surfaceContainerHighest
@@ -2752,7 +2771,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                             child: _InviteRoleTile(
                               selected: role == 'editor',
                               icon: LucideIcons.edit3,
-                              label: 'Bearbeiten',
+                              label: l10n.t('canEdit'),
                               onTap: () => onRoleChanged('editor'),
                             ),
                           ),
@@ -2761,7 +2780,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                             child: _InviteRoleTile(
                               selected: role == 'viewer',
                               icon: LucideIcons.eye,
-                              label: 'Nur lesen',
+                              label: l10n.t('readOnly'),
                               onTap: () => onRoleChanged('viewer'),
                             ),
                           ),
@@ -2787,7 +2806,9 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(LucideIcons.send),
-                        label: Text(busy ? 'Wird eingeladen' : 'Einladen'),
+                        label: Text(
+                          busy ? l10n.t('inviting') : l10n.t('invite'),
+                        ),
                       ),
                     ],
                   ),
@@ -2814,6 +2835,7 @@ class _RecentInviteContacts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n(Localizations.localeOf(context).languageCode);
     final scheme = Theme.of(context).colorScheme;
     if (loading) {
       return Align(
@@ -2832,7 +2854,7 @@ class _RecentInviteContacts extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'Kontakte laden',
+                l10n.t('contactsLoading'),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -2856,8 +2878,8 @@ class _RecentInviteContacts extends StatelessWidget {
             ),
             label: Text(contact.email),
             tooltip: contact.lastDirection == 'received'
-                ? 'Hat dich schon eingeladen'
-                : 'Schon eingeladen',
+                ? l10n.t('invitedYouAlready')
+                : l10n.t('alreadyInvited'),
             onPressed: () => onSelected(contact),
           ),
       ],
@@ -2943,23 +2965,293 @@ Future<void> _showReminderSheet(
   );
 }
 
+Future<void> _startReminderFlow(BuildContext context, WidgetRef ref) async {
+  final notes = ref.read(notesControllerProvider).valueOrNull ?? const [];
+  final candidates = notes
+      .where((note) =>
+          note.state == 'active' &&
+          note.reminderAt == null &&
+          note.state != 'deleted' &&
+          note.state != 'trashed')
+      .toList()
+    ..sort((a, b) {
+      if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
+  final selected = await showModalBottomSheet<PlainNote>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _ReminderNotePicker(notes: candidates),
+  );
+  if (selected == null || !context.mounted) return;
+  await _showReminderSheet(context, ref, selected);
+}
+
+class _ReminderNotePicker extends StatefulWidget {
+  const _ReminderNotePicker({required this.notes});
+
+  final List<PlainNote> notes;
+
+  @override
+  State<_ReminderNotePicker> createState() => _ReminderNotePickerState();
+}
+
+class _ReminderNotePickerState extends State<_ReminderNotePicker> {
+  final _search = TextEditingController();
+  var _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final l10n = AppL10n(Localizations.localeOf(context).languageCode);
+    final filtered = widget.notes.where((note) {
+      if (_query.isEmpty) return true;
+      final checklist = note.checklist.map((item) => item.text).join(' ');
+      return '${note.title} ${note.body} $checklist'
+          .toLowerCase()
+          .contains(_query);
+    }).toList();
+    final height = (MediaQuery.sizeOf(context).height * 0.72)
+        .clamp(360.0, 640.0)
+        .toDouble();
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 12,
+        right: 12,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 12,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: SizedBox(
+                key: const ValueKey('reminder-note-picker'),
+                height: height,
+                child: Material(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  borderRadius: BorderRadius.circular(20),
+                  clipBehavior: Clip.antiAlias,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(LucideIcons.bellPlus,
+                                size: 21, color: scheme.onSurface),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                l10n.t('chooseNote'),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                            AppIconButton(
+                              tooltip: l10n.t('close'),
+                              icon: LucideIcons.x,
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        TextField(
+                          key: const ValueKey('reminder-note-search'),
+                          controller: _search,
+                          onChanged: (value) => setState(
+                              () => _query = value.trim().toLowerCase()),
+                          decoration: InputDecoration(
+                            hintText: l10n.t('searchNotes'),
+                            prefixIcon:
+                                const Icon(LucideIcons.search, size: 18),
+                            filled: true,
+                            fillColor: scheme.surfaceContainerHighest
+                                .withValues(alpha: 0.46),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: filtered.isEmpty
+                              ? _ReminderPickerEmptyState(
+                                  searchEmpty: widget.notes.isNotEmpty,
+                                  l10n: l10n,
+                                )
+                              : ListView.builder(
+                                  itemCount: filtered.length,
+                                  itemBuilder: (context, index) {
+                                    final note = filtered[index];
+                                    return _ReminderNoteRow(
+                                      key: ValueKey(
+                                          'reminder-note-${note.localId}'),
+                                      note: note,
+                                      l10n: l10n,
+                                      onTap: () =>
+                                          Navigator.of(context).pop(note),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReminderNoteRow extends StatelessWidget {
+  const _ReminderNoteRow({
+    super.key,
+    required this.note,
+    required this.l10n,
+    required this.onTap,
+  });
+
+  final PlainNote note;
+  final AppL10n l10n;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final title = _reminderNoteTitle(note, l10n);
+    final preview = _reminderNotePreview(note, l10n);
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 11),
+        child: Row(
+          children: [
+            SizedBox.square(
+              dimension: 40,
+              child: Icon(
+                note.checklist.isEmpty
+                    ? LucideIcons.notebookText
+                    : LucideIcons.listChecks,
+                size: 19,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    preview,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Icon(LucideIcons.chevronRight,
+                size: 18, color: scheme.onSurfaceVariant),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReminderPickerEmptyState extends StatelessWidget {
+  const _ReminderPickerEmptyState({
+    required this.searchEmpty,
+    required this.l10n,
+  });
+
+  final bool searchEmpty;
+  final AppL10n l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          l10n.t(searchEmpty ? 'noMatchingNote' : 'createNoteFirst'),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+      ),
+    );
+  }
+}
+
+String _reminderNotePreview(PlainNote note, AppL10n l10n) {
+  if (note.body.trim().isNotEmpty) return note.body.trim();
+  final checklist = note.checklist
+      .where((item) => item.text.trim().isNotEmpty)
+      .map((item) => item.text.trim())
+      .take(3)
+      .join(', ');
+  if (checklist.isNotEmpty) return checklist;
+  return l10n.t('emptyNote');
+}
+
+String _reminderNoteTitle(PlainNote note, AppL10n l10n) {
+  if (note.title.trim().isEmpty || note.title == 'Untitled note') {
+    return l10n.t('untitledNote');
+  }
+  return note.title.trim();
+}
+
 Future<bool?> _confirmDuplicateReminder(BuildContext context) {
+  final l10n = AppL10n(Localizations.localeOf(context).languageCode);
   return showDialog<bool>(
     context: context,
     builder: (context) {
       return AlertDialog(
-        title: const Text('Geteilte Notiz'),
-        content: const Text(
-          'Erinnerungen sind lokal und können nicht mit Mitarbeitern geteilt werden. Du kannst abbrechen oder eine persönliche Kopie als Erinnerung erstellen.',
-        ),
+        title: Text(l10n.t('sharedNote')),
+        content: Text(l10n.t('sharedReminderDescription')),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Abbrechen'),
+            child: Text(l10n.t('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Als Erinnerung duplizieren'),
+            child: Text(l10n.t('duplicateAsReminder')),
           ),
         ],
       );
@@ -2988,6 +3280,7 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l10n = ref.watch(l10nProvider);
     return Padding(
       padding: EdgeInsets.only(
         left: 12,
@@ -3029,7 +3322,7 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Erinnerung',
+                              l10n.t('reminder'),
                               style: Theme.of(context)
                                   .textTheme
                                   .titleLarge
@@ -3037,16 +3330,26 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
                             ),
                           ),
                           AppIconButton(
-                            tooltip: 'Schließen',
+                            tooltip: l10n.t('close'),
                             icon: LucideIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 12),
+                      Text(
+                        _reminderNoteTitle(widget.note, l10n),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 16),
                       _ReminderPickTile(
                         icon: LucideIcons.calendar,
-                        label: 'Datum',
+                        label: l10n.t('date'),
                         value:
                             '${_selected.day.toString().padLeft(2, '0')}.${_selected.month.toString().padLeft(2, '0')}.${_selected.year}',
                         onTap: _pickDate,
@@ -3054,7 +3357,7 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
                       const SizedBox(height: 10),
                       _ReminderPickTile(
                         icon: LucideIcons.clock3,
-                        label: 'Uhrzeit',
+                        label: l10n.t('time'),
                         value:
                             '${_selected.hour.toString().padLeft(2, '0')}:${_selected.minute.toString().padLeft(2, '0')}',
                         onTap: _pickTime,
@@ -3069,14 +3372,14 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
                             : const Icon(LucideIcons.bellRing),
-                        label: const Text('Erinnerung setzen'),
+                        label: Text(l10n.t('setReminder')),
                       ),
                       if (widget.note.reminderAt != null) ...[
                         const SizedBox(height: 8),
                         TextButton.icon(
                           onPressed: _busy ? null : () => _save(null),
                           icon: const Icon(LucideIcons.bellOff),
-                          label: const Text('Erinnerung entfernen'),
+                          label: Text(l10n.t('removeReminder')),
                         ),
                       ],
                     ],
@@ -3153,20 +3456,23 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
 
 void _showReminderFeedback(BuildContext context, WidgetRef ref, bool added,
     {bool duplicated = false}) {
+  final l10n = ref.read(l10nProvider);
   final messenger = ScaffoldMessenger.of(context);
   messenger.clearSnackBars();
   messenger.showSnackBar(
     SnackBar(
       content: Text(
-        added
-            ? duplicated
-                ? 'Eine persönliche Kopie wird jetzt unter Erinnerungen angezeigt.'
-                : 'Die Notiz wird jetzt unter Erinnerungen angezeigt.'
-            : 'Die Erinnerung wurde entfernt.',
+        l10n.t(
+          added
+              ? duplicated
+                  ? 'reminderDuplicateAdded'
+                  : 'reminderAdded'
+              : 'reminderRemoved',
+        ),
       ),
       action: added
           ? SnackBarAction(
-              label: 'Ansehen',
+              label: l10n.t('view'),
               onPressed: () {
                 ref.read(noteBucketProvider.notifier).state = 'reminders';
               },
@@ -3266,6 +3572,7 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n(Localizations.localeOf(context).languageCode);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -3280,7 +3587,7 @@ class _ErrorState extends StatelessWidget {
             OutlinedButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(LucideIcons.refreshCw),
-                label: const Text('Retry')),
+                label: Text(l10n.t('retry'))),
           ],
         ),
       ),
@@ -3295,21 +3602,21 @@ class _CreateIntent {
   final String label;
 }
 
-_CreateIntent? _createIntentFor(String bucket) {
+_CreateIntent? _createIntentFor(String bucket, AppL10n l10n) {
   return switch (bucket) {
-    'active' => const _CreateIntent(
+    'active' => _CreateIntent(
         icon: LucideIcons.filePlus2,
-        label: 'Neue Notiz',
+        label: l10n.t('newNote'),
       ),
-    'reminders' => const _CreateIntent(
+    'reminders' => _CreateIntent(
         icon: LucideIcons.bellPlus,
-        label: 'Neue Erinnerung',
+        label: l10n.t('setReminder'),
       ),
     _ => null,
   };
 }
 
-enum _CreateAction { note, reminder, list }
+enum _CreateAction { note, list }
 
 void _createNoteFromAction(
   BuildContext context,
@@ -3319,16 +3626,18 @@ void _createNoteFromAction(
   final controller = ref.read(notesControllerProvider.notifier);
   final note = switch (action) {
     _CreateAction.note => controller.createEmptyNote(),
-    _CreateAction.reminder => controller.createReminderNote(),
     _CreateAction.list => controller.createChecklistNote(),
   };
   _openEditor(context, ref, note);
 }
 
 void _createNoteForCurrentBucket(BuildContext context, WidgetRef ref) {
+  if (ref.read(noteBucketProvider) == 'reminders') {
+    unawaited(_startReminderFlow(context, ref));
+    return;
+  }
   final controller = ref.read(notesControllerProvider.notifier);
   final note = switch (ref.read(noteBucketProvider)) {
-    'reminders' => controller.createReminderNote(),
     'active' => controller.createEmptyNote(),
     _ => null,
   };

@@ -8,14 +8,18 @@
       name="description"
       content="Impressum und Offenlegung für Safernotes."
     />
-    <meta name="theme-color" content="#fbfbfa" />
-    <link rel="stylesheet" href="./styles.css" />
+    <meta name="theme-color" content="#8051a8" />
+    <link rel="icon" href="./assets/safernotes-logo.svg" type="image/svg+xml" />
+    <link rel="icon" href="./assets/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
+    <link rel="manifest" href="./site.webmanifest" />
+    <link rel="stylesheet" href="./styles.css?v=warm-2" />
   </head>
   <body class="legal-page">
     <header class="site-header">
       <div class="header-inner">
         <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
-          <span class="brand-mark" aria-hidden="true">S</span>
+          <img class="brand-mark" src="./assets/safernotes-logo.svg" width="34" height="34" alt="" />
           <span>Safernotes</span>
         </a>
         <nav class="site-nav" aria-label="Hauptnavigation">
@@ -24,8 +28,11 @@
           <a href="./downloads.html">Downloads</a>
           <a href="./impressum.html" aria-current="page">Impressum</a>
         </nav>
-        <a class="button button-small button-dark" href="https://app.safernotes.com/">
+        <a class="button button-small button-dark header-desktop-action" href="https://app.safernotes.com/">
           App öffnen
+        </a>
+        <a class="button button-small button-dark header-mobile-action" href="./downloads.html">
+          Herunterladen
         </a>
       </div>
     </header>
@@ -147,7 +154,7 @@
 
     <footer class="site-footer">
       <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
-        <span class="brand-mark" aria-hidden="true">S</span>
+        <img class="brand-mark" src="./assets/safernotes-logo.svg" width="34" height="34" alt="" />
         <span>Safernotes</span>
       </a>
       <p>Private Notizen, sicher synchronisiert.</p>

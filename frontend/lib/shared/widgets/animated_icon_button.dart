@@ -7,12 +7,16 @@ class AppIconButton extends StatefulWidget {
     required this.tooltip,
     required this.onPressed,
     this.selected = false,
+    this.size = 36,
+    this.iconSize = 18,
   });
 
   final IconData icon;
   final String tooltip;
   final VoidCallback? onPressed;
   final bool selected;
+  final double size;
+  final double iconSize;
 
   @override
   State<AppIconButton> createState() => _AppIconButtonState();
@@ -52,8 +56,8 @@ class _AppIconButtonState extends State<AppIconButton> {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 140),
               curve: Curves.easeOutCubic,
-              width: 36,
-              height: 36,
+              width: widget.size,
+              height: widget.size,
               decoration: BoxDecoration(
                 color: active
                     ? scheme.surfaceContainerHighest
@@ -62,7 +66,7 @@ class _AppIconButtonState extends State<AppIconButton> {
               ),
               child: Icon(
                 widget.icon,
-                size: 18,
+                size: widget.iconSize,
                 color: widget.onPressed == null
                     ? scheme.onSurface.withValues(alpha: 0.38)
                     : scheme.onSurface.withValues(alpha: 0.86),

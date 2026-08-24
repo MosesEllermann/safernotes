@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/auth/recovery_key_dialog.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/shared/widgets/safernotes_logo.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -16,7 +17,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
-  final _workspace = TextEditingController(text: 'Personal vault');
+  final _workspace = TextEditingController();
+  String? _workspaceDefault;
   final _code = TextEditingController();
   final _recoveryKey = TextEditingController();
   final _newPassword = TextEditingController();
@@ -26,6 +28,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   var _recoveryBusy = false;
   var _submitBusy = false;
   var _obscure = true;
+  _MobileAuthDestination? _mobileDestination;
   RecoveryChallenge? _challenge;
   String? _localError;
 
@@ -43,6 +46,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
+    final workspaceDefault = l10n.t('personalVault');
+    if (_workspace.text.isEmpty || _workspace.text == _workspaceDefault) {
+      _workspace.text = workspaceDefault;
+    }
+    _workspaceDefault = workspaceDefault;
     final auth = ref.watch(authControllerProvider);
     final busy = auth.isLoading || _recoveryBusy || _submitBusy;
     final error = _localError ?? auth.asError?.error.toString();
@@ -59,38 +67,70 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ? l10n.t('createAccount')
             : l10n.t('login');
     final intro = _AuthIntro(
+      l10n: l10n,
       title: l10n.t('appName'),
       activeTitle: title,
       recovering: _recovering,
     );
-    final form = _AuthPanel(
-      l10n: l10n,
-      formKey: _formKey,
-      title: title,
-      modeIcon: _modeIcon(),
-      registering: _registering,
-      recovering: _recovering,
-      recoveryRequested: _recoveryRequested,
-      busy: busy,
-      obscure: _obscure,
-      actionIcon: _actionIcon(),
-      actionLabel: actionLabel,
-      email: _email,
-      password: _password,
-      workspace: _workspace,
-      code: _code,
-      recoveryKey: _recoveryKey,
-      newPassword: _newPassword,
-      error: error == null ? null : _cleanError(error, l10n, _recovering),
-      onModeChanged: (value) => setState(() => _registering = value),
-      onTogglePassword: _togglePassword,
-      onSubmit: _submit,
-      onToggleRecovery: _toggleRecoveryMode,
-    );
+    Widget form({required bool showModeSwitch}) => _AuthPanel(
+          l10n: l10n,
+          formKey: _formKey,
+          title: title,
+          modeIcon: _modeIcon(),
+          registering: _registering,
+          recovering: _recovering,
+          recoveryRequested: _recoveryRequested,
+          busy: busy,
+          obscure: _obscure,
+          showModeSwitch: showModeSwitch,
+          actionIcon: _actionIcon(),
+          actionLabel: actionLabel,
+          email: _email,
+          password: _password,
+          workspace: _workspace,
+          code: _code,
+          recoveryKey: _recoveryKey,
+          newPassword: _newPassword,
+          error: error == null ? null : _cleanError(error, l10n, _recovering),
+          onModeChanged: (value) => setState(() => _registering = value),
+          onTogglePassword: _togglePassword,
+          onSubmit: _submit,
+          onToggleRecovery: _toggleRecoveryMode,
+        );
     return Scaffold(
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
+            if (constraints.maxWidth < 700) {
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                child: _mobileDestination == null
+                    ? _MobileAuthLanding(
+                        key: const ValueKey('mobile-auth-landing'),
+                        l10n: l10n,
+                        onLogin: busy
+                            ? null
+                            : () => _openMobileDestination(
+                                  _MobileAuthDestination.login,
+                                ),
+                        onRegister: busy
+                            ? null
+                            : () => _openMobileDestination(
+                                  _MobileAuthDestination.register,
+                                ),
+                      )
+                    : _MobileAuthPage(
+                        key: ValueKey(_mobileDestination),
+                        l10n: l10n,
+                        registering: _registering,
+                        busy: busy,
+                        onBack: _backToMobileLanding,
+                        child: form(showModeSwitch: false),
+                      ),
+              );
+            }
             final wide = constraints.maxWidth >= 900;
             return Center(
               child: SingleChildScrollView(
@@ -106,7 +146,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     children: [
                       if (wide) Expanded(flex: 9, child: intro) else intro,
                       SizedBox(width: wide ? 48 : 0, height: wide ? 0 : 28),
-                      if (wide) Expanded(flex: 8, child: form) else form,
+                      if (wide)
+                        Expanded(
+                          flex: 8,
+                          child: form(showModeSwitch: true),
+                        )
+                      else
+                        form(showModeSwitch: true),
                     ],
                   ),
                 ),
@@ -132,6 +178,29 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   void _togglePassword() => setState(() => _obscure = !_obscure);
+
+  void _openMobileDestination(_MobileAuthDestination destination) {
+    setState(() {
+      _mobileDestination = destination;
+      _registering = destination == _MobileAuthDestination.register;
+      _recovering = false;
+      _recoveryRequested = false;
+      _localError = null;
+      _challenge = null;
+    });
+  }
+
+  void _backToMobileLanding() {
+    if (_submitBusy || _recoveryBusy) return;
+    setState(() {
+      _mobileDestination = null;
+      _registering = false;
+      _recovering = false;
+      _recoveryRequested = false;
+      _localError = null;
+      _challenge = null;
+    });
+  }
 
   void _toggleRecoveryMode() {
     setState(() {
@@ -246,13 +315,121 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 }
 
+enum _MobileAuthDestination { login, register }
+
+class _MobileAuthLanding extends StatelessWidget {
+  const _MobileAuthLanding({
+    super.key,
+    required this.l10n,
+    required this.onLogin,
+    required this.onRegister,
+  });
+
+  final AppL10n l10n;
+  final VoidCallback? onLogin;
+  final VoidCallback? onRegister;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Spacer(flex: 3),
+          const Center(child: SafernotesLogo(size: 72)),
+          const SizedBox(height: 20),
+          Text(
+            l10n.t('appName'),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+          ),
+          const Spacer(flex: 4),
+          FilledButton.icon(
+            onPressed: onLogin,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: const Icon(LucideIcons.logIn),
+            label: Text(l10n.t('login')),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: onRegister,
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(54),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: const Icon(LucideIcons.userRoundPlus),
+            label: Text(l10n.t('register')),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileAuthPage extends StatelessWidget {
+  const _MobileAuthPage({
+    super.key,
+    required this.l10n,
+    required this.registering,
+    required this.busy,
+    required this.onBack,
+    required this.child,
+  });
+
+  final AppL10n l10n;
+  final bool registering;
+  final bool busy;
+  final VoidCallback onBack;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: IconButton(
+              tooltip: l10n.t('back'),
+              onPressed: busy ? null : onBack,
+              icon: const Icon(LucideIcons.arrowLeft),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            key: ValueKey(
+              registering ? 'mobile-register-page' : 'mobile-login-page',
+            ),
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AuthIntro extends StatelessWidget {
   const _AuthIntro({
+    required this.l10n,
     required this.title,
     required this.activeTitle,
     required this.recovering,
   });
 
+  final AppL10n l10n;
   final String title;
   final String activeTitle;
   final bool recovering;
@@ -267,16 +444,7 @@ class _AuthIntro extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(LucideIcons.notebookText,
-                  size: 22, color: scheme.onSurface),
-            ),
+            const SafernotesLogo(size: 44),
             const SizedBox(width: 12),
             Text(
               title,
@@ -296,9 +464,7 @@ class _AuthIntro extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         Text(
-          recovering
-              ? 'Stelle deinen verschlüsselten Tresor mit Recovery-Key und neuem Passwort wieder her.'
-              : 'Private Notizen, Checklisten und Erinnerungen bleiben lokal verschlüsselt und klar organisiert.',
+          l10n.t(recovering ? 'recoveryIntro' : 'authIntro'),
           style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                 color: scheme.onSurfaceVariant,
                 height: 1.45,
@@ -308,12 +474,14 @@ class _AuthIntro extends StatelessWidget {
         Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: const [
+          children: [
             _AuthFeaturePill(
-                icon: LucideIcons.lockKeyhole, label: 'Zero knowledge'),
-            _AuthFeaturePill(icon: LucideIcons.bell, label: 'Erinnerungen'),
+                icon: LucideIcons.lockKeyhole,
+                label: l10n.t('zeroKnowledge')),
             _AuthFeaturePill(
-                icon: LucideIcons.listChecks, label: 'Checklisten'),
+                icon: LucideIcons.bell, label: l10n.t('reminders')),
+            _AuthFeaturePill(
+                icon: LucideIcons.listChecks, label: l10n.t('checklist')),
           ],
         ),
       ],
@@ -332,6 +500,7 @@ class _AuthPanel extends StatelessWidget {
     required this.recoveryRequested,
     required this.busy,
     required this.obscure,
+    required this.showModeSwitch,
     required this.actionIcon,
     required this.actionLabel,
     required this.email,
@@ -356,6 +525,7 @@ class _AuthPanel extends StatelessWidget {
   final bool recoveryRequested;
   final bool busy;
   final bool obscure;
+  final bool showModeSwitch;
   final IconData actionIcon;
   final String actionLabel;
   final TextEditingController email;
@@ -412,7 +582,7 @@ class _AuthPanel extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 24),
-              if (!recovering) ...[
+              if (!recovering && showModeSwitch) ...[
                 _AuthModeSwitch(
                   loginLabel: l10n.t('login'),
                   registerLabel: l10n.t('register'),
@@ -444,6 +614,7 @@ class _AuthPanel extends StatelessWidget {
                   textInputAction:
                       registering ? TextInputAction.next : TextInputAction.done,
                   suffix: _PasswordVisibilityButton(
+                    l10n: l10n,
                     obscure: obscure,
                     onPressed: onTogglePassword,
                   ),
@@ -510,6 +681,7 @@ class _AuthPanel extends StatelessWidget {
                   obscureText: obscure,
                   textInputAction: TextInputAction.done,
                   suffix: _PasswordVisibilityButton(
+                    l10n: l10n,
                     obscure: obscure,
                     onPressed: onTogglePassword,
                   ),
@@ -812,17 +984,19 @@ class _AuthTextField extends StatelessWidget {
 
 class _PasswordVisibilityButton extends StatelessWidget {
   const _PasswordVisibilityButton({
+    required this.l10n,
     required this.obscure,
     required this.onPressed,
   });
 
+  final AppL10n l10n;
   final bool obscure;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      tooltip: obscure ? 'Passwort anzeigen' : 'Passwort verbergen',
+      tooltip: l10n.t(obscure ? 'showPassword' : 'hidePassword'),
       onPressed: onPressed,
       icon: Icon(obscure ? LucideIcons.eye : LucideIcons.eyeOff, size: 18),
     );

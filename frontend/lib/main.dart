@@ -29,6 +29,7 @@ class SafernotesApp extends ConsumerWidget {
       darkTheme: buildAppTheme(Brightness.dark),
       themeMode: preferences?.themeMode ?? ThemeMode.system,
       locale: Locale(preferences?.languageCode ?? 'en'),
+      supportedLocales: const [Locale('en'), Locale('de')],
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,

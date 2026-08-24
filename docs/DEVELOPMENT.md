@@ -26,7 +26,7 @@ Install Flutter, then:
 ```sh
 cd frontend
 flutter pub get
-flutter run -d web-server --web-hostname=localhost --web-port=3000 --dart-define=API_BASE_URL=http://127.0.0.1:8000
+flutter run -d web-server --web-hostname=localhost --web-port=3000 --dart-define=API_BASE_URL=https://api.safernotes.com
 ```
 
 This repo also has a helper:
@@ -36,12 +36,15 @@ cd frontend
 ./tool/run_web.sh
 ```
 
+The helper defaults to `https://api.safernotes.com`. Use `API_BASE_URL=http://127.0.0.1:8000 ./tool/run_web.sh` only when intentionally testing a local backend.
+
 Checks:
 
 ```sh
 cd frontend
 ./tool/flutterw analyze
-./tool/flutterw build web --dart-define=API_BASE_URL=http://127.0.0.1:8000 --no-wasm-dry-run
+./tool/flutterw build web --dart-define=API_BASE_URL=https://api.safernotes.com --no-wasm-dry-run
+./tool/build_android_release.sh
 ```
 
 ## GitHub Push
@@ -62,4 +65,3 @@ Use HTTPS instead of SSH if you prefer:
 ```sh
 git remote add origin https://github.com/YOUR_USER/YOUR_REPO.git
 ```
-
