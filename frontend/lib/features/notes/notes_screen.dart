@@ -1689,10 +1689,10 @@ Color _noteColorFor(BuildContext context, int color) {
   return switch (color) {
     0xfffef3c7 => const Color(0xff3a2f13),
     0xffdcfce7 => const Color(0xff173322),
-    0xffdbeafe => const Color(0xff142943),
+    0xffdbeafe => const Color(0xff173344),
     0xfffce7f3 => const Color(0xff3a1830),
     0xffede9fe => const Color(0xff2b2146),
-    _ => Theme.of(context).colorScheme.surface,
+    _ => Theme.of(context).colorScheme.surfaceContainerLow,
   };
 }
 

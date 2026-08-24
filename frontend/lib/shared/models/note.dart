@@ -49,6 +49,7 @@ class PlainNote {
     this.remoteId,
     required this.title,
     required this.body,
+    this.richTextDelta,
     required this.checklist,
     required this.updatedAt,
     required this.pinned,
@@ -66,6 +67,7 @@ class PlainNote {
   final String? remoteId;
   final String title;
   final String body;
+  final List<Map<String, dynamic>>? richTextDelta;
   final List<ChecklistItem> checklist;
   final DateTime updatedAt;
   final bool pinned;
@@ -82,6 +84,8 @@ class PlainNote {
     String? remoteId,
     String? title,
     String? body,
+    List<Map<String, dynamic>>? richTextDelta,
+    bool clearRichTextDelta = false,
     List<ChecklistItem>? checklist,
     DateTime? updatedAt,
     bool? pinned,
@@ -100,6 +104,8 @@ class PlainNote {
       remoteId: remoteId ?? this.remoteId,
       title: title ?? this.title,
       body: body ?? this.body,
+      richTextDelta:
+          clearRichTextDelta ? null : richTextDelta ?? this.richTextDelta,
       checklist: checklist ?? this.checklist,
       updatedAt: updatedAt ?? this.updatedAt,
       pinned: pinned ?? this.pinned,
@@ -115,9 +121,10 @@ class PlainNote {
   }
 
   Map<String, dynamic> encryptedPayloadJson() => {
-        'schema': 2,
+        'schema': 3,
         'title': title,
         'body': body,
+        if (richTextDelta != null) 'richTextDelta': richTextDelta,
         'checklist': checklist.map((item) => item.toJson()).toList(),
         'color': color,
         'sortOrder': sortOrder,
@@ -131,6 +138,7 @@ class PlainNote {
         'remoteId': remoteId,
         'title': title,
         'body': body,
+        if (richTextDelta != null) 'richTextDelta': richTextDelta,
         'checklist': checklist.map((item) => item.toJson()).toList(),
         'updatedAt': updatedAt.toIso8601String(),
         'pinned': pinned,
@@ -150,6 +158,7 @@ class PlainNote {
       remoteId: json['remoteId'] as String?,
       title: json['title'] as String? ?? '',
       body: json['body'] as String? ?? '',
+      richTextDelta: _decodeRichTextDelta(json['richTextDelta']),
       checklist: (json['checklist'] as List? ?? [])
           .map((item) =>
               ChecklistItem.fromJson(Map<String, dynamic>.from(item as Map)))
@@ -180,6 +189,7 @@ class PlainNote {
       remoteId: remoteId,
       title: json['title'] as String? ?? 'Untitled note',
       body: json['body'] as String? ?? '',
+      richTextDelta: _decodeRichTextDelta(json['richTextDelta']),
       checklist: (json['checklist'] as List? ?? [])
           .map((item) =>
               ChecklistItem.fromJson(Map<String, dynamic>.from(item as Map)))
@@ -195,6 +205,14 @@ class PlainNote {
       shared: json['shared'] as bool? ?? false,
     );
   }
+}
+
+List<Map<String, dynamic>>? _decodeRichTextDelta(Object? value) {
+  if (value is! List) return null;
+  return value
+      .whereType<Map>()
+      .map((operation) => Map<String, dynamic>.from(operation))
+      .toList(growable: false);
 }
 
 class RemoteEncryptedNote {

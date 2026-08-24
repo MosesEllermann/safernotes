@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/auth/auth_screen.dart';
@@ -27,6 +29,12 @@ class SafernotesApp extends ConsumerWidget {
       darkTheme: buildAppTheme(Brightness.dark),
       themeMode: preferences?.themeMode ?? ThemeMode.system,
       locale: Locale(preferences?.languageCode ?? 'en'),
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        FlutterQuillLocalizations.delegate,
+      ],
       home: session.when(
         data: (value) => value == null
             ? const AuthScreen()

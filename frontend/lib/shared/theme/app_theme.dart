@@ -6,17 +6,26 @@ ThemeData buildAppTheme(Brightness brightness) {
     seedColor: const Color(0xff23755c),
     brightness: brightness,
   );
-  final surface = dark ? const Color(0xff101216) : const Color(0xfff7f8f7);
-  final field = dark ? const Color(0xff1a1e23) : Colors.white;
+  final surface = dark ? const Color(0xff0b0f0d) : const Color(0xfff2f5f3);
+  final field = dark ? const Color(0xff1b231f) : Colors.white;
   final typography = Typography.material2021(platform: TargetPlatform.macOS);
   final scheme = baseScheme.copyWith(
-    primary: dark ? const Color(0xff6fc6a5) : const Color(0xff1f7258),
-    onPrimary: dark ? const Color(0xff073828) : Colors.white,
+    primary: dark ? const Color(0xff79dbb4) : const Color(0xff176b50),
+    onPrimary: dark ? const Color(0xff052d20) : Colors.white,
     surface: surface,
-    onSurface: dark ? const Color(0xfff2f4f3) : const Color(0xff171a1b),
-    onSurfaceVariant: dark ? const Color(0xffc3c9c6) : const Color(0xff505855),
-    outline: dark ? const Color(0xff77817d) : const Color(0xff68736f),
-    outlineVariant: dark ? const Color(0xff3d4542) : const Color(0xffd2d8d5),
+    surfaceContainerLowest:
+        dark ? const Color(0xff080b0a) : const Color(0xffffffff),
+    surfaceContainerLow:
+        dark ? const Color(0xff141a17) : const Color(0xffeaf0ed),
+    surfaceContainer: dark ? const Color(0xff19211d) : const Color(0xffe2eae6),
+    surfaceContainerHigh:
+        dark ? const Color(0xff202a25) : const Color(0xffd8e2dd),
+    surfaceContainerHighest:
+        dark ? const Color(0xff29352f) : const Color(0xffccd9d3),
+    onSurface: dark ? const Color(0xfff5f8f6) : const Color(0xff121714),
+    onSurfaceVariant: dark ? const Color(0xffc9d2cd) : const Color(0xff3f4b45),
+    outline: dark ? const Color(0xff8b9992) : const Color(0xff596960),
+    outlineVariant: dark ? const Color(0xff46534d) : const Color(0xffb8c7c0),
   );
   return ThemeData(
     colorScheme: scheme,
@@ -41,8 +50,19 @@ ThemeData buildAppTheme(Brightness brightness) {
     dividerTheme: DividerThemeData(color: scheme.outlineVariant),
     cardTheme: CardThemeData(
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      color: scheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
       clipBehavior: Clip.antiAlias,
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: scheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,

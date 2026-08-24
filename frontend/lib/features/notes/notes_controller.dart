@@ -26,6 +26,9 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
   Timer? _syncTimer;
   Timer? _debounce;
   Future<void> _saveQueue = Future.value();
+  Future<void>? _syncFuture;
+  bool _syncRequested = false;
+  bool _pullAfterPushRequested = false;
 
   @override
   Future<List<PlainNote>> build() async {
@@ -107,14 +110,17 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       }
     }
     final remoteId = draft.remoteId ?? previous?.remoteId;
+    final version = remoteId != null &&
+            previous?.remoteId == remoteId &&
+            previous!.version > draft.version
+        ? previous.version
+        : draft.version;
     final nextDraft = draft.copyWith(
       remoteId: remoteId,
       title: draft.title.trim().isEmpty ? 'Untitled note' : draft.title.trim(),
       updatedAt: DateTime.now().toUtc(),
       dirty: true,
-      version: draft.remoteId == null && previous?.remoteId != null
-          ? previous!.version
-          : draft.version,
+      version: version,
       conflicted: false,
     );
     final next = [
@@ -123,6 +129,10 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     ]..sort(_sortNotes);
     await _persist(next);
     ref.read(syncStatusProvider.notifier).state = SyncStatus.saving;
+    if (_syncFuture != null) {
+      _syncRequested = true;
+      _pullAfterPushRequested = true;
+    }
     _debounce?.cancel();
     _debounce = Timer(
         syncImmediately ? Duration.zero : const Duration(milliseconds: 900),
@@ -196,16 +206,53 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     }
   }
 
-  Future<void> syncNow({bool pullAfterPush = false}) async {
+  Future<void> syncNow({bool pullAfterPush = false}) {
+    _syncRequested = true;
+    _pullAfterPushRequested |= pullAfterPush;
+
+    final activeSync = _syncFuture;
+    if (activeSync != null) return activeSync;
+
+    late final Future<void> sync;
+    sync = _runSyncLoop().whenComplete(() {
+      if (identical(_syncFuture, sync)) _syncFuture = null;
+    });
+    _syncFuture = sync;
+    return sync;
+  }
+
+  Future<void> _runSyncLoop() async {
+    while (_syncRequested) {
+      _syncRequested = false;
+      await _saveQueue;
+
+      final outcome = await _syncOnce();
+      if (outcome != _SyncOutcome.success) {
+        _syncRequested = false;
+        _pullAfterPushRequested = false;
+        return;
+      }
+
+      final latest = state.valueOrNull ?? const <PlainNote>[];
+      if (latest.any((note) => note.dirty)) {
+        if (_syncRequested) continue;
+        return;
+      }
+
+      if (_pullAfterPushRequested) {
+        _pullAfterPushRequested = false;
+        await pullRemote();
+      }
+    }
+  }
+
+  Future<_SyncOutcome> _syncOnce() async {
     final session = ref.read(authControllerProvider).valueOrNull;
-    if (session == null) return;
+    if (session == null) return _SyncOutcome.skipped;
     final notes =
         state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
     final dirty = notes.where((note) => note.dirty).toList();
-    if (dirty.isEmpty) {
-      if (pullAfterPush) await pullRemote();
-      return;
-    }
+    if (dirty.isEmpty) return _SyncOutcome.success;
 
     ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
     try {
@@ -236,34 +283,45 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
             operations: operations,
           );
       final results = (response['results'] as List? ?? []).cast<Map>();
-      final byLocalId = {for (final note in notes) note.localId: note};
+      await _saveQueue;
+      final latestNotes =
+          state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
+      final byLocalId = {
+        for (final note in latestNotes) note.localId: note,
+      };
       var sawConflict = false;
       for (var i = 0; i < dirty.length && i < results.length; i += 1) {
         final result = Map<String, dynamic>.from(results[i]);
-        final note = dirty[i];
+        final sentNote = dirty[i];
+        final latestNote = byLocalId[sentNote.localId] ?? sentNote;
         if (result['status'] == 'ok') {
-          byLocalId[note.localId] = note.copyWith(
-            remoteId: result['note_id'] as String?,
-            version: result['version'] as int? ?? note.version,
-            dirty: false,
+          final changedWhileSyncing = !_sameSyncRevision(latestNote, sentNote);
+          byLocalId[sentNote.localId] = latestNote.copyWith(
+            remoteId: result['note_id'] as String? ?? latestNote.remoteId,
+            version: result['version'] as int? ?? latestNote.version,
+            dirty: changedWhileSyncing,
             conflicted: false,
           );
         } else if (result['status'] == 'conflict') {
           sawConflict = true;
-          byLocalId[note.localId] = note.copyWith(conflicted: true);
+          byLocalId[sentNote.localId] = latestNote.copyWith(conflicted: true);
         }
       }
       final next = byLocalId.values.toList()..sort(_sortNotes);
       await ref.read(offlineStoreProvider).saveNotes(next);
       state = AsyncData(next);
       ref.read(syncStatusProvider.notifier).state =
-          sawConflict ? SyncStatus.conflict : SyncStatus.saved;
-      if (pullAfterPush) await pullRemote();
-    } catch (error) {
-      ref.read(syncStatusProvider.notifier).state =
-          error is ApiException && error.statusCode == 409
+          sawConflict || next.any((note) => note.conflicted)
               ? SyncStatus.conflict
-              : SyncStatus.offline;
+              : next.any((note) => note.dirty)
+                  ? SyncStatus.saving
+                  : SyncStatus.saved;
+      return sawConflict ? _SyncOutcome.conflict : _SyncOutcome.success;
+    } catch (error) {
+      final conflict = error is ApiException && error.statusCode == 409;
+      ref.read(syncStatusProvider.notifier).state =
+          conflict ? SyncStatus.conflict : SyncStatus.offline;
+      return conflict ? _SyncOutcome.conflict : _SyncOutcome.offline;
     }
   }
 
@@ -340,6 +398,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       remoteId: null,
       title: duplicate.title,
       body: duplicate.body,
+      richTextDelta: duplicate.richTextDelta,
       checklist: duplicate.checklist,
       updatedAt: duplicate.updatedAt,
       pinned: duplicate.pinned,
@@ -388,6 +447,10 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     ]..sort(_sortNotes);
     await _persist(next);
     ref.read(syncStatusProvider.notifier).state = SyncStatus.saving;
+    if (_syncFuture != null) {
+      _syncRequested = true;
+      _pullAfterPushRequested = true;
+    }
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 900), () {
       unawaited(syncNow(pullAfterPush: true));
@@ -437,6 +500,15 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     await ref.read(offlineStoreProvider).saveNotes(notes);
     state = AsyncData(notes);
   }
+}
+
+enum _SyncOutcome { success, conflict, offline, skipped }
+
+bool _sameSyncRevision(PlainNote a, PlainNote b) {
+  return a.remoteId == b.remoteId &&
+      a.version == b.version &&
+      jsonEncode(a.encryptedPayloadJson()) ==
+          jsonEncode(b.encryptedPayloadJson());
 }
 
 int _sortNotes(PlainNote a, PlainNote b) {

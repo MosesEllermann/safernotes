@@ -1,13 +1,15 @@
 name: safernotes_app
 description: Zero-knowledge notes client for web, Android, and iOS.
 publish_to: "none"
-version: 0.1.0+1
+version: 0.1.1+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
 
 dependencies:
   flutter:
+    sdk: flutter
+  flutter_localizations:
     sdk: flutter
   flutter_riverpod: ^2.6.1
   http: ^1.2.2
@@ -19,6 +21,7 @@ dependencies:
   flutter_local_notifications: ^22.0.1
   timezone: ^0.11.0
   hashlib: ^2.3.4
+  flutter_quill: ^11.5.1
 
 dev_dependencies:
   flutter_test:
@@ -27,4 +30,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-

@@ -1,4 +1,3 @@
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safernotes_app/features/notes/note_editor_state.dart';
 import 'package:safernotes_app/shared/models/note.dart';
@@ -77,59 +76,6 @@ void main() {
     expect(history.redo(), 2);
     history.record(4);
     expect(history.canRedo, isFalse);
-  });
-
-  group('markdown formatting', () {
-    test('toggles existing persisted markdown without losing selection', () {
-      const original = TextEditingValue(
-        text: 'A **bold** note',
-        selection: TextSelection(baseOffset: 4, extentOffset: 8),
-      );
-
-      expect(
-        MarkdownFormatting.isActive(original, MarkdownFormat.bold),
-        isTrue,
-      );
-      final result = MarkdownFormatting.toggle(original, MarkdownFormat.bold);
-      expect(result.text, 'A bold note');
-      expect(
-          result.selection,
-          const TextSelection(
-            baseOffset: 2,
-            extentOffset: 6,
-          ));
-    });
-
-    test('rapid sequential formatting composes deterministically', () {
-      const original = TextEditingValue(
-        text: 'alpha',
-        selection: TextSelection(baseOffset: 0, extentOffset: 5),
-      );
-
-      final bold = MarkdownFormatting.toggle(original, MarkdownFormat.bold);
-      final italic = MarkdownFormatting.toggle(bold, MarkdownFormat.italic);
-      expect(italic.text, '**_alpha_**');
-      expect(italic.selection.textInside(italic.text), 'alpha');
-      expect(
-        MarkdownFormatting.isActive(italic, MarkdownFormat.bold),
-        isTrue,
-      );
-      expect(
-        MarkdownFormatting.isActive(italic, MarkdownFormat.italic),
-        isTrue,
-      );
-    });
-
-    test('collapsed selection formats the current word and keeps its text', () {
-      const original = TextEditingValue(
-        text: 'one two',
-        selection: TextSelection.collapsed(offset: 5),
-      );
-
-      final result = MarkdownFormatting.toggle(original, MarkdownFormat.strike);
-      expect(result.text, 'one ~~two~~');
-      expect(result.selection.textInside(result.text), 'two');
-    });
   });
 }
 
