@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -398,6 +399,7 @@ class _KeepWorkspace extends ConsumerStatefulWidget {
 class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
   String? _draggedId;
   int? _dropIndex;
+  final _trashHovering = ValueNotifier(false);
   late final ProviderSubscription<String> _bucketSubscription;
 
   @override
@@ -412,6 +414,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
   @override
   void dispose() {
     _bucketSubscription.close();
+    _trashHovering.dispose();
     super.dispose();
   }
 
@@ -475,6 +478,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
                                           draggedId, targetIndex, bucket),
                                   onDragStarted: _startDrag,
                                   onDragEnded: _clearDragPreview,
+                                  trashHovering: _trashHovering,
                                 ),
                               ),
                               if (column != noteColumnCount - 1)
@@ -505,6 +509,9 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
                 child: Center(
                   child: _AnimatedTrashDropTarget(
                     onAccepted: _moveToTrash,
+                    onHoverChanged: (hovering) {
+                      _trashHovering.value = hovering;
+                    },
                   ),
                 ),
               ),
@@ -551,6 +558,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
 
   void _startDrag(PlainNote note) {
     if (!mounted) return;
+    _trashHovering.value = false;
     setState(() {
       _draggedId = note.localId;
       _dropIndex = null;
@@ -559,6 +567,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
 
   void _clearDragPreview() {
     if (!mounted) return;
+    _trashHovering.value = false;
     if (_draggedId == null && _dropIndex == null) return;
     setState(() {
       _draggedId = null;
@@ -618,9 +627,13 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
 }
 
 class _AnimatedTrashDropTarget extends StatefulWidget {
-  const _AnimatedTrashDropTarget({required this.onAccepted});
+  const _AnimatedTrashDropTarget({
+    required this.onAccepted,
+    required this.onHoverChanged,
+  });
 
   final ValueChanged<PlainNote> onAccepted;
+  final ValueChanged<bool> onHoverChanged;
 
   @override
   State<_AnimatedTrashDropTarget> createState() =>
@@ -636,14 +649,23 @@ class _AnimatedTrashDropTargetState extends State<_AnimatedTrashDropTarget> {
     return DragTarget<PlainNote>(
       key: const ValueKey('overview-trash-drop-target'),
       onWillAcceptWithDetails: (_) {
-        if (!_hovered) setState(() => _hovered = true);
+        if (!_hovered) {
+          setState(() => _hovered = true);
+          widget.onHoverChanged(true);
+        }
         return true;
       },
       onLeave: (_) {
-        if (_hovered) setState(() => _hovered = false);
+        if (_hovered) {
+          setState(() => _hovered = false);
+          widget.onHoverChanged(false);
+        }
       },
       onAcceptWithDetails: (details) {
-        if (_hovered) setState(() => _hovered = false);
+        if (_hovered) {
+          setState(() => _hovered = false);
+          widget.onHoverChanged(false);
+        }
         widget.onAccepted(details.data);
       },
       builder: (context, candidateData, rejectedData) {
@@ -757,6 +779,7 @@ class _CompactNoteColumn extends ConsumerWidget {
     required this.onCommitReorder,
     required this.onDragStarted,
     required this.onDragEnded,
+    required this.trashHovering,
   });
 
   final List<({int index, PlainNote note})> notes;
@@ -766,6 +789,7 @@ class _CompactNoteColumn extends ConsumerWidget {
   final void Function(String draggedId, int targetIndex) onCommitReorder;
   final ValueChanged<PlainNote> onDragStarted;
   final VoidCallback onDragEnded;
+  final ValueListenable<bool> trashHovering;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -828,6 +852,7 @@ class _CompactNoteColumn extends ConsumerWidget {
                   child: _MeasuredNoteDraggable(
                     key: ValueKey('compact-note-drag-${entry.note.localId}'),
                     note: entry.note,
+                    trashHovering: trashHovering,
                     onDragStarted: () => onDragStarted(entry.note),
                     onDragEnded: onDragEnded,
                     childWhenDragging: Opacity(opacity: 0.34, child: card),
@@ -1864,6 +1889,7 @@ class _MeasuredNoteDraggable extends StatefulWidget {
   const _MeasuredNoteDraggable({
     super.key,
     required this.note,
+    required this.trashHovering,
     required this.onDragStarted,
     required this.onDragEnded,
     required this.childWhenDragging,
@@ -1871,6 +1897,7 @@ class _MeasuredNoteDraggable extends StatefulWidget {
   });
 
   final PlainNote note;
+  final ValueListenable<bool> trashHovering;
   final VoidCallback onDragStarted;
   final VoidCallback onDragEnded;
   final Widget childWhenDragging;
@@ -1896,6 +1923,8 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
       data: widget.note,
       feedback: _NoteDragFeedback(
         key: ValueKey('note-drag-feedback-${widget.note.localId}'),
+        noteId: widget.note.localId,
+        trashHovering: widget.trashHovering,
         sizeReader: () => _dragFeedbackSize ?? _cardSize,
         child: widget.child,
       ),
@@ -1925,10 +1954,14 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
 class _NoteDragFeedback extends StatelessWidget {
   const _NoteDragFeedback({
     super.key,
+    required this.noteId,
+    required this.trashHovering,
     required this.sizeReader,
     required this.child,
   });
 
+  final String noteId;
+  final ValueListenable<bool> trashHovering;
   final Size? Function() sizeReader;
   final Widget child;
 
@@ -1937,10 +1970,19 @@ class _NoteDragFeedback extends StatelessWidget {
     final size = sizeReader() ?? const Size(260, 170);
     return Material(
       type: MaterialType.transparency,
-      child: SizedBox(
-        width: size.width,
-        height: size.height,
-        child: child,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: trashHovering,
+        builder: (context, hovering, _) => AnimatedOpacity(
+          key: ValueKey('note-drag-trash-opacity-$noteId'),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOutCubic,
+          opacity: hovering ? 0.52 : 1,
+          child: SizedBox(
+            width: size.width,
+            height: size.height,
+            child: child,
+          ),
+        ),
       ),
     );
   }

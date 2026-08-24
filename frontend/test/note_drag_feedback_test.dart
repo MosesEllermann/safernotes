@@ -102,6 +102,12 @@ void main() {
     await tester.pump(const Duration(milliseconds: 220));
     expect(
         find.byKey(const ValueKey('overview-trash-hovered')), findsOneWidget);
+    final feedbackOpacity = tester.widget<AnimatedOpacity>(
+      find.byKey(
+        const ValueKey('note-drag-trash-opacity-note-to-trash'),
+      ),
+    );
+    expect(feedbackOpacity.opacity, 0.52);
 
     await gesture.up();
     await tester.pump();
