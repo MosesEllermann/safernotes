@@ -399,62 +399,89 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     final filtered = _previewNotes(baseNotes);
     final dragging = _draggedId != null;
     final noteColumnCount = compact ? 2 : _noteColumnCount(screenWidth, wide);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    final showTrashTarget = dragging && bucket != 'trashed';
+    return Stack(
       children: [
-        if (wide) const _SideRail(),
-        Expanded(
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
-                child: SizedBox(height: wide ? 12 : 8),
-              ),
-              if (filtered.isEmpty)
-                const SliverFillRemaining(
-                    hasScrollBody: false, child: _EmptyState())
-              else
-                SliverPadding(
-                  padding: compact
-                      ? const EdgeInsets.fromLTRB(12, 0, 12, 96)
-                      : EdgeInsets.fromLTRB(
-                          wide ? 32 : 12,
-                          0,
-                          wide ? 32 : 12,
-                          48,
-                        ),
-                  sliver: SliverToBoxAdapter(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        for (var column = 0;
-                            column < noteColumnCount;
-                            column += 1) ...[
-                          Expanded(
-                            child: _CompactNoteColumn(
-                              notes: [
-                                for (var i = column;
-                                    i < filtered.length;
-                                    i += noteColumnCount)
-                                  (index: i, note: filtered[i]),
-                              ],
-                              dragging: dragging,
-                              dropIndex: _dropIndex,
-                              onDropIndexChanged: _setDropIndex,
-                              onCommitReorder: (draggedId, targetIndex) =>
-                                  _commitReorder(
-                                      draggedId, targetIndex, bucket),
-                              onDragStarted: _startDrag,
-                              onDragEnded: _clearDragPreview,
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (wide) const _SideRail(),
+            Expanded(
+              child: CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: wide ? 12 : 8),
+                  ),
+                  if (filtered.isEmpty)
+                    const SliverFillRemaining(
+                        hasScrollBody: false, child: _EmptyState())
+                  else
+                    SliverPadding(
+                      padding: compact
+                          ? const EdgeInsets.fromLTRB(12, 0, 12, 96)
+                          : EdgeInsets.fromLTRB(
+                              wide ? 32 : 12,
+                              0,
+                              wide ? 32 : 12,
+                              48,
                             ),
-                          ),
-                          if (column != noteColumnCount - 1)
-                            const SizedBox(width: 12),
-                        ],
-                      ],
+                      sliver: SliverToBoxAdapter(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (var column = 0;
+                                column < noteColumnCount;
+                                column += 1) ...[
+                              Expanded(
+                                child: _CompactNoteColumn(
+                                  notes: [
+                                    for (var i = column;
+                                        i < filtered.length;
+                                        i += noteColumnCount)
+                                      (index: i, note: filtered[i]),
+                                  ],
+                                  dragging: dragging,
+                                  dropIndex: _dropIndex,
+                                  onDropIndexChanged: _setDropIndex,
+                                  onCommitReorder: (draggedId, targetIndex) =>
+                                      _commitReorder(
+                                          draggedId, targetIndex, bucket),
+                                  onDragStarted: _startDrag,
+                                  onDragEnded: _clearDragPreview,
+                                ),
+                              ),
+                              if (column != noteColumnCount - 1)
+                                const SizedBox(width: 12),
+                            ],
+                          ],
+                        ),
+                      ),
                     ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: compact ? 12 : 20,
+          child: IgnorePointer(
+            ignoring: !showTrashTarget,
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              offset: showTrashTarget ? Offset.zero : const Offset(0, 0.35),
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 140),
+                opacity: showTrashTarget ? 1 : 0,
+                child: Center(
+                  child: _AnimatedTrashDropTarget(
+                    onAccepted: _moveToTrash,
                   ),
                 ),
-            ],
+              ),
+            ),
           ),
         ),
       ],
@@ -512,6 +539,30 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     });
   }
 
+  void _moveToTrash(PlainNote note) {
+    final previousState = note.state;
+    unawaited(
+      ref.read(notesControllerProvider.notifier).changeState(note, 'trashed'),
+    );
+    _clearDragPreview();
+    final l10n = ref.read(l10nProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(l10n.t('noteMovedToTrash')),
+        action: SnackBarAction(
+          label: l10n.t('undo'),
+          onPressed: () => unawaited(
+            ref
+                .read(notesControllerProvider.notifier)
+                .changeState(note, previousState),
+          ),
+        ),
+      ),
+    );
+  }
+
   List<PlainNote> get _filteredNotes {
     final query = ref.read(noteSearchProvider).trim().toLowerCase();
     final bucket = ref.read(noteBucketProvider);
@@ -536,6 +587,137 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
       visible.sort((a, b) => a.reminderAt!.compareTo(b.reminderAt!));
     }
     return visible;
+  }
+}
+
+class _AnimatedTrashDropTarget extends StatefulWidget {
+  const _AnimatedTrashDropTarget({required this.onAccepted});
+
+  final ValueChanged<PlainNote> onAccepted;
+
+  @override
+  State<_AnimatedTrashDropTarget> createState() =>
+      _AnimatedTrashDropTargetState();
+}
+
+class _AnimatedTrashDropTargetState extends State<_AnimatedTrashDropTarget> {
+  var _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DragTarget<PlainNote>(
+      key: const ValueKey('overview-trash-drop-target'),
+      onWillAcceptWithDetails: (_) {
+        if (!_hovered) setState(() => _hovered = true);
+        return true;
+      },
+      onLeave: (_) {
+        if (_hovered) setState(() => _hovered = false);
+      },
+      onAcceptWithDetails: (details) {
+        if (_hovered) setState(() => _hovered = false);
+        widget.onAccepted(details.data);
+      },
+      builder: (context, candidateData, rejectedData) {
+        return Tooltip(
+          message: AppL10n(Localizations.localeOf(context).languageCode)
+              .t('moveToTrash'),
+          child: Semantics(
+            label: AppL10n(Localizations.localeOf(context).languageCode)
+                .t('moveToTrash'),
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 150),
+              curve: Curves.easeOutBack,
+              scale: _hovered ? 1.1 : 1,
+              child: AnimatedContainer(
+                key: ValueKey(
+                  _hovered ? 'overview-trash-hovered' : 'overview-trash-idle',
+                ),
+                duration: const Duration(milliseconds: 150),
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: _hovered
+                      ? scheme.errorContainer
+                      : scheme.surfaceContainerHighest,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _hovered
+                        ? scheme.error.withValues(alpha: 0.72)
+                        : scheme.outlineVariant.withValues(alpha: 0.78),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(
+                        alpha: _hovered ? 0.18 : 0.1,
+                      ),
+                      blurRadius: _hovered ? 18 : 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: TweenAnimationBuilder<double>(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutBack,
+                  tween: Tween(end: _hovered ? 1 : 0),
+                  builder: (context, progress, _) => CustomPaint(
+                    painter: _TrashCanPainter(
+                      progress: progress,
+                      color: _hovered
+                          ? scheme.onErrorContainer
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TrashCanPainter extends CustomPainter {
+  const _TrashCanPainter({
+    required this.progress,
+    required this.color,
+  });
+
+  final double progress;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.6
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final centerX = size.width / 2;
+    final body = RRect.fromRectAndRadius(
+      Rect.fromLTRB(centerX - 12, 30, centerX + 12, 53),
+      const Radius.circular(3.5),
+    );
+    canvas.drawRRect(body, paint);
+    canvas.drawLine(Offset(centerX - 5, 36), Offset(centerX - 5, 47), paint);
+    canvas.drawLine(Offset(centerX + 5, 36), Offset(centerX + 5, 47), paint);
+
+    canvas.save();
+    canvas.translate(centerX - 14, 28);
+    canvas.rotate(-0.34 * progress);
+    canvas.drawLine(const Offset(0, 0), const Offset(28, 0), paint);
+    canvas.drawLine(const Offset(10, -5), const Offset(18, -5), paint);
+    canvas.drawLine(const Offset(10, -5), const Offset(10, 0), paint);
+    canvas.drawLine(const Offset(18, -5), const Offset(18, 0), paint);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrashCanPainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.color != color;
   }
 }
 

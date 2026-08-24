@@ -65,6 +65,50 @@ void main() {
 
     await gesture.up();
   });
+
+  testWidgets('dragging a note onto the overview bin moves it to trash',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final note = _note(
+      localId: 'note-to-trash',
+      title: 'Drop me',
+      body: 'A note ready for the trash target.',
+    );
+    final controller = _TestNotesController([note]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(() => controller),
+        ],
+        child: const MaterialApp(home: NotesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final card = find.byKey(const ValueKey('compact-note-drag-note-to-trash'));
+    final gesture = await tester.startGesture(tester.getCenter(card));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final target = find.byKey(const ValueKey('overview-trash-drop-target'));
+    expect(target, findsOneWidget);
+    await gesture.moveTo(tester.getCenter(target));
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(
+        find.byKey(const ValueKey('overview-trash-hovered')), findsOneWidget);
+
+    await gesture.up();
+    await tester.pump();
+    expect(controller.changedNoteId, 'note-to-trash');
+    expect(controller.changedState, 'trashed');
+    expect(find.text('Note moved to trash.'), findsOneWidget);
+  });
 }
 
 PlainNote _note({
@@ -103,6 +147,8 @@ class _TestNotesController extends NotesController {
   _TestNotesController(this._notes);
 
   final List<PlainNote> _notes;
+  String? changedNoteId;
+  String? changedState;
 
   @override
   Future<List<PlainNote>> build() async => _notes;
@@ -113,4 +159,10 @@ class _TestNotesController extends NotesController {
     required int targetIndex,
     required String bucket,
   }) async {}
+
+  @override
+  Future<void> changeState(PlainNote note, String nextState) async {
+    changedNoteId = note.localId;
+    changedState = nextState;
+  }
 }
