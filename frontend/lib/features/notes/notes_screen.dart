@@ -251,7 +251,6 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                   icon: noteOverviewLayout == NoteOverviewLayout.cards
                       ? LucideIcons.columns2
                       : LucideIcons.grid2X2,
-                  selected: noteOverviewLayout == NoteOverviewLayout.list,
                   onPressed: () => ref
                       .read(appPreferencesProvider.notifier)
                       .setNoteOverviewLayout(
@@ -457,7 +456,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     final dragging = _draggedId != null;
     final listLayout = widget.layout == NoteOverviewLayout.list;
     final splitLayout = wide && listLayout;
-    final showTrashTarget = !listLayout && dragging && bucket != 'trashed';
+    final showTrashTarget = dragging && bucket != 'trashed';
     return Stack(
       children: [
         Row(
@@ -466,9 +465,9 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
             if (wide) const _SideRail(),
             Expanded(
               child: splitLayout
-                  ? _buildSplitOverview(baseNotes)
+                  ? _buildSplitOverview(baseNotes, bucket)
                   : listLayout
-                      ? _buildMobileList(baseNotes)
+                      ? _buildMobileList(baseNotes, bucket)
                       : _buildCardOverview(
                           filtered: filtered,
                           compact: compact,
@@ -573,17 +572,25 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     );
   }
 
-  Widget _buildMobileList(List<PlainNote> notes) {
+  Widget _buildMobileList(List<PlainNote> notes, String bucket) {
     if (notes.isEmpty) return const _EmptyState();
     return _NoteListPane(
       key: const ValueKey('mobile-note-list'),
       notes: notes,
       bottomPadding: 96,
+      dragging: _draggedId != null,
+      dropIndex: _dropIndex,
+      trashHovering: _trashHovering,
+      onDropIndexChanged: _setDropIndex,
+      onCommitReorder: (draggedId, targetIndex) =>
+          _commitReorder(draggedId, targetIndex, bucket),
+      onDragStarted: _startDrag,
+      onDragEnded: _clearDragPreview,
       onSelected: (note) => _openEditor(context, ref, note),
     );
   }
 
-  Widget _buildSplitOverview(List<PlainNote> notes) {
+  Widget _buildSplitOverview(List<PlainNote> notes, String bucket) {
     final selected = _selectedNote(notes);
     return Row(
       key: const ValueKey('desktop-split-layout'),
@@ -595,26 +602,41 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
             key: const ValueKey('desktop-note-list-pane'),
             notes: notes,
             selectedNoteId: selected?.localId,
+            dragging: _draggedId != null,
+            dropIndex: _dropIndex,
+            trashHovering: _trashHovering,
+            onDropIndexChanged: _setDropIndex,
+            onCommitReorder: (draggedId, targetIndex) =>
+                _commitReorder(draggedId, targetIndex, bucket),
+            onDragStarted: _startDrag,
+            onDragEnded: _clearDragPreview,
             onSelected: (note) {
               if (_selectedNoteId == note.localId) return;
               setState(() => _selectedNoteId = note.localId);
             },
           ),
         ),
-        VerticalDivider(
-          width: 1,
-          thickness: 1,
-          color: Theme.of(context)
-              .colorScheme
-              .outlineVariant
-              .withValues(alpha: 0.42),
-        ),
         Expanded(
           key: const ValueKey('desktop-note-editor-pane'),
           flex: 7,
-          child: selected == null
-              ? const _SelectNoteState()
-              : NoteEditorPanel(note: selected, embedded: true),
+          child: ClipRRect(
+            key: const ValueKey('desktop-note-editor-frame'),
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(12),
+            ),
+            child: CustomPaint(
+              key: const ValueKey('desktop-note-editor-border'),
+              foregroundPainter: _TopLeftBorderPainter(
+                color: Theme.of(context)
+                    .colorScheme
+                    .outlineVariant
+                    .withValues(alpha: 0.42),
+              ),
+              child: selected == null
+                  ? const _SelectNoteState()
+                  : NoteEditorPanel(note: selected, embedded: true),
+            ),
+          ),
         ),
       ],
     );
@@ -876,17 +898,59 @@ class _TrashCanPainter extends CustomPainter {
   }
 }
 
+class _TopLeftBorderPainter extends CustomPainter {
+  const _TopLeftBorderPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const radius = 12.0;
+    final path = Path()
+      ..moveTo(0.5, size.height)
+      ..lineTo(0.5, radius)
+      ..quadraticBezierTo(0.5, 0.5, radius, 0.5)
+      ..lineTo(size.width, 0.5);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _TopLeftBorderPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
 class _NoteListPane extends ConsumerWidget {
   const _NoteListPane({
     super.key,
     required this.notes,
     required this.onSelected,
+    required this.dragging,
+    required this.dropIndex,
+    required this.onDropIndexChanged,
+    required this.onCommitReorder,
+    required this.onDragStarted,
+    required this.onDragEnded,
+    required this.trashHovering,
     this.selectedNoteId,
     this.bottomPadding = 24,
   });
 
   final List<PlainNote> notes;
   final ValueChanged<PlainNote> onSelected;
+  final bool dragging;
+  final int? dropIndex;
+  final ValueChanged<int?> onDropIndexChanged;
+  final void Function(String draggedId, int targetIndex) onCommitReorder;
+  final ValueChanged<PlainNote> onDragStarted;
+  final VoidCallback onDragEnded;
+  final ValueListenable<bool> trashHovering;
   final String? selectedNoteId;
   final double bottomPadding;
 
@@ -897,29 +961,133 @@ class _NoteListPane extends ConsumerWidget {
     return ListView.separated(
       padding: EdgeInsets.fromLTRB(12, 8, 12, bottomPadding),
       itemCount: notes.length,
-      separatorBuilder: (_, __) => Divider(
-        height: 1,
-        indent: 16,
-        endIndent: 16,
-        color: scheme.outlineVariant.withValues(alpha: 0.34),
-      ),
+      separatorBuilder: (_, index) {
+        final touchesSelection = notes[index].localId == selectedNoteId ||
+            notes[index + 1].localId == selectedNoteId;
+        if (touchesSelection) {
+          return SizedBox(
+            key: ValueKey('note-list-divider-hidden-$index'),
+            height: 1,
+          );
+        }
+        return Divider(
+          key: ValueKey('note-list-divider-$index'),
+          height: 1,
+          indent: 16,
+          endIndent: 16,
+          color: scheme.outlineVariant.withValues(alpha: 0.34),
+        );
+      },
       itemBuilder: (context, index) {
         final note = notes[index];
-        return _NoteListItem(
-          key: ValueKey('note-list-item-${note.localId}'),
+        final item = _NoteListItem(
           note: note,
           l10n: l10n,
           selected: note.localId == selectedNoteId,
           onTap: () => onSelected(note),
+        );
+        return _DraggableNoteListEntry(
+          key: ValueKey('note-list-item-${note.localId}'),
+          note: note,
+          index: index,
+          dragging: dragging,
+          dropIndex: dropIndex,
+          trashHovering: trashHovering,
+          onDropIndexChanged: onDropIndexChanged,
+          onCommitReorder: onCommitReorder,
+          onDragStarted: () => onDragStarted(note),
+          onDragEnded: onDragEnded,
+          child: item,
         );
       },
     );
   }
 }
 
+class _DraggableNoteListEntry extends StatefulWidget {
+  const _DraggableNoteListEntry({
+    super.key,
+    required this.note,
+    required this.index,
+    required this.dragging,
+    required this.dropIndex,
+    required this.trashHovering,
+    required this.onDropIndexChanged,
+    required this.onCommitReorder,
+    required this.onDragStarted,
+    required this.onDragEnded,
+    required this.child,
+  });
+
+  final PlainNote note;
+  final int index;
+  final bool dragging;
+  final int? dropIndex;
+  final ValueListenable<bool> trashHovering;
+  final ValueChanged<int?> onDropIndexChanged;
+  final void Function(String draggedId, int targetIndex) onCommitReorder;
+  final VoidCallback onDragStarted;
+  final VoidCallback onDragEnded;
+  final Widget child;
+
+  @override
+  State<_DraggableNoteListEntry> createState() =>
+      _DraggableNoteListEntryState();
+}
+
+class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
+  final _entryKey = GlobalKey();
+
+  @override
+  Widget build(BuildContext context) {
+    final before = widget.dropIndex == widget.index;
+    final after = widget.dropIndex == widget.index + 1;
+    return DragTarget<PlainNote>(
+      key: ValueKey('note-list-drop-${widget.note.localId}'),
+      onWillAcceptWithDetails: (_) => true,
+      onMove: (details) {
+        final box = _entryKey.currentContext?.findRenderObject() as RenderBox?;
+        if (box == null || !box.hasSize) return;
+        final local = box.globalToLocal(details.offset);
+        final nextIndex =
+            local.dy < box.size.height / 2 ? widget.index : widget.index + 1;
+        if (widget.dropIndex != nextIndex) {
+          widget.onDropIndexChanged(nextIndex);
+        }
+      },
+      onLeave: (_) {
+        if (widget.dragging) widget.onDropIndexChanged(null);
+      },
+      onAcceptWithDetails: (details) => widget.onCommitReorder(
+        details.data.localId,
+        widget.dropIndex ?? widget.index,
+      ),
+      builder: (context, _, __) => KeyedSubtree(
+        key: _entryKey,
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          padding: EdgeInsets.only(
+            top: before ? 8 : 0,
+            bottom: after ? 8 : 0,
+          ),
+          child: _MeasuredNoteDraggable(
+            key: ValueKey('note-list-drag-${widget.note.localId}'),
+            note: widget.note,
+            trashHovering: widget.trashHovering,
+            onDragStarted: widget.onDragStarted,
+            onDragEnded: widget.onDragEnded,
+            childWhenDragging: Opacity(opacity: 0.28, child: widget.child),
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _NoteListItem extends StatelessWidget {
   const _NoteListItem({
-    super.key,
     required this.note,
     required this.l10n,
     required this.selected,
@@ -942,97 +1110,95 @@ class _NoteListItem extends StatelessWidget {
         : brandNoteSurfaceColor(context, note.color);
     return Material(
       color: selected ? scheme.surfaceContainerHighest : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 82),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 10, 11),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 4,
-                  height: 38,
-                  margin: const EdgeInsets.only(top: 2),
-                  decoration: BoxDecoration(
-                    color: noteColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+        child: Padding(
+          key: ValueKey('note-list-content-${note.localId}'),
+          padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 4,
+                height: 38,
+                margin: const EdgeInsets.only(top: 2),
+                decoration: BoxDecoration(
+                  color: noteColor,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        if (note.pinned)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Icon(
+                              LucideIcons.pin,
+                              size: 15,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        Text(
+                          _noteListDate(note.updatedAt, l10n),
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                        if (showPreview) ...[
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              title,
+                              preview,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context)
                                   .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700),
+                                  .bodySmall
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
                             ),
                           ),
-                          if (note.pinned)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 8),
-                              child: Icon(
-                                LucideIcons.pin,
-                                size: 15,
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          Text(
-                            _noteListDate(note.updatedAt, l10n),
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
+                        ] else
+                          const Spacer(),
+                        if (note.checklist.isNotEmpty)
+                          _NoteListMetaIcon(
+                            icon: LucideIcons.squareCheck,
+                            label:
+                                '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
                           ),
-                          if (showPreview) ...[
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                preview,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: scheme.onSurfaceVariant),
-                              ),
-                            ),
-                          ] else
-                            const Spacer(),
-                          if (note.checklist.isNotEmpty)
-                            _NoteListMetaIcon(
-                              icon: LucideIcons.squareCheck,
-                              label:
-                                  '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
-                            ),
-                          if (note.shared)
-                            const _NoteListMetaIcon(icon: LucideIcons.users),
-                          if (note.reminderAt != null)
-                            const _NoteListMetaIcon(icon: LucideIcons.bell),
-                        ],
-                      ),
-                    ],
-                  ),
+                        if (note.shared)
+                          const _NoteListMetaIcon(icon: LucideIcons.users),
+                        if (note.reminderAt != null)
+                          const _NoteListMetaIcon(icon: LucideIcons.bell),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
