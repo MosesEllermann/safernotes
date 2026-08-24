@@ -157,6 +157,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final editorTop =
+        tester.getTopLeft(find.byKey(const ValueKey('editor-content'))).dy;
     final checklistTop =
         tester.getTopLeft(find.byKey(const ValueKey('checklist'))).dy;
     final firstCheckboxTop = tester
@@ -165,7 +167,8 @@ void main() {
         ))
         .dy;
 
-    expect(firstCheckboxTop - checklistTop, lessThan(12));
+    expect(checklistTop, editorTop);
+    expect(firstCheckboxTop - editorTop, lessThan(12));
     expect(find.byTooltip('Fett'), findsNothing);
     expect(find.byTooltip('Kursiv'), findsNothing);
     expect(find.byTooltip('Durchstreichen'), findsNothing);

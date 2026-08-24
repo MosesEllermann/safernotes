@@ -282,7 +282,17 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                         },
                       );
                       return AnimatedSwitcher(
+                        key: const ValueKey('editor-content'),
                         duration: const Duration(milliseconds: 160),
+                        layoutBuilder: (currentChild, previousChildren) {
+                          return Stack(
+                            alignment: Alignment.topCenter,
+                            children: [
+                              ...previousChildren,
+                              if (currentChild != null) currentChild,
+                            ],
+                          );
+                        },
                         child: _checklistMode
                             ? Padding(
                                 key: const ValueKey('checklist'),
