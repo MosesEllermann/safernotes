@@ -25,6 +25,7 @@ from apps.notes.serializers import (
     NoteKeyGrantSerializer,
     NoteSerializer,
     NoteStateSerializer,
+    OwnerNoteKeySerializer,
     OwnershipTransferSerializer,
     ShareInvitationDecisionSerializer,
     ShareInvitationSerializer,
@@ -52,6 +53,65 @@ class NoteViewSet(viewsets.ModelViewSet):
         instance.state = "deleted"
         instance.deleted_at = timezone.now()
         instance.save(update_fields=["state", "deleted_at", "updated_at"])
+
+    @decorators.action(detail=True, methods=["post"], url_path="sharing/key")
+    def store_owner_key(self, request, pk=None):
+        note = self.get_object()
+        if note.owner_user != request.user:
+            raise exceptions.PermissionDenied("Only note owners can store the owner note key.")
+        serializer = OwnerNoteKeySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        grant = (
+            NoteKeyGrant.objects.filter(note=note, recipient_user=request.user)
+            .order_by("-updated_at")
+            .first()
+        )
+        values = {
+            "sender_user": request.user,
+            "role": "owner",
+            "encrypted_note_key": serializer.validated_data["encrypted_note_key"],
+            "grant_signature": serializer.validated_data["grant_signature"],
+            "revoked_at": None,
+            "revoked_reason": "",
+        }
+        if grant is None:
+            grant = NoteKeyGrant.objects.create(note=note, recipient_user=request.user, **values)
+        else:
+            for field, value in values.items():
+                setattr(grant, field, value)
+            grant.save(update_fields=[*values, "updated_at"])
+        return response.Response(NoteKeyGrantSerializer(grant, context={"request": request}).data)
+
+    @decorators.action(detail=True, methods=["get"], url_path="sharing")
+    def sharing(self, request, pk=None):
+        note = self.get_object()
+        if note.owner_user != request.user:
+            raise exceptions.PermissionDenied("Only note owners can manage access.")
+        participants = [
+            {
+                "id": str(grant.id),
+                "type": "grant",
+                "email": grant.recipient_user.email,
+                "role": grant.role,
+                "status": "accepted",
+            }
+            for grant in note.key_grants.select_related("recipient_user")
+            .filter(revoked_at__isnull=True)
+            .exclude(recipient_user=note.owner_user)
+        ]
+        participants.extend(
+            {
+                "id": str(invitation.id),
+                "type": "invitation",
+                "email": invitation.recipient_user.email,
+                "role": invitation.role,
+                "status": invitation.status,
+            }
+            for invitation in note.share_invitations.select_related("recipient_user").filter(
+                status=ShareInvitationStatus.PENDING
+            )
+        )
+        return response.Response({"results": participants})
 
     @decorators.action(detail=True, methods=["patch"], url_path="state")
     def state(self, request, pk=None):
@@ -247,6 +307,8 @@ class ShareInvitationViewSet(viewsets.ModelViewSet):
         if not can_share_note(self.request.user, note):
             raise exceptions.PermissionDenied("Only note owners can invite collaborators.")
         invitation = serializer.save()
+        if not getattr(serializer, "invitation_created", True):
+            return
         notification_payload = getattr(serializer, "encrypted_notification_payload", None)
         if notification_payload:
             Notification.objects.create(
@@ -307,15 +369,32 @@ class ShareInvitationViewSet(viewsets.ModelViewSet):
                 ShareInvitationSerializer(invitation, context={"request": request}).data
             )
 
-        grant = NoteKeyGrant.objects.create(
-            note=invitation.note,
-            recipient_user=invitation.recipient_user,
-            sender_user=invitation.sender_user,
-            role=invitation.role,
-            encrypted_note_key=invitation.encrypted_note_key,
-            grant_signature=invitation.invitation_signature,
-            source_invitation=invitation,
+        grant = (
+            NoteKeyGrant.objects.filter(
+                note=invitation.note, recipient_user=invitation.recipient_user
+            )
+            .order_by("-updated_at")
+            .first()
         )
+        values = {
+            "sender_user": invitation.sender_user,
+            "role": invitation.role,
+            "encrypted_note_key": invitation.encrypted_note_key,
+            "grant_signature": invitation.invitation_signature,
+            "source_invitation": invitation,
+            "revoked_at": None,
+            "revoked_reason": "",
+        }
+        if grant is None:
+            grant = NoteKeyGrant.objects.create(
+                note=invitation.note,
+                recipient_user=invitation.recipient_user,
+                **values,
+            )
+        else:
+            for field, value in values.items():
+                setattr(grant, field, value)
+            grant.save(update_fields=[*values, "updated_at"])
         invitation.status = ShareInvitationStatus.ACCEPTED
         invitation.accepted_at = timezone.now()
         invitation.save(update_fields=["status", "accepted_at", "updated_at"])

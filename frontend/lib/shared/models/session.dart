@@ -7,6 +7,9 @@ class AppSession {
     required this.refreshToken,
     required this.defaultTenant,
     required this.masterKey,
+    this.userId = '',
+    this.publicEncryptionKey = '',
+    this.privateEncryptionKey = '',
     this.emailVerified = true,
   });
 
@@ -15,6 +18,9 @@ class AppSession {
   final String refreshToken;
   final String defaultTenant;
   final List<int> masterKey;
+  final String userId;
+  final String publicEncryptionKey;
+  final String privateEncryptionKey;
   final bool emailVerified;
 
   Map<String, dynamic> toJson() => {
@@ -23,6 +29,9 @@ class AppSession {
         'refreshToken': refreshToken,
         'defaultTenant': defaultTenant,
         'masterKey': masterKey,
+        'userId': userId,
+        'publicEncryptionKey': publicEncryptionKey,
+        'privateEncryptionKey': privateEncryptionKey,
         'emailVerified': emailVerified,
       };
 
@@ -32,6 +41,9 @@ class AppSession {
     String? refreshToken,
     String? defaultTenant,
     List<int>? masterKey,
+    String? userId,
+    String? publicEncryptionKey,
+    String? privateEncryptionKey,
     bool? emailVerified,
   }) {
     return AppSession(
@@ -40,6 +52,9 @@ class AppSession {
       refreshToken: refreshToken ?? this.refreshToken,
       defaultTenant: defaultTenant ?? this.defaultTenant,
       masterKey: masterKey ?? this.masterKey,
+      userId: userId ?? this.userId,
+      publicEncryptionKey: publicEncryptionKey ?? this.publicEncryptionKey,
+      privateEncryptionKey: privateEncryptionKey ?? this.privateEncryptionKey,
       emailVerified: emailVerified ?? this.emailVerified,
     );
   }

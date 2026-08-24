@@ -181,6 +181,75 @@ class CryptoService {
     return base64UrlNoPad(hash.bytes);
   }
 
+  Future<List<int>> decryptPrivateEncryptionKey({
+    required EncryptedEnvelope encryptedPrivateKey,
+    required List<int> masterKey,
+  }) async {
+    final encoded = await decryptString(encryptedPrivateKey, masterKey);
+    return decodeBase64UrlNoPad(encoded);
+  }
+
+  Future<EncryptedEnvelope> wrapNoteKey({
+    required List<int> noteKey,
+    required String recipientPublicKey,
+  }) async {
+    final ephemeralPair = await _x25519.newKeyPair();
+    final ephemeralPublic = await ephemeralPair.extractPublicKey();
+    final sharedSecret = await _x25519.sharedSecretKey(
+      keyPair: ephemeralPair,
+      remotePublicKey: SimplePublicKey(
+        decodeBase64UrlNoPad(recipientPublicKey),
+        type: KeyPairType.x25519,
+      ),
+    );
+    final wrappingKey = await _sharingKey(sharedSecret);
+    final wrapped = await encryptString(base64UrlNoPad(noteKey), wrappingKey);
+    return EncryptedEnvelope(
+      version: wrapped.version,
+      algorithm: 'X25519_AES_256_GCM',
+      nonce: wrapped.nonce,
+      ciphertext: wrapped.ciphertext,
+      keyId: base64UrlNoPad(ephemeralPublic.bytes),
+    );
+  }
+
+  Future<List<int>> unwrapNoteKey({
+    required EncryptedEnvelope envelope,
+    required String privateEncryptionKey,
+    required String publicEncryptionKey,
+  }) async {
+    if (envelope.keyId == null || envelope.keyId!.isEmpty) {
+      throw const FormatException('Missing ephemeral sharing key.');
+    }
+    final keyPair = SimpleKeyPairData(
+      decodeBase64UrlNoPad(privateEncryptionKey),
+      publicKey: SimplePublicKey(
+        decodeBase64UrlNoPad(publicEncryptionKey),
+        type: KeyPairType.x25519,
+      ),
+      type: KeyPairType.x25519,
+    );
+    final sharedSecret = await _x25519.sharedSecretKey(
+      keyPair: keyPair,
+      remotePublicKey: SimplePublicKey(
+        decodeBase64UrlNoPad(envelope.keyId!),
+        type: KeyPairType.x25519,
+      ),
+    );
+    final encoded =
+        await decryptString(envelope, await _sharingKey(sharedSecret));
+    return decodeBase64UrlNoPad(encoded);
+  }
+
+  Future<List<int>> _sharingKey(SecretKey sharedSecret) async {
+    final sharedBytes = await sharedSecret.extractBytes();
+    final digest = await Sha256().hash([
+      ...utf8.encode('safernotes-note-share-v1:'),
+      ...sharedBytes,
+    ]);
+    return digest.bytes;
+  }
+
   Future<RegistrationKeyMaterial> createRegistrationMaterial({
     required String password,
     required String deviceName,

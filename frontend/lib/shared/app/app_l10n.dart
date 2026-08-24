@@ -204,6 +204,10 @@ const _strings = {
     'readOnly': 'Read only',
     'inviting': 'Inviting',
     'sharedNote': 'Shared note',
+    'shared': 'Shared',
+    'peopleWithAccess': 'People with access',
+    'invitationPending': 'Invitation pending',
+    'removeAccess': 'Remove access',
     'sharedReminderDescription':
         'Reminders are personal and cannot be shared with collaborators. Cancel or create a personal reminder copy.',
     'duplicateAsReminder': 'Duplicate as reminder',
@@ -431,6 +435,10 @@ const _strings = {
     'readOnly': 'Nur lesen',
     'inviting': 'Wird eingeladen',
     'sharedNote': 'Geteilte Notiz',
+    'shared': 'Geteilt',
+    'peopleWithAccess': 'Personen mit Zugriff',
+    'invitationPending': 'Einladung ausstehend',
+    'removeAccess': 'Zugriff entfernen',
     'sharedReminderDescription':
         'Erinnerungen sind persönlich und können nicht mit Mitarbeitern geteilt werden. Du kannst abbrechen oder eine persönliche Kopie als Erinnerung erstellen.',
     'duplicateAsReminder': 'Als Erinnerung duplizieren',

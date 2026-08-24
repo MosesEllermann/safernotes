@@ -133,4 +133,31 @@ void main() {
 
     expect(unlocked, masterKey);
   });
+
+  test('note keys can be wrapped for and unwrapped by a recipient', () async {
+    final crypto = CryptoService();
+    final recipient = await crypto.createRegistrationMaterial(
+      password: 'recipient-password',
+      deviceName: 'Recipient device',
+      tenantName: 'Recipient vault',
+    );
+    final privateKey = await crypto.decryptPrivateEncryptionKey(
+      encryptedPrivateKey: recipient.encryptedPrivateEncryptionKey,
+      masterKey: recipient.masterKey,
+    );
+    final noteKey = crypto.randomBytes(32);
+
+    final wrapped = await crypto.wrapNoteKey(
+      noteKey: noteKey,
+      recipientPublicKey: recipient.publicEncryptionKey,
+    );
+    final unwrapped = await crypto.unwrapNoteKey(
+      envelope: wrapped,
+      privateEncryptionKey: crypto.base64UrlNoPad(privateKey),
+      publicEncryptionKey: recipient.publicEncryptionKey,
+    );
+
+    expect(wrapped.algorithm, 'X25519_AES_256_GCM');
+    expect(unwrapped, noteKey);
+  });
 }

@@ -49,6 +49,7 @@ class PublicKeysSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id",
+            "email",
             "public_encryption_key",
             "public_signing_key",
             "public_encryption_key_fingerprint",
@@ -56,6 +57,7 @@ class PublicKeysSerializer(serializers.ModelSerializer):
             "key_version",
             "key_transparency_leaf",
         ]
+        read_only_fields = fields
 
     def get_public_encryption_key(self, obj):
         return bytes(obj.key_material.public_encryption_key).decode("utf-8")

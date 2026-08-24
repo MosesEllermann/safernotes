@@ -427,6 +427,42 @@ def test_share_invitation_email_has_safe_acceptance_link_in_every_locale(
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_duplicate_pending_invitation_sends_one_email(db, django_user_model):
+    from apps.notes.models import Note, ShareInvitation
+    from apps.tenants.models import Organization
+
+    owner = django_user_model.objects.create_user(
+        email="dedupe-owner@example.com", password="strong-password"
+    )
+    recipient = django_user_model.objects.create_user(
+        email="dedupe-recipient@example.com", password="strong-password"
+    )
+    tenant = Organization.objects.create(name_ciphertext=encrypted_payload(), owner_user=owner)
+    note = Note.objects.create(
+        tenant=tenant,
+        owner_user=owner,
+        encrypted_payload=encrypted_payload(),
+        payload_hash=b"server-hash",
+        client_updated_at="2026-06-09T00:00:00Z",
+    )
+    payload = {
+        "note": str(note.id),
+        "recipient_user": recipient.email,
+        "role": "viewer",
+        "encrypted_note_key": encrypted_payload(),
+        "invitation_signature": "signature",
+    }
+    view = ShareInvitationViewSet.as_view({"post": "create"})
+    for _ in range(2):
+        request = APIRequestFactory().post("/api/v1/notes/invitations/", payload, format="json")
+        force_authenticate(request, user=owner)
+        assert view(request).status_code == 201
+
+    assert ShareInvitation.objects.count() == 1
+    assert len(mail.outbox) == 1
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 def test_invitation_link_id_opens_recipient_acceptance_flow(db, django_user_model):
     from apps.notes.models import Note, NoteKeyGrant, ShareInvitation
     from apps.tenants.models import Organization
@@ -485,6 +521,11 @@ def test_invitation_link_id_opens_recipient_acceptance_flow(db, django_user_mode
         source_invitation=invitation,
         recipient_user=recipient,
     ).exists()
+
+    note_payload = NoteSerializer(note, context={"request": accept}).data
+    assert note_payload["current_user_role"] == "viewer"
+    assert note_payload["current_key_grant"]["encrypted_note_key"] == encrypted_payload()
+    assert note_payload["is_shared"] is True
 
 
 def test_share_invitation_contacts_include_sent_and_received(db, django_user_model):

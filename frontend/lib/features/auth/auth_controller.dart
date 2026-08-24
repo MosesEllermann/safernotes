@@ -21,14 +21,37 @@ class AuthController extends AsyncNotifier<AppSession?> {
   Future<AppSession?> build() async {
     final saved = await ref.watch(offlineStoreProvider).loadSessionJson();
     if (saved == null) return null;
-    return AppSession(
+    var session = AppSession(
       email: saved['email'] as String,
       accessToken: saved['accessToken'] as String,
       refreshToken: saved['refreshToken'] as String,
       defaultTenant: saved['defaultTenant'] as String,
       masterKey: (saved['masterKey'] as List).cast<int>(),
+      userId: saved['userId'] as String? ?? '',
+      publicEncryptionKey: saved['publicEncryptionKey'] as String? ?? '',
+      privateEncryptionKey: saved['privateEncryptionKey'] as String? ?? '',
       emailVerified: saved['emailVerified'] as bool? ?? true,
     );
+    if (session.privateEncryptionKey.isEmpty) {
+      try {
+        final me =
+            await ref.read(apiClientProvider).fetchMe(session.accessToken);
+        final material = Map<String, dynamic>.from(me['key_material'] as Map);
+        session = session.copyWith(
+          userId: me['id'] as String? ?? '',
+          publicEncryptionKey:
+              material['public_encryption_key'] as String? ?? '',
+          privateEncryptionKey: await _privateKeyFromResponse(
+            {'key_material': material},
+            session.masterKey,
+          ),
+        );
+        await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
+      } catch (_) {
+        // An expired/offline session can still open the local encrypted vault.
+      }
+    }
+    return session;
   }
 
   Future<RegistrationKeyMaterial> prepareRegistration({
@@ -62,6 +85,14 @@ class AuthController extends AsyncNotifier<AppSession?> {
         refreshToken: response['refresh_token'] as String,
         defaultTenant: response['default_tenant'] as String,
         masterKey: material.masterKey,
+        userId: response['id'] as String? ?? '',
+        publicEncryptionKey: material.publicEncryptionKey,
+        privateEncryptionKey: ref.read(cryptoServiceProvider).base64UrlNoPad(
+              await ref.read(cryptoServiceProvider).decryptPrivateEncryptionKey(
+                    encryptedPrivateKey: material.encryptedPrivateEncryptionKey,
+                    masterKey: material.masterKey,
+                  ),
+            ),
         emailVerified: response['email_verified'] as bool? ?? false,
       );
       await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
@@ -100,6 +131,19 @@ class AuthController extends AsyncNotifier<AppSession?> {
         refreshToken: response['refresh_token'] as String,
         defaultTenant: response['default_tenant'] as String,
         masterKey: masterKey,
+        userId: response['id'] as String? ?? '',
+        publicEncryptionKey:
+            keyMaterial['public_encryption_key'] as String? ?? '',
+        privateEncryptionKey: ref.read(cryptoServiceProvider).base64UrlNoPad(
+              await ref.read(cryptoServiceProvider).decryptPrivateEncryptionKey(
+                    encryptedPrivateKey: EncryptedEnvelope.fromJson(
+                      Map<String, dynamic>.from(
+                        keyMaterial['encrypted_private_encryption_key'] as Map,
+                      ),
+                    ),
+                    masterKey: masterKey,
+                  ),
+            ),
         emailVerified: response['email_verified'] as bool? ?? true,
       );
       await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
@@ -152,11 +196,38 @@ class AuthController extends AsyncNotifier<AppSession?> {
         refreshToken: response['refresh_token'] as String,
         defaultTenant: response['default_tenant'] as String? ?? '',
         masterKey: masterKey,
+        userId: response['id'] as String? ?? '',
+        publicEncryptionKey: (response['key_material']
+                as Map?)?['public_encryption_key'] as String? ??
+            '',
+        privateEncryptionKey:
+            await _privateKeyFromResponse(response, masterKey),
         emailVerified: response['email_verified'] as bool? ?? true,
       );
       await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
       return session;
     });
+  }
+
+  Future<String> _privateKeyFromResponse(
+    Map<String, dynamic> response,
+    List<int> masterKey,
+  ) async {
+    final material = response['key_material'];
+    if (material is! Map ||
+        material['encrypted_private_encryption_key'] is! Map) {
+      return '';
+    }
+    final crypto = ref.read(cryptoServiceProvider);
+    return crypto.base64UrlNoPad(
+      await crypto.decryptPrivateEncryptionKey(
+        encryptedPrivateKey: EncryptedEnvelope.fromJson(
+          Map<String, dynamic>.from(
+              material['encrypted_private_encryption_key'] as Map),
+        ),
+        masterKey: masterKey,
+      ),
+    );
   }
 
   Future<void> changePassword({

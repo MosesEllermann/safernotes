@@ -239,7 +239,9 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                       if (_reminderAt == null)
                         AppIconButton(
                           tooltip: l10n.t('collaboratorInvite'),
-                          icon: LucideIcons.userPlus,
+                          icon: note.shared
+                              ? LucideIcons.users
+                              : LucideIcons.userPlus,
                           size: bottomToolbar ? 44 : 36,
                           onPressed: () => _showShareSheet(note),
                         ),
@@ -1805,7 +1807,9 @@ class _ShareSheet extends ConsumerStatefulWidget {
 class _ShareSheetState extends ConsumerState<_ShareSheet> {
   final _recipient = TextEditingController();
   List<ShareContact> _recentContacts = const [];
+  List<ShareParticipant> _participants = const [];
   var _contactsLoading = true;
+  var _accessLoading = true;
   var _role = 'editor';
   var _busy = false;
   String? _error;
@@ -1814,6 +1818,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
   void initState() {
     super.initState();
     unawaited(_loadRecentContacts());
+    unawaited(_loadAccess());
   }
 
   @override
@@ -1831,6 +1836,9 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
       error: _error,
       recentContacts: _recentContacts,
       contactsLoading: _contactsLoading,
+      participants: _participants,
+      accessLoading: _accessLoading,
+      onRemoveAccess: _removeAccess,
       onContactSelected: _selectContact,
       onRoleChanged: (value) => setState(() => _role = value),
       onInvite: _busy ? null : _invite,
@@ -1858,6 +1866,42 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     }
   }
 
+  Future<void> _loadAccess() async {
+    final session = ref.read(authControllerProvider).valueOrNull;
+    if (session == null || widget.note.remoteId == null) {
+      if (mounted) setState(() => _accessLoading = false);
+      return;
+    }
+    try {
+      final participants = await ref.read(apiClientProvider).fetchNoteSharing(
+            accessToken: session.accessToken,
+            noteId: widget.note.remoteId!,
+          );
+      if (mounted) {
+        setState(() {
+          _participants = participants;
+          _accessLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _accessLoading = false);
+    }
+  }
+
+  Future<void> _removeAccess(ShareParticipant participant) async {
+    final session = ref.read(authControllerProvider).valueOrNull;
+    if (session == null) return;
+    await ref.read(apiClientProvider).removeShareAccess(
+          accessToken: session.accessToken,
+          participant: participant,
+        );
+    if (mounted) {
+      setState(() => _participants =
+          _participants.where((item) => item.id != participant.id).toList());
+    }
+    await ref.read(notesControllerProvider.notifier).pullRemote();
+  }
+
   void _selectContact(ShareContact contact) {
     _recipient.text = contact.email;
     _recipient.selection =
@@ -1865,6 +1909,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
   }
 
   Future<void> _invite() async {
+    if (_busy) return;
     final recipient = _recipient.text.trim();
     if (recipient.isEmpty) {
       setState(() => _error = ref.read(l10nProvider).t('recipientRequired'));
@@ -1886,7 +1931,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
           );
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
-      setState(() => _error = _friendlyInviteError(error));
+      if (mounted) setState(() => _error = _friendlyInviteError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1916,6 +1961,9 @@ class _CollaboratorInviteSheet extends StatelessWidget {
     required this.error,
     required this.recentContacts,
     required this.contactsLoading,
+    required this.participants,
+    required this.accessLoading,
+    required this.onRemoveAccess,
     required this.onContactSelected,
     required this.onRoleChanged,
     required this.onInvite,
@@ -1927,6 +1975,9 @@ class _CollaboratorInviteSheet extends StatelessWidget {
   final String? error;
   final List<ShareContact> recentContacts;
   final bool contactsLoading;
+  final List<ShareParticipant> participants;
+  final bool accessLoading;
+  final ValueChanged<ShareParticipant> onRemoveAccess;
   final ValueChanged<ShareContact> onContactSelected;
   final ValueChanged<String> onRoleChanged;
   final VoidCallback? onInvite;
@@ -1992,6 +2043,41 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (accessLoading || participants.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          l10n.t('peopleWithAccess'),
+                          style:
+                              Theme.of(context).textTheme.labelLarge?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                        ),
+                        const SizedBox(height: 6),
+                        if (accessLoading)
+                          const LinearProgressIndicator(minHeight: 2)
+                        else
+                          for (final participant in participants)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                participant.status == 'pending'
+                                    ? LucideIcons.mail
+                                    : LucideIcons.userRoundCheck,
+                                size: 20,
+                              ),
+                              title: Text(participant.email),
+                              subtitle: Text(participant.status == 'pending'
+                                  ? l10n.t('invitationPending')
+                                  : participant.role == 'editor'
+                                      ? l10n.t('canEdit')
+                                      : l10n.t('readOnly')),
+                              trailing: AppIconButton(
+                                tooltip: l10n.t('removeAccess'),
+                                icon: LucideIcons.userRoundX,
+                                onPressed: () => onRemoveAccess(participant),
+                              ),
+                            ),
+                      ],
                       const SizedBox(height: 18),
                       TextField(
                         controller: recipient,

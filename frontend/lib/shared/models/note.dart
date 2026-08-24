@@ -61,6 +61,8 @@ class PlainNote {
     this.conflicted = false,
     this.reminderAt,
     this.shared = false,
+    this.noteKey,
+    this.shareRole,
   });
 
   final String localId;
@@ -79,6 +81,8 @@ class PlainNote {
   final bool conflicted;
   final DateTime? reminderAt;
   final bool shared;
+  final String? noteKey;
+  final String? shareRole;
 
   PlainNote copyWith({
     String? remoteId,
@@ -98,6 +102,10 @@ class PlainNote {
     DateTime? reminderAt,
     bool clearReminder = false,
     bool? shared,
+    String? noteKey,
+    bool clearNoteKey = false,
+    String? shareRole,
+    bool clearShareRole = false,
   }) {
     return PlainNote(
       localId: localId,
@@ -117,6 +125,8 @@ class PlainNote {
       conflicted: conflicted ?? this.conflicted,
       reminderAt: clearReminder ? null : reminderAt ?? this.reminderAt,
       shared: shared ?? this.shared,
+      noteKey: clearNoteKey ? null : noteKey ?? this.noteKey,
+      shareRole: clearShareRole ? null : shareRole ?? this.shareRole,
     );
   }
 
@@ -130,6 +140,8 @@ class PlainNote {
         'sortOrder': sortOrder,
         'pinned': pinned,
         'shared': shared,
+        if (noteKey != null) 'noteKey': noteKey,
+        if (shareRole != null) 'shareRole': shareRole,
         'updatedAt': updatedAt.toUtc().toIso8601String(),
       };
 
@@ -174,6 +186,8 @@ class PlainNote {
       conflicted: json['conflicted'] as bool? ?? false,
       reminderAt: DateTime.tryParse(json['reminderAt'] as String? ?? ''),
       shared: json['shared'] as bool? ?? false,
+      noteKey: json['noteKey'] as String?,
+      shareRole: json['shareRole'] as String?,
     );
   }
 
@@ -224,6 +238,9 @@ class RemoteEncryptedNote {
     required this.version,
     required this.updatedAt,
     required this.state,
+    required this.isShared,
+    this.currentUserRole,
+    this.currentKeyGrant,
   });
 
   final String id;
@@ -233,6 +250,9 @@ class RemoteEncryptedNote {
   final int version;
   final DateTime updatedAt;
   final String state;
+  final bool isShared;
+  final String? currentUserRole;
+  final NoteKeyGrantInfo? currentKeyGrant;
 
   factory RemoteEncryptedNote.fromJson(Map<String, dynamic> json) {
     return RemoteEncryptedNote(
@@ -245,6 +265,55 @@ class RemoteEncryptedNote {
       version: json['version'] as int? ?? 1,
       updatedAt: DateTime.parse(json['updated_at'] as String),
       state: json['state'] as String? ?? 'active',
+      isShared: json['is_shared'] as bool? ?? false,
+      currentUserRole: json['current_user_role'] as String?,
+      currentKeyGrant: json['current_key_grant'] is Map
+          ? NoteKeyGrantInfo.fromJson(
+              Map<String, dynamic>.from(json['current_key_grant'] as Map),
+            )
+          : null,
+    );
+  }
+}
+
+class NoteKeyGrantInfo {
+  const NoteKeyGrantInfo({required this.role, required this.encryptedNoteKey});
+
+  final String role;
+  final EncryptedEnvelope encryptedNoteKey;
+
+  factory NoteKeyGrantInfo.fromJson(Map<String, dynamic> json) {
+    return NoteKeyGrantInfo(
+      role: json['role'] as String,
+      encryptedNoteKey: EncryptedEnvelope.fromJson(
+        Map<String, dynamic>.from(json['encrypted_note_key'] as Map),
+      ),
+    );
+  }
+}
+
+class ShareParticipant {
+  const ShareParticipant({
+    required this.id,
+    required this.type,
+    required this.email,
+    required this.role,
+    required this.status,
+  });
+
+  final String id;
+  final String type;
+  final String email;
+  final String role;
+  final String status;
+
+  factory ShareParticipant.fromJson(Map<String, dynamic> json) {
+    return ShareParticipant(
+      id: json['id'] as String,
+      type: json['type'] as String,
+      email: json['email'] as String,
+      role: json['role'] as String,
+      status: json['status'] as String,
     );
   }
 }

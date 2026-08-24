@@ -148,6 +148,10 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> fetchMe(String accessToken) {
+    return _get('/api/v1/users/me', accessToken);
+  }
+
   Future<Map<String, dynamic>> changePassword({
     required String accessToken,
     required String currentPassword,
@@ -193,6 +197,51 @@ class ApiClient {
         .map((item) =>
             ShareContact.fromJson(Map<String, dynamic>.from(item as Map)))
         .toList();
+  }
+
+  Future<Map<String, dynamic>> fetchPublicKeys({
+    required String accessToken,
+    required String email,
+  }) {
+    final path = Uri(path: '/api/v1/users/public-keys', queryParameters: {
+      'email': email,
+    }).toString();
+    return _get(path, accessToken);
+  }
+
+  Future<void> storeOwnerNoteKey({
+    required String accessToken,
+    required String noteId,
+    required EncryptedEnvelope encryptedNoteKey,
+    required String grantSignature,
+  }) async {
+    await _post(
+      '/api/v1/notes/$noteId/sharing/key/',
+      {
+        'encrypted_note_key': encryptedNoteKey.toJson(),
+        'grant_signature': grantSignature,
+      },
+      accessToken: accessToken,
+    );
+  }
+
+  Future<List<ShareParticipant>> fetchNoteSharing({
+    required String accessToken,
+    required String noteId,
+  }) async {
+    final json = await _get('/api/v1/notes/$noteId/sharing/', accessToken);
+    return (json['results'] as List? ?? const [])
+        .map((item) =>
+            ShareParticipant.fromJson(Map<String, dynamic>.from(item as Map)))
+        .toList();
+  }
+
+  Future<void> removeShareAccess({
+    required String accessToken,
+    required ShareParticipant participant,
+  }) async {
+    final collection = participant.type == 'grant' ? 'grants' : 'invitations';
+    await _delete('/api/v1/notes/$collection/${participant.id}/', accessToken);
   }
 
   Future<Map<String, dynamic>> createShareInvitation({
@@ -318,6 +367,19 @@ class ApiClient {
           'Authorization': 'Bearer $accessToken',
         },
         body: jsonEncode(body),
+      ),
+    );
+    return _decode(response);
+  }
+
+  Future<Map<String, dynamic>> _delete(
+    String path,
+    String accessToken,
+  ) async {
+    final response = await _request(
+      () => _http.delete(
+        Uri.parse('$baseUrl$path'),
+        headers: {'Authorization': 'Bearer $accessToken'},
       ),
     );
     return _decode(response);

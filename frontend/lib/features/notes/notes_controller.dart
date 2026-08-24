@@ -163,14 +163,48 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       final merged = Map<String, PlainNote>.fromEntries(
         local.map((note) => MapEntry(note.remoteId ?? note.localId, note)),
       );
+      final remoteIds = remote.map((note) => note.id).toSet();
+      merged.removeWhere((id, note) =>
+          note.remoteId != null &&
+          note.shareRole != null &&
+          note.shareRole != 'owner' &&
+          !remoteIds.contains(note.remoteId) &&
+          !note.dirty);
       for (final item in remote) {
         final localMatch = merged[item.id];
         if (localMatch != null && localMatch.dirty) continue;
         try {
-          final decoded = await ref.read(cryptoServiceProvider).decryptString(
-                item.encryptedPayload,
+          final crypto = ref.read(cryptoServiceProvider);
+          List<int>? noteKey;
+          final grant = item.currentKeyGrant;
+          if (grant != null) {
+            if (grant.role == 'owner') {
+              final encoded = await crypto.decryptString(
+                grant.encryptedNoteKey,
                 session.masterKey,
               );
+              noteKey = crypto.decodeBase64UrlNoPad(encoded);
+            } else if (session.privateEncryptionKey.isNotEmpty &&
+                session.publicEncryptionKey.isNotEmpty) {
+              noteKey = await crypto.unwrapNoteKey(
+                envelope: grant.encryptedNoteKey,
+                privateEncryptionKey: session.privateEncryptionKey,
+                publicEncryptionKey: session.publicEncryptionKey,
+              );
+            }
+          }
+          String decoded;
+          try {
+            decoded = await crypto.decryptString(
+              item.encryptedPayload,
+              noteKey ?? session.masterKey,
+            );
+          } catch (_) {
+            decoded = await crypto.decryptString(
+              item.encryptedPayload,
+              session.masterKey,
+            );
+          }
           final plain = Map<String, dynamic>.from(jsonDecode(decoded) as Map);
           final remoteNote = PlainNote.fromEncryptedPayload(
             localId: localMatch?.localId ?? item.id,
@@ -181,7 +215,11 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
           ).copyWith(
             state: item.state,
             reminderAt: localMatch?.reminderAt,
-            shared: localMatch?.shared,
+            shared: item.isShared || item.currentUserRole != 'owner',
+            noteKey: noteKey == null
+                ? localMatch?.noteKey
+                : crypto.base64UrlNoPad(noteKey),
+            shareRole: item.currentUserRole,
           );
           merged[item.id] = remoteNote;
         } catch (_) {
@@ -253,10 +291,15 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     try {
       final operations = <Map<String, dynamic>>[];
       for (final note in dirty) {
+        final encryptionKey = note.noteKey == null
+            ? session.masterKey
+            : ref
+                .read(cryptoServiceProvider)
+                .decodeBase64UrlNoPad(note.noteKey!);
         final encrypted =
             await ref.read(cryptoServiceProvider).encryptNotePayload(
                   note: note,
-                  masterKey: session.masterKey,
+                  masterKey: encryptionKey,
                 );
         operations.add(
           noteUpsertOperation(
@@ -471,24 +514,55 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
   }) async {
     final session = ref.read(authControllerProvider).valueOrNull;
     if (session == null || note.remoteId == null) return;
-    final encryptedKey = await ref.read(cryptoServiceProvider).encryptString(
-          ref.read(cryptoServiceProvider).base64UrlNoPad(session.masterKey),
-          session.masterKey,
+    if (session.privateEncryptionKey.isEmpty ||
+        session.publicEncryptionKey.isEmpty) {
+      throw StateError('Please sign in again before sharing a note.');
+    }
+    final crypto = ref.read(cryptoServiceProvider);
+    final recipient = await ref.read(apiClientProvider).fetchPublicKeys(
+          accessToken: session.accessToken,
+          email: recipientUserId,
         );
+    final noteKey = note.noteKey == null
+        ? crypto.randomBytes(32)
+        : crypto.decodeBase64UrlNoPad(note.noteKey!);
+    final encodedNoteKey = crypto.base64UrlNoPad(noteKey);
+    if (note.noteKey == null) {
+      final ownerEnvelope = await crypto.encryptString(
+        encodedNoteKey,
+        session.masterKey,
+      );
+      await ref.read(apiClientProvider).storeOwnerNoteKey(
+            accessToken: session.accessToken,
+            noteId: note.remoteId!,
+            encryptedNoteKey: ownerEnvelope,
+            grantSignature: await crypto.sha256Text('${note.remoteId}:owner'),
+          );
+      await saveDraft(
+        draft: note.copyWith(
+          shared: true,
+          noteKey: encodedNoteKey,
+          shareRole: 'owner',
+        ),
+        syncImmediately: false,
+      );
+      _debounce?.cancel();
+      await syncNow(pullAfterPush: false);
+    }
+    final encryptedKey = await crypto.wrapNoteKey(
+      noteKey: noteKey,
+      recipientPublicKey: recipient['public_encryption_key'] as String,
+    );
     await ref.read(apiClientProvider).createShareInvitation(
           accessToken: session.accessToken,
           noteId: note.remoteId!,
           recipientUserId: recipientUserId,
           role: role,
           encryptedNoteKey: encryptedKey,
-          invitationSignature: await ref
-              .read(cryptoServiceProvider)
+          invitationSignature: await crypto
               .sha256Text('${note.remoteId}:$recipientUserId:$role'),
         );
-    await saveDraft(
-      draft: note.copyWith(shared: true),
-      syncImmediately: true,
-    );
+    await pullRemote();
   }
 
   Future<void> _persist(List<PlainNote> notes) async {
