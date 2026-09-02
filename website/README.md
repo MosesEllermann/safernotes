@@ -34,9 +34,9 @@ Replace or finalize these before publishing the legal pages:
 
 The status panels on the legal pages intentionally mark unfinished legal details.
 
-The production workflow builds the current Android beta and publishes it as
-`/downloads/safernotes-android.apk`. Play Store, F-Droid, and iOS remain marked
-as not yet available until public store listings exist.
+The website can still link to a direct Android beta APK at
+`/downloads/safernotes-android.apk`. The Play Store release workflow is handled
+from `frontend/` and produces an `.aab` for upload to Play Console.
 
 ## Deployment
 

@@ -46,6 +46,9 @@ cd frontend
 ./tool/build_android_release.sh
 ```
 
+The Android release helper builds a signed Play Store `.aab` and requires the
+local, untracked `frontend/android/key.properties` signing config.
+
 Flutter widget tests may fail inside restricted sandboxes because Flutter opens a temporary localhost socket.
 
 ## Important Caveats

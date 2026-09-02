@@ -1,3 +1,6 @@
+import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart';
@@ -22,27 +25,41 @@ class SafernotesApp extends ConsumerWidget {
     final session = ref.watch(authControllerProvider);
     final preferences = ref.watch(appPreferencesProvider).valueOrNull;
     final invitationId = invitationIdFromUri(initialUri ?? Uri.base);
-    return MaterialApp(
-      title: 'Safernotes',
-      debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(Brightness.light),
-      darkTheme: buildAppTheme(Brightness.dark),
-      themeMode: preferences?.themeMode ?? ThemeMode.system,
-      locale: Locale(preferences?.languageCode ?? 'en'),
-      supportedLocales: const [Locale('en'), Locale('de')],
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        FlutterQuillLocalizations.delegate,
-      ],
-      home: session.when(
-        data: (value) => value == null
-            ? const AuthScreen()
-            : NotesScreen(invitationId: invitationId),
-        loading: () => const _BootScreen(),
-        error: (_, __) => const AuthScreen(),
-      ),
+    return DynamicColorBuilder(
+      builder: (lightDynamic, darkDynamic) {
+        final platform = defaultTargetPlatform;
+        return MaterialApp(
+          title: 'Safernotes',
+          debugShowCheckedModeBanner: false,
+          navigatorObservers: [CNTabBarRouteObserver()],
+          theme: buildAppTheme(
+            Brightness.light,
+            dynamicSeed: lightDynamic?.primary,
+            platform: platform,
+          ),
+          darkTheme: buildAppTheme(
+            Brightness.dark,
+            dynamicSeed: darkDynamic?.primary,
+            platform: platform,
+          ),
+          themeMode: preferences?.themeMode ?? ThemeMode.system,
+          locale: Locale(preferences?.languageCode ?? 'en'),
+          supportedLocales: const [Locale('en'), Locale('de')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            FlutterQuillLocalizations.delegate,
+          ],
+          home: session.when(
+            data: (value) => value == null
+                ? const AuthScreen()
+                : NotesScreen(invitationId: invitationId),
+            loading: () => const _BootScreen(),
+            error: (_, __) => const AuthScreen(),
+          ),
+        );
+      },
     );
   }
 }

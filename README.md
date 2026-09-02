@@ -56,6 +56,12 @@ cd frontend
 ./tool/build_android_release.sh
 ```
 
+`frontend/tool/build_android_release.sh` builds the Play Store Android App
+Bundle at `frontend/build/app/outputs/bundle/release/app-release.aab` and
+requires `frontend/android/key.properties` for upload signing.
+Run `frontend/tool/generate_android_upload_key.sh` once to create the local
+upload key and signing properties.
+
 ## Security Boundary
 
 Do not submit plaintext note titles, bodies, checklist items, labels, attachment metadata, or notification payloads to backend note fields. User-facing note content must be encrypted locally and submitted as versioned encrypted envelopes.

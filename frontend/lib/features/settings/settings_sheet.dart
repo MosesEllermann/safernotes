@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
 import 'package:safernotes_app/shared/app/app_preferences.dart';
+import 'package:safernotes_app/shared/theme/app_icons.dart';
 
 class SettingsSheet extends ConsumerWidget {
   const SettingsSheet({super.key});
@@ -33,7 +34,7 @@ class SettingsSheet extends ConsumerWidget {
                 IconButton(
                   tooltip: l10n.t('close'),
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(AppIcons.close),
                 ),
               ],
             ),
@@ -61,15 +62,15 @@ class SettingsSheet extends ConsumerWidget {
                 ButtonSegment(
                     value: ThemeMode.system,
                     label: Text(l10n.t('system')),
-                    icon: const Icon(Icons.brightness_auto)),
+                    icon: const Icon(AppIcons.brightnessAuto)),
                 ButtonSegment(
                     value: ThemeMode.light,
                     label: Text(l10n.t('light')),
-                    icon: const Icon(Icons.light_mode)),
+                    icon: const Icon(AppIcons.lightMode)),
                 ButtonSegment(
                     value: ThemeMode.dark,
                     label: Text(l10n.t('dark')),
-                    icon: const Icon(Icons.dark_mode)),
+                    icon: const Icon(AppIcons.darkMode)),
               ],
               onSelectionChanged: (value) => ref
                   .read(appPreferencesProvider.notifier)

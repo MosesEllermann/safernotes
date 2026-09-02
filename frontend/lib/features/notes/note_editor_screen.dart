@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:uuid/uuid.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/notes/note_editor_state.dart';
@@ -25,7 +25,13 @@ class NoteEditorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(body: SafeArea(child: NoteEditorPanel(note: note)));
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: DecoratedBox(
+        decoration: appCanvasDecoration(context),
+        child: SafeArea(child: NoteEditorPanel(note: note)),
+      ),
+    );
   }
 }
 
@@ -139,9 +145,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     final note = _draft();
-    final surfaceColor = _color == 0xffffffff
-        ? Theme.of(context).colorScheme.surfaceContainerLow
-        : brandNoteSurfaceColor(context, _color);
+    final surfaceColor = brandNoteSurfaceColor(context, _color);
     final presence = ref
         .watch(presenceProvider)
         .where(
@@ -159,13 +163,6 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       canRedo: _checklistMode ? _history.canRedo : _body.hasRedo,
       activeActions: _activeFormattingActions(),
     );
-    final divider = Divider(
-      height: 1,
-      thickness: 1,
-      color:
-          Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.62),
-    );
-
     return Shortcuts(
       shortcuts: {
         LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyB):
@@ -201,143 +198,159 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
         child: Focus(
           autofocus: true,
           child: Material(
-            color: surfaceColor,
-            elevation: widget.embedded ? 0 : 4,
-            shadowColor: Colors.black.withValues(alpha: 0.16),
-            borderRadius: BorderRadius.circular(widget.embedded ? 0 : 8),
+            key: const ValueKey('note-editor-surface'),
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(
+              widget.embedded ? 0 : context.safernotesTheme.noteCardRadius,
+            ),
             clipBehavior: Clip.antiAlias,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 12, 6),
-                  child: Row(
-                    children: [
-                      if (!widget.embedded)
+            child: Ink(
+              decoration: BoxDecoration(
+                color: surfaceColor,
+                gradient: brandNoteGradient(context, _color),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      bottomToolbar ? 14 : 24,
+                      bottomToolbar ? 16 : 24,
+                      bottomToolbar ? 10 : 20,
+                      10,
+                    ),
+                    child: Row(
+                      children: [
+                        if (!widget.embedded)
+                          AppIconButton(
+                            tooltip: l10n.t('close'),
+                            icon: AppIcons.chevronLeft,
+                            size: bottomToolbar ? 44 : 36,
+                            onPressed: () {
+                              _saveNow();
+                              Navigator.of(context).maybePop();
+                            },
+                          ),
+                        Expanded(
+                          child: TextField(
+                            controller: _title,
+                            decoration: _borderlessInput(l10n.t('title')),
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineLarge
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        _PresenceDots(presence: presence),
                         AppIconButton(
-                          tooltip: l10n.t('close'),
-                          icon: LucideIcons.chevronLeft,
+                          tooltip: _pinned ? l10n.t('unpin') : l10n.t('pin'),
+                          icon: _pinned ? AppIcons.pin : AppIcons.pinOff,
                           size: bottomToolbar ? 44 : 36,
-                          onPressed: () {
-                            _saveNow();
-                            Navigator.of(context).maybePop();
-                          },
+                          selected: _pinned,
+                          onPressed: () => _recordMutation(
+                            () => _pinned = !_pinned,
+                            immediate: true,
+                          ),
                         ),
-                      Expanded(
-                        child: TextField(
-                          controller: _title,
-                          decoration: _borderlessInput(l10n.t('title')),
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineSmall
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      _PresenceDots(presence: presence),
-                      AppIconButton(
-                        tooltip: _pinned ? l10n.t('unpin') : l10n.t('pin'),
-                        icon: _pinned ? LucideIcons.pin : LucideIcons.pinOff,
-                        size: bottomToolbar ? 44 : 36,
-                        selected: _pinned,
-                        onPressed: () => _recordMutation(
-                          () => _pinned = !_pinned,
-                          immediate: true,
-                        ),
-                      ),
-                      if (_reminderAt == null)
+                        if (_reminderAt == null)
+                          AppIconButton(
+                            tooltip: l10n.t('collaboratorInvite'),
+                            icon: note.shared
+                                ? AppIcons.users
+                                : AppIcons.userPlus,
+                            size: bottomToolbar ? 44 : 36,
+                            onPressed: () => _showShareSheet(note),
+                          ),
                         AppIconButton(
-                          tooltip: l10n.t('collaboratorInvite'),
-                          icon: note.shared
-                              ? LucideIcons.users
-                              : LucideIcons.userPlus,
+                          tooltip: l10n.t('reminder'),
+                          icon: _reminderAt == null
+                              ? AppIcons.bell
+                              : AppIcons.bellRing,
                           size: bottomToolbar ? 44 : 36,
-                          onPressed: () => _showShareSheet(note),
+                          selected: _reminderAt != null,
+                          onPressed: () => _showReminderSheet(),
                         ),
-                      AppIconButton(
-                        tooltip: l10n.t('reminder'),
-                        icon: _reminderAt == null
-                            ? LucideIcons.bell
-                            : LucideIcons.bellRing,
-                        size: bottomToolbar ? 44 : 36,
-                        selected: _reminderAt != null,
-                        onPressed: () => _showReminderSheet(),
-                      ),
-                      if (bottomToolbar)
-                        _EditorOverflowMenu(
-                          l10n: l10n,
-                          onArchive: () => _changeNoteState('archived'),
-                          onTrash: () => _changeNoteState('trashed'),
-                        )
-                      else ...[
-                        AppIconButton(
-                          tooltip: l10n.t('archiveNote'),
-                          icon: LucideIcons.archive,
-                          onPressed: () => _changeNoteState('archived'),
-                        ),
-                        AppIconButton(
-                          tooltip: l10n.t('moveToTrash'),
-                          icon: LucideIcons.trash,
-                          onPressed: () => _changeNoteState('trashed'),
-                        ),
+                        if (bottomToolbar)
+                          _EditorOverflowMenu(
+                            l10n: l10n,
+                            onArchive: () => _changeNoteState('archived'),
+                            onTrash: () => _changeNoteState('trashed'),
+                          )
+                        else ...[
+                          AppIconButton(
+                            tooltip: l10n.t('archiveNote'),
+                            icon: AppIcons.archive,
+                            onPressed: () => _changeNoteState('archived'),
+                          ),
+                          AppIconButton(
+                            tooltip: l10n.t('moveToTrash'),
+                            icon: AppIcons.trash,
+                            onPressed: () => _changeNoteState('trashed'),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                if (!bottomToolbar) ...[
-                  toolbar,
-                  divider,
-                ],
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final editor = _BodyEditor(
-                        controller: _body,
-                        focusNode: _bodyFocusNode,
-                        scrollController: _bodyScrollController,
-                        hint: l10n.t('writeNote'),
-                      );
-                      final checklist = _ChecklistEditor(
-                        items: _checklist,
-                        onChanged: (items) {
-                          _recordMutation(
-                            () => _checklist = orderChecklistItems(items),
-                          );
-                        },
-                      );
-                      return AnimatedSwitcher(
-                        key: const ValueKey('editor-content'),
-                        duration: const Duration(milliseconds: 160),
-                        layoutBuilder: (currentChild, previousChildren) {
-                          return Stack(
-                            alignment: Alignment.topCenter,
-                            children: [
-                              ...previousChildren,
-                              if (currentChild != null) currentChild,
-                            ],
-                          );
-                        },
-                        child: _checklistMode
-                            ? Padding(
-                                key: const ValueKey('checklist'),
-                                padding:
-                                    const EdgeInsets.fromLTRB(20, 16, 20, 16),
-                                child: checklist,
-                              )
-                            : Padding(
-                                key: const ValueKey('body'),
-                                padding:
-                                    const EdgeInsets.fromLTRB(20, 6, 20, 10),
-                                child: editor,
+                  if (!bottomToolbar) toolbar,
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final editor = _BodyEditor(
+                          controller: _body,
+                          focusNode: _bodyFocusNode,
+                          scrollController: _bodyScrollController,
+                          hint: l10n.t('writeNote'),
+                        );
+                        final checklist = _ChecklistEditor(
+                          items: _checklist,
+                          onChanged: (items) {
+                            _recordMutation(
+                              () => _checklist = orderChecklistItems(items),
+                            );
+                          },
+                        );
+                        return Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 900),
+                            child: SizedBox(
+                              height: constraints.maxHeight,
+                              child: AnimatedSwitcher(
+                                key: const ValueKey('editor-content'),
+                                duration: const Duration(milliseconds: 180),
+                                layoutBuilder:
+                                    (currentChild, previousChildren) {
+                                  return Stack(
+                                    alignment: Alignment.topCenter,
+                                    children: [
+                                      ...previousChildren,
+                                      if (currentChild != null) currentChild,
+                                    ],
+                                  );
+                                },
+                                child: _checklistMode
+                                    ? Padding(
+                                        key: const ValueKey('checklist'),
+                                        padding: const EdgeInsets.fromLTRB(
+                                            24, 20, 24, 20),
+                                        child: checklist,
+                                      )
+                                    : Padding(
+                                        key: const ValueKey('body'),
+                                        padding: const EdgeInsets.fromLTRB(
+                                            24, 10, 24, 16),
+                                        child: editor,
+                                      ),
                               ),
-                      );
-                    },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ),
-                ),
-                if (bottomToolbar) ...[
-                  divider,
-                  toolbar,
+                  if (bottomToolbar) toolbar,
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -729,59 +742,64 @@ class _Toolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final buttons = [
-      _ToolbarItem('bold', LucideIcons.bold, l10n.t('bold')),
-      _ToolbarItem('italic', LucideIcons.italic, l10n.t('italic')),
+      _ToolbarItem('bold', AppIcons.bold, l10n.t('bold')),
+      _ToolbarItem('italic', AppIcons.italic, l10n.t('italic')),
+      _ToolbarItem('strike', AppIcons.strikethrough, l10n.t('strikethrough')),
+      _ToolbarItem('link', AppIcons.link, l10n.t('link')),
+      _ToolbarItem('codeblock', AppIcons.squareCode, l10n.t('codeBlock')),
+      _ToolbarItem('bullet', AppIcons.list, l10n.t('bulletList')),
+      _ToolbarItem('check', AppIcons.squareCheck, l10n.t('checklist')),
       _ToolbarItem(
-          'strike', LucideIcons.strikethrough, l10n.t('strikethrough')),
-      _ToolbarItem('link', LucideIcons.link, l10n.t('link')),
-      _ToolbarItem('codeblock', LucideIcons.squareCode, l10n.t('codeBlock')),
-      _ToolbarItem('bullet', LucideIcons.list, l10n.t('bulletList')),
-      _ToolbarItem('check', LucideIcons.squareCheck, l10n.t('checklist')),
-      _ToolbarItem(
-          'clear', LucideIcons.removeFormatting, l10n.t('clearFormatting')),
+          'clear', AppIcons.removeFormatting, l10n.t('clearFormatting')),
     ];
-    return Material(
-      color: Colors.transparent,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    AppIconButton(
-                      tooltip: l10n.t('undo'),
-                      icon: LucideIcons.undo2,
-                      onPressed: canUndo ? onUndo : null,
-                    ),
-                    AppIconButton(
-                      tooltip: l10n.t('redo'),
-                      icon: LucideIcons.redo2,
-                      onPressed: canRedo ? onRedo : null,
-                    ),
-                    if (showFormatting) ...[
-                      const SizedBox(width: 8),
-                      for (final item in buttons)
-                        AppIconButton(
-                          tooltip: item.tooltip,
-                          icon: item.icon,
-                          selected: activeActions.contains(item.action),
-                          onPressed: () => onFormat(item.action),
-                        ),
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Material(
+        color: scheme.surface.withValues(alpha: 0.68),
+        borderRadius: BorderRadius.circular(AppRadii.xxl),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          child: Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      AppIconButton(
+                        tooltip: l10n.t('undo'),
+                        icon: AppIcons.undo2,
+                        onPressed: canUndo ? onUndo : null,
+                      ),
+                      AppIconButton(
+                        tooltip: l10n.t('redo'),
+                        icon: AppIcons.redo2,
+                        onPressed: canRedo ? onRedo : null,
+                      ),
+                      if (showFormatting) ...[
+                        const SizedBox(width: 8),
+                        for (final item in buttons)
+                          AppIconButton(
+                            tooltip: item.tooltip,
+                            icon: item.icon,
+                            selected: activeActions.contains(item.action),
+                            onPressed: () => onFormat(item.action),
+                          ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            AppIconButton(
-              tooltip: l10n.t('background'),
-              icon: LucideIcons.palette,
-              onPressed: onBackground,
-            ),
-          ],
+              const SizedBox(width: 8),
+              AppIconButton(
+                tooltip: l10n.t('background'),
+                icon: AppIcons.palette,
+                onPressed: onBackground,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -876,7 +894,7 @@ class _LinkSheetState extends State<_LinkSheet> {
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: Icon(
-                              LucideIcons.link,
+                              AppIcons.link,
                               size: 20,
                               color: scheme.onSurface,
                             ),
@@ -893,7 +911,7 @@ class _LinkSheetState extends State<_LinkSheet> {
                           ),
                           AppIconButton(
                             tooltip: l10n.t('close'),
-                            icon: LucideIcons.x,
+                            icon: AppIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
                         ],
@@ -905,7 +923,7 @@ class _LinkSheetState extends State<_LinkSheet> {
                         textInputAction: TextInputAction.next,
                         decoration: InputDecoration(
                           labelText: l10n.t('text'),
-                          prefixIcon: const Icon(LucideIcons.type, size: 18),
+                          prefixIcon: const Icon(AppIcons.type, size: 18),
                           filled: true,
                           fillColor: scheme.surfaceContainerHighest
                               .withValues(alpha: 0.42),
@@ -923,7 +941,7 @@ class _LinkSheetState extends State<_LinkSheet> {
                         keyboardType: TextInputType.url,
                         decoration: InputDecoration(
                           labelText: l10n.t('url'),
-                          prefixIcon: const Icon(LucideIcons.globe, size: 18),
+                          prefixIcon: const Icon(AppIcons.globe, size: 18),
                           filled: true,
                           fillColor: scheme.surfaceContainerHighest
                               .withValues(alpha: 0.42),
@@ -941,7 +959,7 @@ class _LinkSheetState extends State<_LinkSheet> {
                                   url: _url.text.trim(),
                                 ))
                             : null,
-                        icon: const Icon(LucideIcons.check),
+                        icon: const Icon(AppIcons.check),
                         label: Text(l10n.t('save')),
                       ),
                       if (widget.canRemove) ...[
@@ -952,7 +970,7 @@ class _LinkSheetState extends State<_LinkSheet> {
                             url: _url.text.trim(),
                             remove: true,
                           )),
-                          icon: const Icon(LucideIcons.unlink),
+                          icon: const Icon(AppIcons.unlink),
                           label: Text(l10n.t('removeLink')),
                         ),
                       ],
@@ -1014,7 +1032,7 @@ class _BackgroundSheet extends StatelessWidget {
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: Icon(
-                              LucideIcons.palette,
+                              AppIcons.palette,
                               size: 20,
                               color: scheme.onSurface,
                             ),
@@ -1031,7 +1049,7 @@ class _BackgroundSheet extends StatelessWidget {
                           ),
                           AppIconButton(
                             tooltip: l10n.t('close'),
-                            icon: LucideIcons.x,
+                            icon: AppIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
                         ],
@@ -1048,10 +1066,6 @@ class _BackgroundSheet extends StatelessWidget {
                               onSelected: () =>
                                   Navigator.of(context).pop(color),
                             ),
-                          _BackgroundImageTile(
-                            l10n: l10n,
-                            onSelected: () {},
-                          ),
                         ],
                       ),
                     ],
@@ -1083,63 +1097,27 @@ class _BackgroundColorTile extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(16),
       onTap: onSelected,
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
         width: 64,
         height: 56,
         decoration: BoxDecoration(
           color: brandNoteSurfaceColor(context, color),
+          gradient: brandNoteGradient(context, color),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? scheme.primary : scheme.outlineVariant,
-            width: selected ? 2 : 1,
-          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: scheme.primary.withValues(alpha: 0.26),
+                    blurRadius: 0,
+                    spreadRadius: 3,
+                  ),
+                ]
+              : null,
         ),
         child: selected
-            ? Icon(LucideIcons.check, size: 18, color: scheme.onSurface)
+            ? Icon(AppIcons.check, size: 18, color: scheme.onSurface)
             : null,
-      ),
-    );
-  }
-}
-
-class _BackgroundImageTile extends StatelessWidget {
-  const _BackgroundImageTile({
-    required this.l10n,
-    required this.onSelected,
-  });
-
-  final AppL10n l10n;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: onSelected,
-      child: Container(
-        width: 112,
-        height: 56,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: scheme.outlineVariant),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(LucideIcons.image, size: 18, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 8),
-            Text(
-              l10n.t('image'),
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1213,7 +1191,7 @@ class _EditorReminderSheetState extends State<_EditorReminderSheet> {
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: Icon(
-                              LucideIcons.bell,
+                              AppIcons.bell,
                               size: 20,
                               color: scheme.onSurface,
                             ),
@@ -1230,14 +1208,14 @@ class _EditorReminderSheetState extends State<_EditorReminderSheet> {
                           ),
                           AppIconButton(
                             tooltip: l10n.t('close'),
-                            icon: LucideIcons.x,
+                            icon: AppIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
                         ],
                       ),
                       const SizedBox(height: 18),
                       _EditorReminderPickTile(
-                        icon: LucideIcons.calendar,
+                        icon: AppIcons.calendar,
                         label: l10n.t('date'),
                         value:
                             '${_selected.day.toString().padLeft(2, '0')}.${_selected.month.toString().padLeft(2, '0')}.${_selected.year}',
@@ -1245,7 +1223,7 @@ class _EditorReminderSheetState extends State<_EditorReminderSheet> {
                       ),
                       const SizedBox(height: 10),
                       _EditorReminderPickTile(
-                        icon: LucideIcons.clock3,
+                        icon: AppIcons.clock3,
                         label: l10n.t('time'),
                         value:
                             '${_selected.hour.toString().padLeft(2, '0')}:${_selected.minute.toString().padLeft(2, '0')}',
@@ -1255,7 +1233,7 @@ class _EditorReminderSheetState extends State<_EditorReminderSheet> {
                       FilledButton.icon(
                         onPressed: () => Navigator.of(context)
                             .pop(_ReminderSelection(_selected.toUtc())),
-                        icon: const Icon(LucideIcons.bellRing),
+                        icon: const Icon(AppIcons.bellRing),
                         label: Text(l10n.t('setReminder')),
                       ),
                       if (widget.reminderAt != null) ...[
@@ -1263,7 +1241,7 @@ class _EditorReminderSheetState extends State<_EditorReminderSheet> {
                         TextButton.icon(
                           onPressed: () => Navigator.of(context)
                               .pop(const _ReminderSelection(null)),
-                          icon: const Icon(LucideIcons.bellOff),
+                          icon: const Icon(AppIcons.bellOff),
                           label: Text(l10n.t('removeReminder')),
                         ),
                       ],
@@ -1560,7 +1538,7 @@ class _ChecklistAddButton extends StatelessWidget {
         children: [
           const SizedBox(width: 12),
           Icon(
-            LucideIcons.plus,
+            AppIcons.plus,
             size: 20,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
@@ -1659,7 +1637,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
               feedback: Material(
                 color: Colors.transparent,
                 child: Icon(
-                  LucideIcons.gripVertical,
+                  AppIcons.gripVertical,
                   size: 22,
                   color: Theme.of(context).colorScheme.primary,
                 ),
@@ -1702,7 +1680,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
             _ChecklistActionButton(
               key: ValueKey('outdent-${widget.item.id}'),
               tooltip: widget.l10n.t('outdentTask'),
-              icon: LucideIcons.indentDecrease,
+              icon: AppIcons.indentDecrease,
               onPressed: widget.item.indent == 0
                   ? null
                   : () => widget.onChanged(
@@ -1712,7 +1690,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
             _ChecklistActionButton(
               key: ValueKey('indent-${widget.item.id}'),
               tooltip: widget.l10n.t('indentTask'),
-              icon: LucideIcons.indentIncrease,
+              icon: AppIcons.indentIncrease,
               onPressed: widget.item.indent >= 4
                   ? null
                   : () => widget.onChanged(
@@ -1724,7 +1702,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
           _ChecklistActionButton(
             key: ValueKey('delete-${widget.item.id}'),
             tooltip: widget.l10n.t('deleteTask'),
-            icon: LucideIcons.x,
+            icon: AppIcons.x,
             onPressed: widget.onDelete,
           ),
         ],
@@ -1756,7 +1734,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
             child: AnimatedOpacity(
               opacity: _swipeOffset > 8 ? 1 : 0,
               duration: const Duration(milliseconds: 80),
-              child: const Icon(LucideIcons.indentIncrease, size: 20),
+              child: const Icon(AppIcons.indentIncrease, size: 20),
             ),
           ),
           Positioned(
@@ -1764,7 +1742,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
             child: AnimatedOpacity(
               opacity: _swipeOffset < -8 ? 1 : 0,
               duration: const Duration(milliseconds: 80),
-              child: const Icon(LucideIcons.indentDecrease, size: 20),
+              child: const Icon(AppIcons.indentDecrease, size: 20),
             ),
           ),
           AnimatedContainer(
@@ -1813,7 +1791,7 @@ class _ChecklistDragHandle extends StatelessWidget {
         width: 32,
         height: 40,
         child: Icon(
-          LucideIcons.gripVertical,
+          AppIcons.gripVertical,
           size: 20,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
@@ -1880,7 +1858,7 @@ class _EditorOverflowMenu extends StatelessWidget {
         tooltip: l10n.t('moreActions'),
         padding: EdgeInsets.zero,
         iconSize: 20,
-        icon: const Icon(LucideIcons.ellipsis),
+        icon: const Icon(AppIcons.ellipsis),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         onSelected: (action) {
           switch (action) {
@@ -1895,7 +1873,7 @@ class _EditorOverflowMenu extends StatelessWidget {
             value: _EditorOverflowAction.archive,
             child: Row(
               children: [
-                const Icon(LucideIcons.archive, size: 19),
+                const Icon(AppIcons.archive, size: 19),
                 const SizedBox(width: 12),
                 Text(l10n.t('archiveNote')),
               ],
@@ -1905,7 +1883,7 @@ class _EditorOverflowMenu extends StatelessWidget {
             value: _EditorOverflowAction.trash,
             child: Row(
               children: [
-                Icon(LucideIcons.trash, size: 19, color: scheme.error),
+                Icon(AppIcons.trash, size: 19, color: scheme.error),
                 const SizedBox(width: 12),
                 Text(
                   l10n.t('moveToTrash'),
@@ -2181,7 +2159,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                               borderRadius: BorderRadius.circular(14),
                             ),
                             child: Icon(
-                              LucideIcons.userPlus,
+                              AppIcons.userPlus,
                               size: 20,
                               color: scheme.onSurface,
                             ),
@@ -2200,7 +2178,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                           ),
                           AppIconButton(
                             tooltip: l10n.t('close'),
-                            icon: LucideIcons.x,
+                            icon: AppIcons.x,
                             onPressed: () => Navigator.of(context).pop(),
                           ),
                         ],
@@ -2223,8 +2201,8 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                               contentPadding: EdgeInsets.zero,
                               leading: Icon(
                                 participant.status == 'pending'
-                                    ? LucideIcons.mail
-                                    : LucideIcons.userRoundCheck,
+                                    ? AppIcons.mail
+                                    : AppIcons.userRoundCheck,
                                 size: 20,
                               ),
                               title: Text(participant.email),
@@ -2235,7 +2213,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                                       : l10n.t('readOnly')),
                               trailing: AppIconButton(
                                 tooltip: l10n.t('removeAccess'),
-                                icon: LucideIcons.userRoundX,
+                                icon: AppIcons.userRoundX,
                                 onPressed: () => onRemoveAccess(participant),
                               ),
                             ),
@@ -2246,7 +2224,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                         autofocus: true,
                         decoration: InputDecoration(
                           hintText: l10n.t('userIdOrEmail'),
-                          prefixIcon: const Icon(LucideIcons.atSign, size: 18),
+                          prefixIcon: const Icon(AppIcons.atSign, size: 18),
                           filled: true,
                           fillColor: scheme.surfaceContainerHighest
                               .withValues(alpha: 0.5),
@@ -2278,7 +2256,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                           Expanded(
                             child: _InviteRoleTile(
                               selected: role == 'editor',
-                              icon: LucideIcons.edit3,
+                              icon: AppIcons.edit3,
                               label: l10n.t('canEdit'),
                               onTap: () => onRoleChanged('editor'),
                             ),
@@ -2287,7 +2265,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                           Expanded(
                             child: _InviteRoleTile(
                               selected: role == 'viewer',
-                              icon: LucideIcons.eye,
+                              icon: AppIcons.eye,
                               label: l10n.t('readOnly'),
                               onTap: () => onRoleChanged('viewer'),
                             ),
@@ -2313,7 +2291,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                                 child:
                                     CircularProgressIndicator(strokeWidth: 2),
                               )
-                            : const Icon(LucideIcons.send),
+                            : const Icon(AppIcons.send),
                         label: Text(
                           busy ? l10n.t('inviting') : l10n.t('invite'),
                         ),
@@ -2380,8 +2358,8 @@ class _RecentInviteContacts extends StatelessWidget {
           ActionChip(
             avatar: Icon(
               contact.lastDirection == 'received'
-                  ? LucideIcons.mailOpen
-                  : LucideIcons.send,
+                  ? AppIcons.mailOpen
+                  : AppIcons.send,
               size: 15,
             ),
             label: Text(contact.email),
@@ -2445,7 +2423,7 @@ class _InviteRoleTile extends StatelessWidget {
             AnimatedOpacity(
               opacity: selected ? 1 : 0,
               duration: const Duration(milliseconds: 120),
-              child: Icon(LucideIcons.check, size: 17, color: scheme.onSurface),
+              child: Icon(AppIcons.check, size: 17, color: scheme.onSurface),
             ),
           ],
         ),

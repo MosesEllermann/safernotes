@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safernotes_app/shared/theme/app_theme.dart';
 
 class AppIconButton extends StatefulWidget {
   const AppIconButton({
@@ -60,16 +61,20 @@ class _AppIconButtonState extends State<AppIconButton> {
               height: widget.size,
               decoration: BoxDecoration(
                 color: active
-                    ? scheme.surfaceContainerHighest
+                    ? widget.selected
+                        ? scheme.primaryContainer
+                        : scheme.surfaceContainerHighest.withValues(alpha: 0.8)
                     : Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppRadii.pill),
               ),
               child: Icon(
                 widget.icon,
                 size: widget.iconSize,
                 color: widget.onPressed == null
                     ? scheme.onSurface.withValues(alpha: 0.38)
-                    : scheme.onSurface.withValues(alpha: 0.86),
+                    : widget.selected
+                        ? scheme.primary
+                        : scheme.onSurface.withValues(alpha: 0.88),
               ),
             ),
           ),

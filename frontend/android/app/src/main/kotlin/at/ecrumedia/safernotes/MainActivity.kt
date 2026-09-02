@@ -1,4 +1,4 @@
-package com.safernotes.app
+package at.ecrumedia.safernotes
 
 import io.flutter.embedding.android.FlutterActivity
 

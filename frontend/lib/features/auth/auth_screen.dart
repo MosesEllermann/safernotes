@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/auth/recovery_key_dialog.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/shared/theme/app_theme.dart';
 import 'package:safernotes_app/shared/widgets/safernotes_logo.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
@@ -28,7 +29,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   var _recoveryBusy = false;
   var _submitBusy = false;
   var _obscure = true;
-  _MobileAuthDestination? _mobileDestination;
   RecoveryChallenge? _challenge;
   String? _localError;
 
@@ -72,7 +72,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       activeTitle: title,
       recovering: _recovering,
     );
-    Widget form({required bool showModeSwitch}) => _AuthPanel(
+    Widget form({
+      required bool showModeSwitch,
+      required bool showBrand,
+    }) =>
+        _AuthPanel(
           l10n: l10n,
           formKey: _formKey,
           title: title,
@@ -83,6 +87,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           busy: busy,
           obscure: _obscure,
           showModeSwitch: showModeSwitch,
+          showBrand: showBrand,
           actionIcon: _actionIcon(),
           actionLabel: actionLabel,
           email: _email,
@@ -98,109 +103,42 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           onToggleRecovery: _toggleRecoveryMode,
         );
     return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth < 700) {
-              return AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                child: _mobileDestination == null
-                    ? _MobileAuthLanding(
-                        key: const ValueKey('mobile-auth-landing'),
-                        l10n: l10n,
-                        onLogin: busy
-                            ? null
-                            : () => _openMobileDestination(
-                                  _MobileAuthDestination.login,
-                                ),
-                        onRegister: busy
-                            ? null
-                            : () => _openMobileDestination(
-                                  _MobileAuthDestination.register,
-                                ),
-                      )
-                    : _MobileAuthPage(
-                        key: ValueKey(_mobileDestination),
-                        l10n: l10n,
-                        registering: _registering,
-                        busy: busy,
-                        onBack: _backToMobileLanding,
-                        child: form(showModeSwitch: false),
-                      ),
-              );
-            }
-            final wide = constraints.maxWidth >= 900;
-            return Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: wide ? 48 : 20,
-                  vertical: wide ? 36 : 24,
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: wide ? 980 : 460),
-                  child: Flex(
-                    direction: wide ? Axis.horizontal : Axis.vertical,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      if (wide) Expanded(flex: 9, child: intro) else intro,
-                      SizedBox(width: wide ? 48 : 0, height: wide ? 0 : 28),
-                      if (wide)
-                        Expanded(
-                          flex: 8,
-                          child: form(showModeSwitch: true),
-                        )
-                      else
-                        form(showModeSwitch: true),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
+      backgroundColor: Colors.transparent,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 700;
+          return _AuthBackdrop(
+            child: SafeArea(
+              child: compact
+                  ? _CompactAuthLayout(
+                      registering: _registering,
+                      child: form(showModeSwitch: true, showBrand: true),
+                    )
+                  : _WideAuthLayout(
+                      intro: intro,
+                      form: form(showModeSwitch: true, showBrand: false),
+                    ),
+            ),
+          );
+        },
       ),
     );
   }
 
   IconData _modeIcon() {
-    if (_recovering) return LucideIcons.shieldCheck;
-    if (_registering) return LucideIcons.userRoundPlus;
-    return LucideIcons.lockKeyhole;
+    if (_recovering) return AppIcons.shieldCheck;
+    if (_registering) return AppIcons.userRoundPlus;
+    return AppIcons.lockKeyhole;
   }
 
   IconData _actionIcon() {
     if (_recovering) {
-      return _recoveryRequested ? LucideIcons.rotateCcwKey : LucideIcons.send;
+      return _recoveryRequested ? AppIcons.rotateCcwKey : AppIcons.send;
     }
-    return _registering ? LucideIcons.userRoundPlus : LucideIcons.logIn;
+    return _registering ? AppIcons.userRoundPlus : AppIcons.logIn;
   }
 
   void _togglePassword() => setState(() => _obscure = !_obscure);
-
-  void _openMobileDestination(_MobileAuthDestination destination) {
-    setState(() {
-      _mobileDestination = destination;
-      _registering = destination == _MobileAuthDestination.register;
-      _recovering = false;
-      _recoveryRequested = false;
-      _localError = null;
-      _challenge = null;
-    });
-  }
-
-  void _backToMobileLanding() {
-    if (_submitBusy || _recoveryBusy) return;
-    setState(() {
-      _mobileDestination = null;
-      _registering = false;
-      _recovering = false;
-      _recoveryRequested = false;
-      _localError = null;
-      _challenge = null;
-    });
-  }
 
   void _toggleRecoveryMode() {
     setState(() {
@@ -315,108 +253,85 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 }
 
-enum _MobileAuthDestination { login, register }
+class _AuthBackdrop extends StatelessWidget {
+  const _AuthBackdrop({required this.child});
 
-class _MobileAuthLanding extends StatelessWidget {
-  const _MobileAuthLanding({
-    super.key,
-    required this.l10n,
-    required this.onLogin,
-    required this.onRegister,
-  });
-
-  final AppL10n l10n;
-  final VoidCallback? onLogin;
-  final VoidCallback? onRegister;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Spacer(flex: 3),
-          const Center(child: SafernotesLogo(size: 72)),
-          const SizedBox(height: 20),
-          Text(
-            l10n.t('appName'),
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-          ),
-          const Spacer(flex: 4),
-          FilledButton.icon(
-            onPressed: onLogin,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(54),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            icon: const Icon(LucideIcons.logIn),
-            label: Text(l10n.t('login')),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: onRegister,
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(54),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            icon: const Icon(LucideIcons.userRoundPlus),
-            label: Text(l10n.t('register')),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MobileAuthPage extends StatelessWidget {
-  const _MobileAuthPage({
-    super.key,
-    required this.l10n,
-    required this.registering,
-    required this.busy,
-    required this.onBack,
-    required this.child,
-  });
-
-  final AppL10n l10n;
-  final bool registering;
-  final bool busy;
-  final VoidCallback onBack;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: appCanvasDecoration(context),
+      child: child,
+    );
+  }
+}
+
+class _CompactAuthLayout extends StatelessWidget {
+  const _CompactAuthLayout({
+    required this.registering,
+    required this.child,
+  });
+
+  final bool registering;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final height = MediaQuery.sizeOf(context).height;
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: IconButton(
-              tooltip: l10n.t('back'),
-              onPressed: busy ? null : onBack,
-              icon: const Icon(LucideIcons.arrowLeft),
-            ),
-          ),
-          const SizedBox(height: 8),
-          ConstrainedBox(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: height > 48 ? height - 48 : 0),
+        child: Center(
+          child: ConstrainedBox(
             key: ValueKey(
               registering ? 'mobile-register-page' : 'mobile-login-page',
             ),
             constraints: const BoxConstraints(maxWidth: 460),
             child: child,
           ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+class _WideAuthLayout extends StatelessWidget {
+  const _WideAuthLayout({
+    required this.intro,
+    required this.form,
+  });
+
+  final Widget intro;
+  final Widget form;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 900;
+        return Center(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: wide ? 48 : 20,
+              vertical: wide ? 36 : 24,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: wide ? 980 : 460),
+              child: Flex(
+                direction: wide ? Axis.horizontal : Axis.vertical,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  if (wide) Expanded(flex: 9, child: intro) else intro,
+                  SizedBox(width: wide ? 48 : 0, height: wide ? 0 : 28),
+                  if (wide) Expanded(flex: 8, child: form) else form,
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -448,19 +363,14 @@ class _AuthIntro extends StatelessWidget {
             const SizedBox(width: 12),
             Text(
               title,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
+              style: Theme.of(context).textTheme.titleLarge,
             ),
           ],
         ),
         const SizedBox(height: 34),
         Text(
           activeTitle,
-          style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0,
-              ),
+          style: Theme.of(context).textTheme.displayMedium,
         ),
         const SizedBox(height: 14),
         Text(
@@ -476,12 +386,10 @@ class _AuthIntro extends StatelessWidget {
           runSpacing: 10,
           children: [
             _AuthFeaturePill(
-                icon: LucideIcons.lockKeyhole,
-                label: l10n.t('zeroKnowledge')),
+                icon: AppIcons.lockKeyhole, label: l10n.t('zeroKnowledge')),
+            _AuthFeaturePill(icon: AppIcons.bell, label: l10n.t('reminders')),
             _AuthFeaturePill(
-                icon: LucideIcons.bell, label: l10n.t('reminders')),
-            _AuthFeaturePill(
-                icon: LucideIcons.listChecks, label: l10n.t('checklist')),
+                icon: AppIcons.listChecks, label: l10n.t('checklist')),
           ],
         ),
       ],
@@ -501,6 +409,7 @@ class _AuthPanel extends StatelessWidget {
     required this.busy,
     required this.obscure,
     required this.showModeSwitch,
+    required this.showBrand,
     required this.actionIcon,
     required this.actionLabel,
     required this.email,
@@ -526,6 +435,7 @@ class _AuthPanel extends StatelessWidget {
   final bool busy;
   final bool obscure;
   final bool showModeSwitch;
+  final bool showBrand;
   final IconData actionIcon;
   final String actionLabel;
   final TextEditingController email;
@@ -547,25 +457,35 @@ class _AuthPanel extends StatelessWidget {
       key: formKey,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerLowest,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.42),
-          ),
+          color: scheme.surfaceContainerLow.withValues(alpha: 0.88),
+          borderRadius: BorderRadius.circular(AppRadii.hero),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 28,
-              offset: const Offset(0, 18),
+              offset: const Offset(0, 14),
             ),
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(22, 22, 22, 24),
+          padding: const EdgeInsets.fromLTRB(26, 26, 26, 28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (showBrand) ...[
+                Row(
+                  children: [
+                    const SafernotesLogo(size: 34),
+                    const SizedBox(width: 10),
+                    Text(
+                      l10n.t('appName'),
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 30),
+              ],
               Row(
                 children: [
                   _AuthMark(icon: modeIcon),
@@ -573,10 +493,7 @@ class _AuthPanel extends StatelessWidget {
                   Expanded(
                     child: Text(
                       title,
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w800),
+                      style: Theme.of(context).textTheme.headlineMedium,
                     ),
                   ),
                 ],
@@ -595,7 +512,7 @@ class _AuthPanel extends StatelessWidget {
               _AuthTextField(
                 controller: email,
                 label: l10n.t('email'),
-                icon: LucideIcons.atSign,
+                icon: AppIcons.atSign,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
                 validator: (value) {
@@ -609,7 +526,7 @@ class _AuthPanel extends StatelessWidget {
                 _AuthTextField(
                   controller: password,
                   label: l10n.t('password'),
-                  icon: LucideIcons.keyRound,
+                  icon: AppIcons.keyRound,
                   obscureText: obscure,
                   textInputAction:
                       registering ? TextInputAction.next : TextInputAction.done,
@@ -635,7 +552,7 @@ class _AuthPanel extends StatelessWidget {
                 _AuthTextField(
                   controller: workspace,
                   label: l10n.t('workspace'),
-                  icon: LucideIcons.folderLock,
+                  icon: AppIcons.folderLock,
                   textInputAction: TextInputAction.done,
                   validator: (value) {
                     if ((value ?? '').trim().isEmpty) {
@@ -650,7 +567,7 @@ class _AuthPanel extends StatelessWidget {
                 _AuthTextField(
                   controller: code,
                   label: l10n.t('recoveryCode'),
-                  icon: LucideIcons.mailCheck,
+                  icon: AppIcons.mailCheck,
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.next,
                   validator: (value) {
@@ -664,7 +581,7 @@ class _AuthPanel extends StatelessWidget {
                 _AuthTextField(
                   controller: recoveryKey,
                   label: l10n.t('recoveryKey'),
-                  icon: LucideIcons.keySquare,
+                  icon: AppIcons.keySquare,
                   textInputAction: TextInputAction.next,
                   validator: (value) {
                     if ((value ?? '').trim().isEmpty) {
@@ -677,7 +594,7 @@ class _AuthPanel extends StatelessWidget {
                 _AuthTextField(
                   controller: newPassword,
                   label: l10n.t('newPassword'),
-                  icon: LucideIcons.keyRound,
+                  icon: AppIcons.keyRound,
                   obscureText: obscure,
                   textInputAction: TextInputAction.done,
                   suffix: _PasswordVisibilityButton(
@@ -704,9 +621,9 @@ class _AuthPanel extends StatelessWidget {
                   key: ValueKey(busy),
                   onPressed: busy ? null : onSubmit,
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(52),
+                    minimumSize: const Size.fromHeight(56),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(AppRadii.xl),
                     ),
                   ),
                   icon: busy
@@ -736,7 +653,7 @@ class _AuthPanel extends StatelessWidget {
                 TextButton.icon(
                   onPressed: busy ? null : onToggleRecovery,
                   icon: Icon(
-                    recovering ? LucideIcons.arrowLeft : LucideIcons.circleHelp,
+                    recovering ? AppIcons.arrowLeft : AppIcons.circleHelp,
                   ),
                   label: Text(
                     recovering
@@ -761,14 +678,15 @@ class _AuthMark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final design = context.safernotesTheme;
     return Container(
       width: 44,
       height: 44,
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(14),
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(design.controlRadius),
       ),
-      child: Icon(icon, size: 22, color: scheme.onSurface),
+      child: Icon(icon, size: 22, color: scheme.onPrimaryContainer),
     );
   }
 }
@@ -782,11 +700,15 @@ class _AuthFeaturePill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final design = context.safernotesTheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.62),
-        borderRadius: BorderRadius.circular(999),
+        color: design.isApple
+            ? design.glassFill
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.62),
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: design.isApple ? Border.all(color: design.glassStroke) : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -823,17 +745,21 @@ class _AuthModeSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final design = context.safernotesTheme;
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(18),
+        color: design.isApple
+            ? design.glassFill
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(AppRadii.xl),
       ),
       child: Row(
         children: [
           Expanded(
             child: _AuthModeButton(
-              icon: LucideIcons.logIn,
+              icon: AppIcons.logIn,
               label: loginLabel,
               selected: !registering,
               disabled: disabled,
@@ -842,7 +768,7 @@ class _AuthModeSwitch extends StatelessWidget {
           ),
           Expanded(
             child: _AuthModeButton(
-              icon: LucideIcons.userRoundPlus,
+              icon: AppIcons.userRoundPlus,
               label: registerLabel,
               selected: registering,
               disabled: disabled,
@@ -941,6 +867,7 @@ class _AuthTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final design = context.safernotesTheme;
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
@@ -952,27 +879,27 @@ class _AuthTextField extends StatelessWidget {
         prefixIcon: Icon(icon, size: 18, color: scheme.onSurfaceVariant),
         suffixIcon: suffix,
         filled: true,
-        fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+        fillColor: design.isApple
+            ? design.glassFill
+            : scheme.surfaceContainerHighest.withValues(alpha: 0.42),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(design.controlRadius),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(
-            color: scheme.outlineVariant.withValues(alpha: 0.32),
-          ),
+          borderRadius: BorderRadius.circular(design.controlRadius),
+          borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.72)),
+          borderRadius: BorderRadius.circular(design.controlRadius),
+          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.44)),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(design.controlRadius),
           borderSide: BorderSide(color: scheme.error.withValues(alpha: 0.72)),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(design.controlRadius),
           borderSide: BorderSide(color: scheme.error),
         ),
         contentPadding:
@@ -998,7 +925,7 @@ class _PasswordVisibilityButton extends StatelessWidget {
     return IconButton(
       tooltip: l10n.t(obscure ? 'showPassword' : 'hidePassword'),
       onPressed: onPressed,
-      icon: Icon(obscure ? LucideIcons.eye : LucideIcons.eyeOff, size: 18),
+      icon: Icon(obscure ? AppIcons.eye : AppIcons.eyeOff, size: 18),
     );
   }
 }
@@ -1020,7 +947,7 @@ class _AuthError extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(LucideIcons.circleAlert, size: 18, color: scheme.error),
+          Icon(AppIcons.circleAlert, size: 18, color: scheme.error),
           const SizedBox(width: 10),
           Expanded(
             child: Text(

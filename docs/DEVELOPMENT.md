@@ -47,6 +47,12 @@ cd frontend
 ./tool/build_android_release.sh
 ```
 
+The Android release helper builds
+`build/app/outputs/bundle/release/app-release.aab` for Google Play. It requires
+an untracked `android/key.properties` file based on
+`android/key.properties.example`. Run `./tool/generate_android_upload_key.sh`
+once to create the local upload key interactively.
+
 ## GitHub Push
 
 From the repository root:

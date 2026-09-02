@@ -17,11 +17,14 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   cryptography: ^2.7.0
   uuid: ^4.5.1
-  lucide_icons_flutter: ^3.1.14+2
+  phosphor_icons: ^3.0.1
   flutter_local_notifications: ^22.0.1
   timezone: ^0.11.0
   hashlib: ^2.3.4
   flutter_quill: ^11.5.1
+  dynamic_color: ^2.1.0
+  cupertino_native_better: ^1.5.4
+  cupertino_icons: ^1.0.9
 
 dev_dependencies:
   flutter_test:
@@ -32,3 +35,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/safernotes-logo.png
+  fonts:
+    - family: Urbanist
+      fonts:
+        - asset: assets/fonts/Urbanist-Variable.ttf

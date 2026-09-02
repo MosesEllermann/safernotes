@@ -114,3 +114,9 @@ cd ../frontend
 ./tool/flutterw build web --dart-define=API_BASE_URL=https://api.safernotes.com --no-wasm-dry-run
 ./tool/build_android_release.sh
 ```
+
+Upload `frontend/build/app/outputs/bundle/release/app-release.aab` to Google
+Play. The bundle must be signed with the upload key configured in the untracked
+`frontend/android/key.properties` file. Generate it once with
+`frontend/tool/generate_android_upload_key.sh`, then back up the keystore and
+passwords securely.

@@ -115,6 +115,132 @@ void main() {
     expect(controller.changedState, 'trashed');
     expect(find.text('Note moved to trash.'), findsOneWidget);
   });
+
+  testWidgets('cards glide into their preview positions while reordering',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final notes = [
+      for (var index = 1; index <= 4; index += 1)
+        _note(
+          localId: 'note-$index',
+          title: 'Note $index',
+          body: 'Preview $index',
+        ),
+    ];
+    final controller = _TestNotesController(notes);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(() => controller),
+        ],
+        child: const MaterialApp(home: NotesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final first = find.byKey(const ValueKey('compact-note-drag-note-1'));
+    final fourth = find.byKey(const ValueKey('compact-note-drag-note-4'));
+    final secondPlacement =
+        find.byKey(const ValueKey('animated-note-placement-note-2'));
+    final firstStart = tester.getTopLeft(first);
+    final fourthCenter = tester.getCenter(fourth);
+    final secondStart = tester.getTopLeft(secondPlacement);
+    final motion = tester.widget<AnimatedPositioned>(secondPlacement);
+    expect(motion.duration, const Duration(milliseconds: 190));
+    expect(motion.curve, Curves.easeOutCubic);
+    final draggable = tester.widget<LongPressDraggable<PlainNote>>(
+      find
+          .descendant(
+            of: first,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is LongPressDraggable<PlainNote>,
+            ),
+          )
+          .first,
+    );
+    expect(draggable.delay, const Duration(milliseconds: 260));
+    expect(
+        find.byKey(const ValueKey('card-grid-drop-surface')), findsOneWidget);
+
+    final gesture = await tester.startGesture(tester.getCenter(first));
+    await tester.pump(const Duration(milliseconds: 360));
+    await gesture.moveTo(fourthCenter);
+    await tester.pump();
+    expect(tester.getTopLeft(secondPlacement).dx, closeTo(secondStart.dx, 0.5));
+
+    await tester.pump(const Duration(milliseconds: 80));
+    final secondMidway = tester.getTopLeft(secondPlacement);
+    expect(secondMidway.dx, lessThan(secondStart.dx));
+    expect(secondMidway.dx, greaterThan(firstStart.dx));
+
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(tester.getTopLeft(secondPlacement).dx, closeTo(firstStart.dx, 0.5));
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(controller.reorderedNoteId, 'note-1');
+    expect(controller.reorderedTargetIndex, 3);
+  });
+
+  testWidgets('card preview and committed index agree when moving backwards',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final notes = [
+      for (var index = 1; index <= 7; index += 1)
+        _note(
+          localId: 'note-$index',
+          title: 'Note $index',
+          body: 'Preview $index',
+        ),
+    ];
+    final controller = _TestNotesController(notes);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(() => controller),
+        ],
+        child: const MaterialApp(home: NotesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final dragged = find.byKey(const ValueKey('compact-note-drag-note-6'));
+    final target = find.byKey(const ValueKey('compact-note-drag-note-2'));
+    final secondPlacement =
+        find.byKey(const ValueKey('animated-note-placement-note-2'));
+    final secondStart = tester.getTopLeft(secondPlacement);
+    final secondStartDestination =
+        tester.widget<AnimatedPositioned>(secondPlacement).left!;
+    final targetCenter = tester.getCenter(target);
+
+    final gesture = await tester.startGesture(tester.getCenter(dragged));
+    await tester.pump(const Duration(milliseconds: 360));
+    await gesture.moveTo(targetCenter);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 240));
+    final secondPreview = tester.getTopLeft(secondPlacement);
+    final secondDestination =
+        tester.widget<AnimatedPositioned>(secondPlacement).left!;
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(controller.reorderedNoteId, 'note-6');
+    expect(controller.reorderedTargetIndex, 1);
+    expect(secondDestination, greaterThan(secondStartDestination));
+    expect(secondPreview.dx, greaterThan(secondStart.dx));
+  });
 }
 
 PlainNote _note({
@@ -155,6 +281,8 @@ class _TestNotesController extends NotesController {
   final List<PlainNote> _notes;
   String? changedNoteId;
   String? changedState;
+  String? reorderedNoteId;
+  int? reorderedTargetIndex;
 
   @override
   Future<List<PlainNote>> build() async => _notes;
@@ -164,7 +292,10 @@ class _TestNotesController extends NotesController {
     required String draggedId,
     required int targetIndex,
     required String bucket,
-  }) async {}
+  }) async {
+    reorderedNoteId = draggedId;
+    reorderedTargetIndex = targetIndex;
+  }
 
   @override
   Future<void> changeState(PlainNote note, String nextState) async {

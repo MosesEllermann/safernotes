@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
 
 Future<bool> showRecoveryKeyConfirmationDialog({
@@ -20,7 +20,7 @@ Future<bool> showRecoveryKeyConfirmationDialog({
         builder: (context, setDialogState) {
           final scheme = Theme.of(context).colorScheme;
           return AlertDialog(
-            icon: const Icon(LucideIcons.keyRound),
+            icon: const Icon(AppIcons.keyRound),
             title: Text(
               l10n.t(rotating
                   ? 'recoveryRotationTitle'
@@ -62,7 +62,7 @@ Future<bool> showRecoveryKeyConfirmationDialog({
                         );
                         setDialogState(() => copied = true);
                       },
-                      icon: Icon(copied ? LucideIcons.check : LucideIcons.copy),
+                      icon: Icon(copied ? AppIcons.check : AppIcons.copy),
                       label: Text(l10n.t(copied ? 'copied' : 'copy')),
                     ),
                     const SizedBox(height: 14),

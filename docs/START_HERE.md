@@ -82,6 +82,10 @@ cd frontend
 ./tool/build_android_release.sh
 ```
 
+The Android helper produces the Play Store bundle at
+`frontend/build/app/outputs/bundle/release/app-release.aab` once upload signing
+is configured in `frontend/android/key.properties`.
+
 ## GitHub Desktop
 
 In GitHub Desktop, use:

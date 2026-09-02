@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/auth/recovery_key_dialog.dart';
 import 'package:safernotes_app/shared/api/api_client.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
 import 'package:safernotes_app/shared/app/app_preferences.dart';
 import 'package:safernotes_app/shared/providers.dart';
+import 'package:safernotes_app/shared/theme/app_theme.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 enum _SettingsPage { appearance, plan, security }
@@ -29,133 +30,125 @@ class SettingsScreen extends ConsumerWidget {
       final page = ref.watch(_settingsPageProvider);
       return Scaffold(
         key: const ValueKey('desktop-settings'),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(28, 18, 28, 17),
-                child: Row(
-                  children: [
-                    AppIconButton(
-                      tooltip: l10n.t('back'),
-                      icon: LucideIcons.arrowLeft,
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      l10n.t('settings'),
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w800),
-                    ),
-                  ],
+        backgroundColor: Colors.transparent,
+        body: DecoratedBox(
+          decoration: appCanvasDecoration(context),
+          child: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 18, 28, 17),
+                  child: Row(
+                    children: [
+                      AppIconButton(
+                        tooltip: l10n.t('back'),
+                        icon: AppIcons.arrowLeft,
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        l10n.t('settings'),
+                        style: Theme.of(context).textTheme.headlineLarge,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              Divider(
-                height: 1,
-                color: Theme.of(context)
-                    .colorScheme
-                    .outlineVariant
-                    .withValues(alpha: 0.4),
-              ),
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(
-                      width: 236,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                Expanded(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(
+                        width: 236,
+                        child: ColoredBox(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerLow
+                              .withValues(alpha: 0.64),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _SettingsNavigationItem(
+                                  key:
+                                      const ValueKey('settings-nav-appearance'),
+                                  icon: AppIcons.palette,
+                                  label: l10n.t('appearance'),
+                                  selected: page == _SettingsPage.appearance,
+                                  onTap: () => ref
+                                      .read(_settingsPageProvider.notifier)
+                                      .state = _SettingsPage.appearance,
+                                ),
+                                const SizedBox(height: 4),
+                                _SettingsNavigationItem(
+                                  key: const ValueKey('settings-nav-plan'),
+                                  icon: AppIcons.creditCard,
+                                  label: l10n.t('plan'),
+                                  selected: page == _SettingsPage.plan,
+                                  onTap: () => ref
+                                      .read(_settingsPageProvider.notifier)
+                                      .state = _SettingsPage.plan,
+                                ),
+                                const SizedBox(height: 4),
+                                _SettingsNavigationItem(
+                                  key: const ValueKey('settings-nav-security'),
+                                  icon: AppIcons.shieldCheck,
+                                  label: l10n.t('security'),
+                                  selected: page == _SettingsPage.security,
+                                  onTap: () => ref
+                                      .read(_settingsPageProvider.notifier)
+                                      .state = _SettingsPage.security,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: IndexedStack(
+                          key: const ValueKey('desktop-settings-pages'),
+                          index: page.index,
                           children: [
-                            _SettingsNavigationItem(
-                              key: const ValueKey('settings-nav-appearance'),
-                              icon: LucideIcons.palette,
-                              label: l10n.t('appearance'),
-                              selected: page == _SettingsPage.appearance,
-                              onTap: () => ref
-                                  .read(_settingsPageProvider.notifier)
-                                  .state = _SettingsPage.appearance,
+                            _DesktopSettingsPage(
+                              key: const ValueKey('settings-page-appearance'),
+                              child: _AppearanceSettings(
+                                l10n: l10n,
+                                prefs: prefs,
+                                onThemeChanged: (value) => ref
+                                    .read(appPreferencesProvider.notifier)
+                                    .setThemeMode(value),
+                                onLanguageChanged: (value) => ref
+                                    .read(appPreferencesProvider.notifier)
+                                    .setLanguage(value),
+                                onNoteOverviewLayoutChanged: (value) => ref
+                                    .read(appPreferencesProvider.notifier)
+                                    .setNoteOverviewLayout(value),
+                              ),
                             ),
-                            const SizedBox(height: 4),
-                            _SettingsNavigationItem(
-                              key: const ValueKey('settings-nav-plan'),
-                              icon: LucideIcons.creditCard,
-                              label: l10n.t('plan'),
-                              selected: page == _SettingsPage.plan,
-                              onTap: () => ref
-                                  .read(_settingsPageProvider.notifier)
-                                  .state = _SettingsPage.plan,
+                            _DesktopSettingsPage(
+                              key: const ValueKey('settings-page-plan'),
+                              child: _BillingPanel(
+                                accessToken: session?.accessToken ?? '',
+                                tenant: session?.defaultTenant ?? '',
+                                inset: EdgeInsets.zero,
+                              ),
                             ),
-                            const SizedBox(height: 4),
-                            _SettingsNavigationItem(
-                              key: const ValueKey('settings-nav-security'),
-                              icon: LucideIcons.shieldCheck,
-                              label: l10n.t('security'),
-                              selected: page == _SettingsPage.security,
-                              onTap: () => ref
-                                  .read(_settingsPageProvider.notifier)
-                                  .state = _SettingsPage.security,
+                            _DesktopSettingsPage(
+                              key: const ValueKey('settings-page-security'),
+                              child: _SecurityPanel(
+                                email: session?.email ?? '',
+                                inset: EdgeInsets.zero,
+                              ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                    VerticalDivider(
-                      width: 1,
-                      thickness: 1,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .outlineVariant
-                          .withValues(alpha: 0.4),
-                    ),
-                    Expanded(
-                      child: IndexedStack(
-                        key: const ValueKey('desktop-settings-pages'),
-                        index: page.index,
-                        children: [
-                          _DesktopSettingsPage(
-                            key: const ValueKey('settings-page-appearance'),
-                            child: _AppearanceSettings(
-                              l10n: l10n,
-                              prefs: prefs,
-                              onThemeChanged: (value) => ref
-                                  .read(appPreferencesProvider.notifier)
-                                  .setThemeMode(value),
-                              onLanguageChanged: (value) => ref
-                                  .read(appPreferencesProvider.notifier)
-                                  .setLanguage(value),
-                              onNoteOverviewLayoutChanged: (value) => ref
-                                  .read(appPreferencesProvider.notifier)
-                                  .setNoteOverviewLayout(value),
-                            ),
-                          ),
-                          _DesktopSettingsPage(
-                            key: const ValueKey('settings-page-plan'),
-                            child: _BillingPanel(
-                              accessToken: session?.accessToken ?? '',
-                              tenant: session?.defaultTenant ?? '',
-                              inset: EdgeInsets.zero,
-                            ),
-                          ),
-                          _DesktopSettingsPage(
-                            key: const ValueKey('settings-page-security'),
-                            child: _SecurityPanel(
-                              email: session?.email ?? '',
-                              inset: EdgeInsets.zero,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -163,63 +156,66 @@ class SettingsScreen extends ConsumerWidget {
 
     return Scaffold(
       key: const ValueKey('mobile-settings'),
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        AppIconButton(
-                          tooltip: l10n.t('back'),
-                          icon: LucideIcons.arrowLeft,
-                          onPressed: () => Navigator.of(context).pop(),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          l10n.t('settings'),
-                          style: Theme.of(context)
-                              .textTheme
-                              .headlineMedium
-                              ?.copyWith(fontWeight: FontWeight.w800),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-                    _AppearanceSettings(
-                      l10n: l10n,
-                      prefs: prefs,
-                      onThemeChanged: (value) => ref
-                          .read(appPreferencesProvider.notifier)
-                          .setThemeMode(value),
-                      onLanguageChanged: (value) => ref
-                          .read(appPreferencesProvider.notifier)
-                          .setLanguage(value),
-                      onNoteOverviewLayoutChanged: (value) => ref
-                          .read(appPreferencesProvider.notifier)
-                          .setNoteOverviewLayout(value),
-                    ),
-                    const SizedBox(height: 18),
-                    _BillingPanel(
-                      accessToken: session?.accessToken ?? '',
-                      tenant: session?.defaultTenant ?? '',
-                      inset: EdgeInsets.zero,
-                    ),
-                    const SizedBox(height: 18),
-                    _SecurityPanel(
-                      email: session?.email ?? '',
-                      inset: EdgeInsets.zero,
-                    ),
-                  ],
+      backgroundColor: Colors.transparent,
+      body: DecoratedBox(
+        decoration: appCanvasDecoration(context),
+        child: SafeArea(
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          AppIconButton(
+                            tooltip: l10n.t('back'),
+                            icon: AppIcons.arrowLeft,
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            l10n.t('settings'),
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 28),
+                      _AppearanceSettings(
+                        l10n: l10n,
+                        prefs: prefs,
+                        onThemeChanged: (value) => ref
+                            .read(appPreferencesProvider.notifier)
+                            .setThemeMode(value),
+                        onLanguageChanged: (value) => ref
+                            .read(appPreferencesProvider.notifier)
+                            .setLanguage(value),
+                        onNoteOverviewLayoutChanged: (value) => ref
+                            .read(appPreferencesProvider.notifier)
+                            .setNoteOverviewLayout(value),
+                      ),
+                      const SizedBox(height: 18),
+                      _BillingPanel(
+                        accessToken: session?.accessToken ?? '',
+                        tenant: session?.defaultTenant ?? '',
+                        inset: EdgeInsets.zero,
+                      ),
+                      const SizedBox(height: 18),
+                      _SecurityPanel(
+                        email: session?.email ?? '',
+                        inset: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -264,10 +260,10 @@ class _SettingsNavigationItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: selected ? scheme.surfaceContainerHighest : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
+      color: selected ? scheme.primaryContainer : Colors.transparent,
+      borderRadius: BorderRadius.circular(AppRadii.lg),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(AppRadii.lg),
         onTap: onTap,
         child: SizedBox(
           height: 46,
@@ -323,7 +319,7 @@ class _AppearanceSettings extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _SettingsSection(
-          icon: LucideIcons.palette,
+          icon: AppIcons.palette,
           title: l10n.t('appearance'),
           child: _PreferenceOptionGroup<ThemeMode>(
             value: prefs.themeMode,
@@ -332,24 +328,24 @@ class _AppearanceSettings extends StatelessWidget {
               _PreferenceOption(
                 value: ThemeMode.system,
                 label: l10n.t('system'),
-                icon: LucideIcons.monitorCog,
+                icon: AppIcons.monitorCog,
               ),
               _PreferenceOption(
                 value: ThemeMode.light,
                 label: l10n.t('light'),
-                icon: LucideIcons.sun,
+                icon: AppIcons.sun,
               ),
               _PreferenceOption(
                 value: ThemeMode.dark,
                 label: l10n.t('dark'),
-                icon: LucideIcons.moon,
+                icon: AppIcons.moon,
               ),
             ],
           ),
         ),
         const SizedBox(height: 18),
         _SettingsSection(
-          icon: LucideIcons.layoutGrid,
+          icon: AppIcons.layoutGrid,
           title: l10n.t('noteLayout'),
           child: _PreferenceOptionGroup<NoteOverviewLayout>(
             value: prefs.noteOverviewLayout,
@@ -358,19 +354,19 @@ class _AppearanceSettings extends StatelessWidget {
               _PreferenceOption(
                 value: NoteOverviewLayout.cards,
                 label: l10n.t('cardsView'),
-                icon: LucideIcons.grid2X2,
+                icon: AppIcons.grid2X2,
               ),
               _PreferenceOption(
                 value: NoteOverviewLayout.list,
                 label: l10n.t('listView'),
-                icon: LucideIcons.list,
+                icon: AppIcons.list,
               ),
             ],
           ),
         ),
         const SizedBox(height: 18),
         _SettingsSection(
-          icon: LucideIcons.languages,
+          icon: AppIcons.languages,
           title: l10n.t('language'),
           child: _PreferenceOptionGroup<String>(
             value: prefs.languageCode,
@@ -379,12 +375,12 @@ class _AppearanceSettings extends StatelessWidget {
               _PreferenceOption(
                 value: 'en',
                 label: l10n.t('english'),
-                icon: LucideIcons.languages,
+                icon: AppIcons.languages,
               ),
               _PreferenceOption(
                 value: 'de',
                 label: l10n.t('german'),
-                icon: LucideIcons.messageSquareText,
+                icon: AppIcons.messageSquareText,
               ),
             ],
           ),
@@ -444,13 +440,6 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
     return Padding(
       padding: widget.inset,
       child: Container(
-        decoration: BoxDecoration(
-          color: scheme.surface.withValues(alpha: 0.78),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.56),
-          ),
-        ),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
         child: FutureBuilder<SubscriptionInfo?>(
           future: _subscriptionFuture,
@@ -462,7 +451,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
               children: [
                 Row(
                   children: [
-                    Icon(LucideIcons.sparkles,
+                    Icon(AppIcons.sparkles,
                         color: scheme.onSurfaceVariant, size: 19),
                     const SizedBox(width: 10),
                     Expanded(
@@ -497,7 +486,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                   title: 'Essential',
                   price: l10n.t('essentialAnnual'),
                   description: l10n.t('essentialBilling'),
-                  icon: LucideIcons.badgeCheck,
+                  icon: AppIcons.badgeCheck,
                   selected: plan == 'essential',
                   busy: _busyPlan == 'essential',
                   onPressed: plan == 'essential'
@@ -509,7 +498,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                   title: 'Pro',
                   price: l10n.t('proAnnual'),
                   description: l10n.t('proBilling'),
-                  icon: LucideIcons.crown,
+                  icon: AppIcons.crown,
                   selected: plan == 'pro',
                   busy: _busyPlan == 'pro',
                   onPressed: plan == 'pro' ? null : () => _startCheckout('pro'),
@@ -593,7 +582,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                 await Clipboard.setData(ClipboardData(text: checkoutUrl));
                 if (context.mounted) Navigator.of(context).pop();
               },
-              icon: const Icon(LucideIcons.copy, size: 16),
+              icon: const Icon(AppIcons.copy, size: 16),
               label: Text(l10n.t('copyLink')),
             ),
           ],
@@ -671,7 +660,7 @@ class _PlanOptionCard extends StatelessWidget {
           const SizedBox(height: 12),
           _SettingsActionButton(
             label: l10n.t(selected ? 'activePlan' : 'selectPlan'),
-            icon: selected ? LucideIcons.check : LucideIcons.arrowUpRight,
+            icon: selected ? AppIcons.check : AppIcons.arrowUpRight,
             busy: busy,
             onPressed: selected ? null : onPressed,
           ),
@@ -697,19 +686,12 @@ class _SettingsSection extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       constraints: const BoxConstraints(maxWidth: 680),
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.78),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.56),
-        ),
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
             child: Row(
               children: [
                 Icon(icon, color: scheme.onSurfaceVariant, size: 18),
@@ -719,7 +701,7 @@ class _SettingsSection extends StatelessWidget {
                   style: Theme.of(context)
                       .textTheme
                       .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w800),
+                      ?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -756,15 +738,25 @@ class _PreferenceOptionGroup<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (final option in options)
-          _PreferenceOptionTile<T>(
-            option: option,
-            selected: option.value == value,
-            onTap: () => onChanged(option.value),
-          ),
-      ],
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerLow
+            .withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(AppRadii.xxl),
+      ),
+      child: Column(
+        children: [
+          for (final option in options)
+            _PreferenceOptionTile<T>(
+              option: option,
+              selected: option.value == value,
+              onTap: () => onChanged(option.value),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -795,7 +787,7 @@ class _PreferenceOptionTileState<T> extends State<_PreferenceOptionTile<T>> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadii.xl),
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
@@ -803,11 +795,11 @@ class _PreferenceOptionTileState<T> extends State<_PreferenceOptionTile<T>> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           decoration: BoxDecoration(
             color: widget.selected
-                ? scheme.surfaceContainerHighest.withValues(alpha: 0.92)
+                ? scheme.primaryContainer.withValues(alpha: 0.9)
                 : _hovered
                     ? scheme.surfaceContainerHighest.withValues(alpha: 0.42)
                     : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppRadii.xl),
           ),
           child: Row(
             children: [
@@ -839,7 +831,7 @@ class _PreferenceOptionTileState<T> extends State<_PreferenceOptionTile<T>> {
                   opacity: widget.selected ? 1 : 0,
                   duration: const Duration(milliseconds: 120),
                   child: Icon(
-                    LucideIcons.check,
+                    AppIcons.check,
                     size: 18,
                     color: scheme.onSurface,
                   ),
@@ -901,20 +893,13 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
     return Padding(
       padding: widget.inset,
       child: Container(
-        decoration: BoxDecoration(
-          color: scheme.surface.withValues(alpha: 0.78),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: scheme.outlineVariant.withValues(alpha: 0.56),
-          ),
-        ),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                Icon(LucideIcons.shieldCheck,
+                Icon(AppIcons.shieldCheck,
                     color: scheme.onSurfaceVariant, size: 19),
                 const SizedBox(width: 10),
                 Text(
@@ -954,8 +939,8 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
                         children: [
                           Icon(
                             configured == true
-                                ? LucideIcons.shieldCheck
-                                : LucideIcons.shieldAlert,
+                                ? AppIcons.shieldCheck
+                                : AppIcons.shieldAlert,
                             size: 18,
                             color: configured == true
                                 ? scheme.primary
@@ -1023,8 +1008,8 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
                             ? 'rotateRecoveryKey'
                             : 'addRecoveryKey'),
                         icon: configured == true
-                            ? LucideIcons.refreshCw
-                            : LucideIcons.keyRound,
+                            ? AppIcons.refreshCw
+                            : AppIcons.keyRound,
                         busy: _recoveryBusy,
                         onPressed:
                             loading || configured == null || _recoveryBusy
@@ -1053,7 +1038,7 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
                     controller: _currentPassword,
                     obscureText: _obscure,
                     label: l10n.t('currentPassword'),
-                    icon: LucideIcons.lockKeyhole,
+                    icon: AppIcons.lockKeyhole,
                     validator: (value) {
                       if ((value ?? '').isEmpty) return l10n.t('enterPassword');
                       return null;
@@ -1064,7 +1049,7 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
                     controller: _newPassword,
                     obscureText: _obscure,
                     label: l10n.t('newPassword'),
-                    icon: LucideIcons.keyRound,
+                    icon: AppIcons.keyRound,
                     validator: (value) {
                       if ((value ?? '').length < 8) {
                         return l10n.t('passwordMin');
@@ -1077,12 +1062,12 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
                     controller: _confirmPassword,
                     obscureText: _obscure,
                     label: l10n.t('confirmPassword'),
-                    icon: LucideIcons.checkCheck,
+                    icon: AppIcons.checkCheck,
                     suffix: AppIconButton(
                       tooltip: _obscure
                           ? l10n.t('showPassword')
                           : l10n.t('hidePassword'),
-                      icon: _obscure ? LucideIcons.eye : LucideIcons.eyeOff,
+                      icon: _obscure ? AppIcons.eye : AppIcons.eyeOff,
                       onPressed: () => setState(() => _obscure = !_obscure),
                     ),
                     validator: (value) {
@@ -1106,7 +1091,7 @@ class _SecurityPanelState extends ConsumerState<_SecurityPanel> {
             const SizedBox(height: 18),
             _SettingsActionButton(
               label: l10n.t('updatePassword'),
-              icon: LucideIcons.rotateCcwKey,
+              icon: AppIcons.rotateCcwKey,
               busy: _busy,
               onPressed: _busy ? null : _changePassword,
             ),
