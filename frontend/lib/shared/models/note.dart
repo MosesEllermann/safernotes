@@ -51,6 +51,7 @@ class PlainNote {
     required this.body,
     this.richTextDelta,
     required this.checklist,
+    this.labels = const [],
     required this.updatedAt,
     required this.pinned,
     required this.color,
@@ -71,6 +72,10 @@ class PlainNote {
   final String body;
   final List<Map<String, dynamic>>? richTextDelta;
   final List<ChecklistItem> checklist;
+
+  /// User-defined labels. Part of the encrypted payload — never sent as
+  /// plaintext to the backend.
+  final List<String> labels;
   final DateTime updatedAt;
   final bool pinned;
   final int color;
@@ -91,6 +96,7 @@ class PlainNote {
     List<Map<String, dynamic>>? richTextDelta,
     bool clearRichTextDelta = false,
     List<ChecklistItem>? checklist,
+    List<String>? labels,
     DateTime? updatedAt,
     bool? pinned,
     int? color,
@@ -115,6 +121,7 @@ class PlainNote {
       richTextDelta:
           clearRichTextDelta ? null : richTextDelta ?? this.richTextDelta,
       checklist: checklist ?? this.checklist,
+      labels: labels ?? this.labels,
       updatedAt: updatedAt ?? this.updatedAt,
       pinned: pinned ?? this.pinned,
       color: color ?? this.color,
@@ -131,11 +138,12 @@ class PlainNote {
   }
 
   Map<String, dynamic> encryptedPayloadJson() => {
-        'schema': 3,
+        'schema': 4,
         'title': title,
         'body': body,
         if (richTextDelta != null) 'richTextDelta': richTextDelta,
         'checklist': checklist.map((item) => item.toJson()).toList(),
+        'labels': labels,
         'color': color,
         'sortOrder': sortOrder,
         'pinned': pinned,
@@ -152,6 +160,7 @@ class PlainNote {
         'body': body,
         if (richTextDelta != null) 'richTextDelta': richTextDelta,
         'checklist': checklist.map((item) => item.toJson()).toList(),
+        'labels': labels,
         'updatedAt': updatedAt.toIso8601String(),
         'pinned': pinned,
         'color': color,
@@ -177,6 +186,7 @@ class PlainNote {
           .map((item) =>
               ChecklistItem.fromJson(Map<String, dynamic>.from(item as Map)))
           .toList(),
+      labels: _decodeLabels(json['labels']),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       pinned: json['pinned'] as bool? ?? false,
       color: json['color'] as int? ?? 0xffffffff,
@@ -210,6 +220,7 @@ class PlainNote {
           .map((item) =>
               ChecklistItem.fromJson(Map<String, dynamic>.from(item as Map)))
           .toList(),
+      labels: _decodeLabels(json['labels']),
       updatedAt:
           DateTime.tryParse(json['updatedAt'] as String? ?? '') ?? updatedAt,
       pinned: json['pinned'] as bool? ?? false,
@@ -221,6 +232,17 @@ class PlainNote {
       shared: json['shared'] as bool? ?? false,
     );
   }
+}
+
+List<String> _decodeLabels(Object? value) {
+  if (value is! List) return const [];
+  final seen = <String>{};
+  for (final entry in value) {
+    if (entry is! String) continue;
+    final label = entry.trim();
+    if (label.isNotEmpty) seen.add(label);
+  }
+  return List<String>.unmodifiable(seen);
 }
 
 List<Map<String, dynamic>>? _decodeRichTextDelta(Object? value) {

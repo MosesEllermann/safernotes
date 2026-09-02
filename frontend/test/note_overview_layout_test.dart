@@ -126,7 +126,7 @@ void main() {
     final surface = tester.widget<Material>(
       find.byKey(const ValueKey('note-editor-surface')),
     );
-    expect(surface.borderRadius, BorderRadius.circular(AppRadii.hero));
+    expect(surface.borderRadius, BorderRadius.circular(AppRadii.card));
     expect(surface.clipBehavior, Clip.antiAlias);
     expect(surface.elevation, 0);
     expect(tester.takeException(), isNull);
@@ -149,10 +149,15 @@ void main() {
     );
 
     final canvas = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('notes-app-canvas')),
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('notes-app-canvas')),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
     );
     final gradient = (canvas.decoration as BoxDecoration).gradient!;
-    expect(gradient.colors.first, const Color(0xff111514));
+    expect(gradient.colors.first, const Color(0xff0d1513));
     expect(find.byType(AppBar), findsNothing);
     expect(find.byKey(const ValueKey('mobile-layout-toggle')), findsOneWidget);
     expect(find.byKey(const ValueKey('mobile-account-menu')), findsOneWidget);
@@ -181,7 +186,7 @@ void main() {
       const Size.square(52),
     );
     final notesButton = find.byKey(const ValueKey('mobile-nav-notes'));
-    expect(tester.getSize(notesButton), const Size.square(56));
+    expect(tester.getSize(notesButton), const Size.square(52));
     expect(
       tester
           .widget<Icon>(
@@ -191,11 +196,11 @@ void main() {
             ),
           )
           .size,
-      18,
+      20,
     );
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile-nav-create'))),
-      const Size.square(56),
+      const Size.square(52),
     );
     expect(
       tester
@@ -208,9 +213,10 @@ void main() {
           .size,
       21,
     );
+    // 4 items of 52 + 3 gaps of 6 + 6 inset on both sides.
     expect(
       tester.getSize(find.byKey(const ValueKey('mobile-bottom-nav-pill'))),
-      const Size(264, 72),
+      const Size(238, 64),
     );
 
     await tester.tap(find.byKey(const ValueKey('mobile-nav-create')));
@@ -220,7 +226,7 @@ void main() {
     final expandedNavSize = tester.getSize(
       find.byKey(const ValueKey('mobile-bottom-nav-pill')),
     );
-    expect(expandedNavSize.width, 264);
+    expect(expandedNavSize.width, 238);
     expect(expandedNavSize.height, greaterThan(210));
     expect(find.byKey(const ValueKey('mobile-create-note-action')),
         findsOneWidget);
@@ -361,9 +367,10 @@ void main() {
       find.byKey(const ValueKey('desktop-note-editor-border')),
       findsOneWidget,
     );
+    // The list is borderless now: spacing separates rows, no divider lines.
     expect(
       find.byKey(const ValueKey('note-list-divider-hidden-0')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey('note-list-divider-0')),

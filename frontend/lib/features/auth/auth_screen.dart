@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:safernotes_app/shared/theme/app_icons.dart';
@@ -5,6 +7,7 @@ import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/auth/recovery_key_dialog.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
+import 'package:safernotes_app/shared/widgets/app_canvas.dart';
 import 'package:safernotes_app/shared/widgets/safernotes_logo.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
@@ -260,10 +263,7 @@ class _AuthBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: appCanvasDecoration(context),
-      child: child,
-    );
+    return AppCanvas(child: child);
   }
 }
 
@@ -452,24 +452,24 @@ class _AuthPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final design = context.safernotesTheme;
     return Form(
       key: formKey,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow.withValues(alpha: 0.88),
-          borderRadius: BorderRadius.circular(AppRadii.hero),
+          borderRadius: BorderRadius.circular(AppRadii.card),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 28,
-              offset: const Offset(0, 14),
+              color: design.glassShadow,
+              blurRadius: 34,
+              offset: const Offset(0, 18),
             ),
           ],
         ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(26, 26, 26, 28),
-          child: Column(
+        child: _FrostedCard(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(28, 28, 28, 30),
+            child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -642,7 +642,7 @@ class _AuthPanel extends StatelessWidget {
                         key: const ValueKey('auth-progress'),
                         padding: const EdgeInsets.only(top: 12),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
+                          borderRadius: BorderRadius.circular(AppRadii.pill),
                           child: const LinearProgressIndicator(minHeight: 3),
                         ),
                       )
@@ -663,6 +663,7 @@ class _AuthPanel extends StatelessWidget {
                 ),
               ],
             ],
+            ),
           ),
         ),
       ),
@@ -704,11 +705,9 @@ class _AuthFeaturePill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
       decoration: BoxDecoration(
-        color: design.isApple
-            ? design.glassFill
-            : scheme.surfaceContainerHighest.withValues(alpha: 0.62),
+        color: design.glassFill,
         borderRadius: BorderRadius.circular(AppRadii.pill),
-        border: design.isApple ? Border.all(color: design.glassStroke) : null,
+        border: Border.all(color: design.glassStroke),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -745,15 +744,13 @@ class _AuthModeSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final design = context.safernotesTheme;
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: design.isApple
-            ? design.glassFill
-            : scheme.surfaceContainerHighest.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(AppRadii.xl),
+        color: design.glassFill,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: Border.all(color: design.glassStroke),
       ),
       child: Row(
         children: [
@@ -799,22 +796,27 @@ class _AuthModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final fg = selected ? scheme.onSurface : scheme.onSurfaceVariant;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final fg = selected
+        ? (dark ? const Color(0xff17201f) : Colors.white)
+        : scheme.onSurfaceVariant;
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(AppRadii.pill),
       onTap: disabled || selected ? null : onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         curve: Curves.easeOutCubic,
-        height: 42,
+        height: 46,
         decoration: BoxDecoration(
-          color: selected ? scheme.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
+          color: selected
+              ? (dark ? Colors.white : scheme.onSurface)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadii.pill),
           boxShadow: selected
               ? [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 14,
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 16,
                     offset: const Offset(0, 8),
                   ),
                 ]
@@ -832,7 +834,7 @@ class _AuthModeButton extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: fg,
-                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     ),
               ),
             ),
@@ -879,27 +881,25 @@ class _AuthTextField extends StatelessWidget {
         prefixIcon: Icon(icon, size: 18, color: scheme.onSurfaceVariant),
         suffixIcon: suffix,
         filled: true,
-        fillColor: design.isApple
-            ? design.glassFill
-            : scheme.surfaceContainerHighest.withValues(alpha: 0.42),
+        fillColor: design.glassFill,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(design.controlRadius),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(design.controlRadius),
-          borderSide: BorderSide.none,
+          borderRadius: BorderRadius.circular(AppRadii.pill),
+          borderSide: BorderSide(color: design.glassStroke),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(design.controlRadius),
-          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.44)),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
+          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.5)),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(design.controlRadius),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
           borderSide: BorderSide(color: scheme.error.withValues(alpha: 0.72)),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(design.controlRadius),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
           borderSide: BorderSide(color: scheme.error),
         ),
         contentPadding:
@@ -942,7 +942,7 @@ class _AuthError extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: scheme.errorContainer.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppRadii.xl),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -959,6 +959,34 @@ class _AuthError extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+
+/// Frosted container used by the auth panels.
+class _FrostedCard extends StatelessWidget {
+  const _FrostedCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final design = context.safernotesTheme;
+    final radius = BorderRadius.circular(AppRadii.card);
+    return ClipRRect(
+      borderRadius: radius,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: design.glassFill,
+            borderRadius: radius,
+            border: Border.all(color: design.glassStroke),
+          ),
+          child: child,
+        ),
       ),
     );
   }

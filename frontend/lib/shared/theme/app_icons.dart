@@ -40,6 +40,8 @@ abstract final class AppIcons {
   static const IconData folderLock = PhosphorIconsRegular.folderLock;
   static const IconData globe = PhosphorIconsRegular.globeSimple;
   static const IconData grid2X2 = PhosphorIconsRegular.squaresFour;
+  static const IconData heart = PhosphorIconsRegular.heart;
+  static const IconData heartFill = PhosphorIconsFill.heart;
   static const IconData gripVertical = PhosphorIconsRegular.dotsSixVertical;
   static const IconData indentDecrease = PhosphorIconsRegular.textOutdent;
   static const IconData indentIncrease = PhosphorIconsRegular.textIndent;
@@ -61,6 +63,7 @@ abstract final class AppIcons {
   static const IconData mailWarning = PhosphorIconsRegular.envelopeSimple;
   static const IconData menu = PhosphorIconsRegular.list;
   static const IconData messageSquareText = PhosphorIconsRegular.chatText;
+  static const IconData microphone = PhosphorIconsRegular.microphone;
   static const IconData monitorCog = PhosphorIconsRegular.desktop;
   static const IconData moon = PhosphorIconsRegular.moon;
   static const IconData notebookText = PhosphorIconsRegular.notebook;

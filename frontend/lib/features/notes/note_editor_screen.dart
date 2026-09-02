@@ -16,6 +16,7 @@ import 'package:safernotes_app/shared/models/note.dart';
 import 'package:safernotes_app/shared/notifications/reminder_notifications.dart';
 import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
+import 'package:safernotes_app/shared/widgets/app_canvas.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 class NoteEditorScreen extends StatelessWidget {
@@ -27,8 +28,7 @@ class NoteEditorScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: DecoratedBox(
-        decoration: appCanvasDecoration(context),
+      body: AppCanvas(
         child: SafeArea(child: NoteEditorPanel(note: note)),
       ),
     );
@@ -71,6 +71,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   late StreamSubscription<quill.DocChange> _bodyChanges;
   late List<ChecklistItem> _checklist;
   late bool _pinned;
+  late List<String> _labels;
   late int _color;
   late bool _checklistMode;
   late DateTime? _reminderAt;
@@ -119,6 +120,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     _checklist = orderChecklistItems(note.checklist);
     _checklistMode = note.checklist.isNotEmpty && note.body.trim().isEmpty;
     _pinned = note.pinned;
+    _labels = [...note.labels];
     _color = normalizeBrandNoteColor(note.color);
     _reminderAt = note.reminderAt;
     _history = EditorHistory<_EditorSnapshot>(
@@ -145,7 +147,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     final note = _draft();
-    final surfaceColor = brandNoteSurfaceColor(context, _color);
+    final surfaceColor = effectiveNoteSurfaceColor(context, _color);
     final presence = ref
         .watch(presenceProvider)
         .where(
@@ -244,7 +246,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                         _PresenceDots(presence: presence),
                         AppIconButton(
                           tooltip: _pinned ? l10n.t('unpin') : l10n.t('pin'),
-                          icon: _pinned ? AppIcons.pin : AppIcons.pinOff,
+                          icon: _pinned ? AppIcons.heartFill : AppIcons.heart,
                           size: bottomToolbar ? 44 : 36,
                           selected: _pinned,
                           onPressed: () => _recordMutation(
@@ -289,6 +291,15 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                           ),
                         ],
                       ],
+                    ),
+                  ),
+                  _LabelEditorRow(
+                    labels: _labels,
+                    l10n: l10n,
+                    onAdd: _promptAddLabel,
+                    onRemove: (label) => _recordMutation(
+                      () => _labels = [..._labels]..remove(label),
+                      immediate: true,
                     ),
                   ),
                   if (!bottomToolbar) toolbar,
@@ -371,6 +382,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
           : _body.document.toDelta().toJson().cast<Map<String, dynamic>>(),
       clearRichTextDelta: _checklistMode,
       checklist: _checklist,
+      labels: _labels,
       pinned: _pinned,
       color: _color,
       reminderAt: _reminderAt,
@@ -382,6 +394,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     return _EditorSnapshot(
       title: _title.value,
       checklist: [..._checklist],
+      labels: [..._labels],
       pinned: _pinned,
       color: _color,
       checklistMode: _checklistMode,
@@ -404,6 +417,44 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     if (_restoringHistory) return;
     if (mounted) setState(() {});
     _scheduleSave();
+  }
+
+  Future<void> _promptAddLabel() async {
+    final l10n = ref.read(l10nProvider);
+    final controller = TextEditingController();
+    final label = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.t('addLabel')),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 32,
+          decoration: InputDecoration(labelText: l10n.t('labelName')),
+          onSubmitted: (value) => Navigator.of(context).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(l10n.t('cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: Text(l10n.t('addLabel')),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    final trimmed = label?.trim();
+    if (trimmed == null || trimmed.isEmpty) return;
+    if (_labels.any((entry) => entry.toLowerCase() == trimmed.toLowerCase())) {
+      return;
+    }
+    _recordMutation(
+      () => _labels = [..._labels, trimmed],
+      immediate: true,
+    );
   }
 
   void _recordMutation(VoidCallback mutation, {bool immediate = false}) {
@@ -440,6 +491,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       _title.value = snapshot.title;
       _checklist = [...snapshot.checklist];
       _pinned = snapshot.pinned;
+      _labels = [...snapshot.labels];
       _color = snapshot.color;
       _checklistMode = snapshot.checklistMode;
       _reminderAt = snapshot.reminderAt;
@@ -876,7 +928,7 @@ class _LinkSheetState extends State<_LinkSheet> {
               constraints: const BoxConstraints(maxWidth: 520),
               child: Material(
                 color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(AppRadii.hero),
                 clipBehavior: Clip.antiAlias,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -891,7 +943,7 @@ class _LinkSheetState extends State<_LinkSheet> {
                             height: 42,
                             decoration: BoxDecoration(
                               color: scheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(AppRadii.xl),
                             ),
                             child: Icon(
                               AppIcons.link,
@@ -928,7 +980,7 @@ class _LinkSheetState extends State<_LinkSheet> {
                           fillColor: scheme.surfaceContainerHighest
                               .withValues(alpha: 0.42),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(AppRadii.xl),
                             borderSide: BorderSide.none,
                           ),
                         ),
@@ -946,7 +998,7 @@ class _LinkSheetState extends State<_LinkSheet> {
                           fillColor: scheme.surfaceContainerHighest
                               .withValues(alpha: 0.42),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(AppRadii.xl),
                             borderSide: BorderSide.none,
                           ),
                         ),
@@ -1014,7 +1066,7 @@ class _BackgroundSheet extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 520),
               child: Material(
                 color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(AppRadii.hero),
                 clipBehavior: Clip.antiAlias,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -1029,7 +1081,7 @@ class _BackgroundSheet extends StatelessWidget {
                             height: 42,
                             decoration: BoxDecoration(
                               color: scheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(AppRadii.xl),
                             ),
                             child: Icon(
                               AppIcons.palette,
@@ -1095,7 +1147,7 @@ class _BackgroundColorTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(AppRadii.xl),
       onTap: onSelected,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
@@ -1104,7 +1156,7 @@ class _BackgroundColorTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: brandNoteSurfaceColor(context, color),
           gradient: brandNoteGradient(context, color),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AppRadii.xl),
           boxShadow: selected
               ? [
                   BoxShadow(
@@ -1173,7 +1225,7 @@ class _EditorReminderSheetState extends State<_EditorReminderSheet> {
               constraints: const BoxConstraints(maxWidth: 520),
               child: Material(
                 color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(AppRadii.hero),
                 clipBehavior: Clip.antiAlias,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -1188,7 +1240,7 @@ class _EditorReminderSheetState extends State<_EditorReminderSheet> {
                             height: 42,
                             decoration: BoxDecoration(
                               color: scheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(AppRadii.xl),
                             ),
                             child: Icon(
                               AppIcons.bell,
@@ -1310,13 +1362,13 @@ class _EditorReminderPickTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(AppRadii.xl),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         decoration: BoxDecoration(
           color: scheme.surfaceContainerHighest.withValues(alpha: 0.42),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadii.xl),
         ),
         child: Row(
           children: [
@@ -2141,7 +2193,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 520),
               child: Material(
                 color: Theme.of(context).scaffoldBackgroundColor,
-                borderRadius: BorderRadius.circular(24),
+                borderRadius: BorderRadius.circular(AppRadii.hero),
                 clipBehavior: Clip.antiAlias,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -2156,7 +2208,7 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                             height: 42,
                             decoration: BoxDecoration(
                               color: scheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(AppRadii.xl),
                             ),
                             child: Icon(
                               AppIcons.userPlus,
@@ -2229,15 +2281,15 @@ class _CollaboratorInviteSheet extends StatelessWidget {
                           fillColor: scheme.surfaceContainerHighest
                               .withValues(alpha: 0.5),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(AppRadii.xl),
                             borderSide: BorderSide.none,
                           ),
                           enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(AppRadii.xl),
                             borderSide: BorderSide.none,
                           ),
                           focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(AppRadii.xl),
                             borderSide: BorderSide(color: scheme.primary),
                           ),
                         ),
@@ -2390,7 +2442,7 @@ class _InviteRoleTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(AppRadii.xl),
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
@@ -2399,7 +2451,7 @@ class _InviteRoleTile extends StatelessWidget {
           color: selected
               ? scheme.surfaceContainerHighest
               : scheme.surfaceContainerHighest.withValues(alpha: 0.34),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(AppRadii.xl),
           border: Border.all(
             color: selected
                 ? scheme.onSurface.withValues(alpha: 0.28)
@@ -2448,6 +2500,7 @@ class _EditorSnapshot {
   const _EditorSnapshot({
     required this.title,
     required this.checklist,
+    required this.labels,
     required this.pinned,
     required this.color,
     required this.checklistMode,
@@ -2456,6 +2509,7 @@ class _EditorSnapshot {
 
   final TextEditingValue title;
   final List<ChecklistItem> checklist;
+  final List<String> labels;
   final bool pinned;
   final int color;
   final bool checklistMode;
@@ -2467,8 +2521,12 @@ class _EditorSnapshot {
         color != other.color ||
         checklistMode != other.checklistMode ||
         reminderAt != other.reminderAt ||
-        checklist.length != other.checklist.length) {
+        checklist.length != other.checklist.length ||
+        labels.length != other.labels.length) {
       return false;
+    }
+    for (var index = 0; index < labels.length; index += 1) {
+      if (labels[index] != other.labels[index]) return false;
     }
     for (var index = 0; index < checklist.length; index += 1) {
       final left = checklist[index];
@@ -2481,5 +2539,73 @@ class _EditorSnapshot {
       }
     }
     return true;
+  }
+}
+
+/// Inline label editor shown under the note title.
+class _LabelEditorRow extends StatelessWidget {
+  const _LabelEditorRow({
+    required this.labels,
+    required this.l10n,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<String> labels;
+  final AppL10n l10n;
+  final Future<void> Function() onAdd;
+  final ValueChanged<String> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (final label in labels)
+            InputChip(
+              key: ValueKey('note-label-$label'),
+              label: Text(label),
+              onDeleted: () => onRemove(label),
+              deleteIcon: const Icon(AppIcons.close, size: 15),
+              backgroundColor:
+                  brandLavender.withValues(alpha: dark ? 0.20 : 0.16),
+              side: BorderSide.none,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadii.pill),
+              ),
+              labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: dark ? brandLavender : const Color(0xff53407f),
+                  ),
+            ),
+          ActionChip(
+            key: const ValueKey('note-add-label'),
+            avatar:
+                Icon(AppIcons.plus, size: 15, color: scheme.onSurfaceVariant),
+            label: Text(l10n.t('addLabel')),
+            onPressed: () => unawaited(onAdd()),
+            backgroundColor: dark
+                ? Colors.white.withValues(alpha: 0.07)
+                : Colors.black.withValues(alpha: 0.04),
+            side: BorderSide.none,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppRadii.pill),
+            ),
+            labelStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -9,6 +9,7 @@ import 'package:safernotes_app/shared/app/app_l10n.dart';
 import 'package:safernotes_app/shared/app/app_preferences.dart';
 import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
+import 'package:safernotes_app/shared/widgets/app_canvas.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 enum _SettingsPage { appearance, plan, security }
@@ -31,8 +32,7 @@ class SettingsScreen extends ConsumerWidget {
       return Scaffold(
         key: const ValueKey('desktop-settings'),
         backgroundColor: Colors.transparent,
-        body: DecoratedBox(
-          decoration: appCanvasDecoration(context),
+        body: AppCanvas(
           child: SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -60,48 +60,41 @@ class SettingsScreen extends ConsumerWidget {
                     children: [
                       SizedBox(
                         width: 236,
-                        child: ColoredBox(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerLow
-                              .withValues(alpha: 0.64),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _SettingsNavigationItem(
-                                  key:
-                                      const ValueKey('settings-nav-appearance'),
-                                  icon: AppIcons.palette,
-                                  label: l10n.t('appearance'),
-                                  selected: page == _SettingsPage.appearance,
-                                  onTap: () => ref
-                                      .read(_settingsPageProvider.notifier)
-                                      .state = _SettingsPage.appearance,
-                                ),
-                                const SizedBox(height: 4),
-                                _SettingsNavigationItem(
-                                  key: const ValueKey('settings-nav-plan'),
-                                  icon: AppIcons.creditCard,
-                                  label: l10n.t('plan'),
-                                  selected: page == _SettingsPage.plan,
-                                  onTap: () => ref
-                                      .read(_settingsPageProvider.notifier)
-                                      .state = _SettingsPage.plan,
-                                ),
-                                const SizedBox(height: 4),
-                                _SettingsNavigationItem(
-                                  key: const ValueKey('settings-nav-security'),
-                                  icon: AppIcons.shieldCheck,
-                                  label: l10n.t('security'),
-                                  selected: page == _SettingsPage.security,
-                                  onTap: () => ref
-                                      .read(_settingsPageProvider.notifier)
-                                      .state = _SettingsPage.security,
-                                ),
-                              ],
-                            ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _SettingsNavigationItem(
+                                key: const ValueKey('settings-nav-appearance'),
+                                icon: AppIcons.palette,
+                                label: l10n.t('appearance'),
+                                selected: page == _SettingsPage.appearance,
+                                onTap: () => ref
+                                    .read(_settingsPageProvider.notifier)
+                                    .state = _SettingsPage.appearance,
+                              ),
+                              const SizedBox(height: 4),
+                              _SettingsNavigationItem(
+                                key: const ValueKey('settings-nav-plan'),
+                                icon: AppIcons.creditCard,
+                                label: l10n.t('plan'),
+                                selected: page == _SettingsPage.plan,
+                                onTap: () => ref
+                                    .read(_settingsPageProvider.notifier)
+                                    .state = _SettingsPage.plan,
+                              ),
+                              const SizedBox(height: 4),
+                              _SettingsNavigationItem(
+                                key: const ValueKey('settings-nav-security'),
+                                icon: AppIcons.shieldCheck,
+                                label: l10n.t('security'),
+                                selected: page == _SettingsPage.security,
+                                onTap: () => ref
+                                    .read(_settingsPageProvider.notifier)
+                                    .state = _SettingsPage.security,
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -157,8 +150,7 @@ class SettingsScreen extends ConsumerWidget {
     return Scaffold(
       key: const ValueKey('mobile-settings'),
       backgroundColor: Colors.transparent,
-      body: DecoratedBox(
-        decoration: appCanvasDecoration(context),
+      body: AppCanvas(
         child: SafeArea(
           child: CustomScrollView(
             slivers: [
@@ -260,7 +252,7 @@ class _SettingsNavigationItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: selected ? scheme.primaryContainer : Colors.transparent,
+      color: selected ? context.safernotesTheme.glassFill : Colors.transparent,
       borderRadius: BorderRadius.circular(AppRadii.lg),
       child: InkWell(
         borderRadius: BorderRadius.circular(AppRadii.lg),
@@ -621,9 +613,11 @@ class _PlanOptionCard extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: selected
-            ? scheme.surfaceContainerHighest.withValues(alpha: 0.82)
-            : scheme.surfaceContainerHighest.withValues(alpha: 0.38),
-        borderRadius: BorderRadius.circular(14),
+            ? context.safernotesTheme.glassFill
+            : (Theme.of(context).brightness == Brightness.dark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.white.withValues(alpha: 0.55)),
+        borderRadius: BorderRadius.circular(AppRadii.xl),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -739,13 +733,10 @@ class _PreferenceOptionGroup<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(5),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .surfaceContainerLow
-            .withValues(alpha: 0.76),
-        borderRadius: BorderRadius.circular(AppRadii.xxl),
+        color: context.safernotesTheme.glassFill,
+        borderRadius: BorderRadius.circular(AppRadii.card),
       ),
       child: Column(
         children: [
@@ -783,23 +774,26 @@ class _PreferenceOptionTileState<T> extends State<_PreferenceOptionTile<T>> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: InkWell(
-        borderRadius: BorderRadius.circular(AppRadii.xl),
+        borderRadius: BorderRadius.circular(AppRadii.pill),
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
             color: widget.selected
-                ? scheme.primaryContainer.withValues(alpha: 0.9)
+                ? brandLavender.withValues(alpha: dark ? 0.20 : 0.16)
                 : _hovered
-                    ? scheme.surfaceContainerHighest.withValues(alpha: 0.42)
+                    ? (dark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : Colors.black.withValues(alpha: 0.04))
                     : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppRadii.xl),
+            borderRadius: BorderRadius.circular(AppRadii.pill),
           ),
           child: Row(
             children: [

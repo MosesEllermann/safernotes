@@ -47,7 +47,12 @@ void main() {
               .map((color) => brandNoteSurfaceColor(context, color))
               .toSet();
           expect(surfaces, hasLength(brandNoteColors.length));
-          for (final surface in surfaces) {
+          // Note cards are frosted glass, so readability depends on the colour
+          // they composite to over the app canvas, not on the translucent fill.
+          final rendered = brandNoteColors
+              .map((color) => effectiveNoteSurfaceColor(context, color))
+              .toSet();
+          for (final surface in rendered) {
             for (final text in [scheme.onSurface, scheme.onSurfaceVariant]) {
               expect(_contrast(text, surface), greaterThanOrEqualTo(4.5),
                   reason: '$text on $surface');

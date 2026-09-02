@@ -40,6 +40,7 @@ void main() {
     expect(offline.noteKey, note.noteKey);
     expect(offline.shareRole, note.shareRole);
     expect(remote.richTextDelta, note.richTextDelta);
-    expect(note.encryptedPayloadJson()['schema'], 3);
+    // Schema 4 adds encrypted labels.
+    expect(note.encryptedPayloadJson()['schema'], 4);
   });
 }
