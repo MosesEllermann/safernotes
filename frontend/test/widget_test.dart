@@ -27,6 +27,23 @@ void main() {
           Theme.of(tester.element(find.byType(TextFormField).first)).brightness,
           mode == ThemeMode.light ? Brightness.light : Brightness.dark,
         );
+        final field = tester.widget<TextField>(find.byType(TextField).first);
+        final enabledBorder = field.decoration?.enabledBorder;
+        final focusedBorder = field.decoration?.focusedBorder;
+        expect(field.decoration?.filled, isTrue);
+        expect(enabledBorder, isA<OutlineInputBorder>());
+        expect(
+          (enabledBorder! as OutlineInputBorder).borderSide.style,
+          BorderStyle.solid,
+        );
+        expect(
+          (enabledBorder).borderSide.color.a,
+          greaterThan(0.4),
+        );
+        expect(
+          (focusedBorder! as OutlineInputBorder).borderSide.width,
+          greaterThan((enabledBorder).borderSide.width),
+        );
         expect(tester.takeException(), isNull);
       }
     }

@@ -2922,6 +2922,9 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
   static const double _inset = 6;
   static const double _barRadius = _itemSize / 2 + _inset;
   static const double _iosItemSize = 54;
+  static const double _iosNativeBarHeight = 64;
+  static const double _iosCreateButtonSize = 48;
+  static const double _iosSearchHeight = 50;
   static const double _iosGap = 7;
   static const double _trashDropSize = 88;
   static const double _createMenuContentHeight = 76;
@@ -3082,8 +3085,13 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
     final targetRadius = _barRadius;
     final navItemSize = _usesIosNativeControls ? _iosItemSize : _itemSize;
     final navGap = _usesIosNativeControls ? _iosGap : _gap;
+    final availableMobileWidth =
+        math.max(0.0, MediaQuery.sizeOf(context).width - 32);
+    final compactNavWidth = navItemSize * 5 + navGap * 4 + _inset * 2;
+    final iosNavWidth = math.min(360.0, availableMobileWidth);
+    final searchNavWidth = math.min(420.0, availableMobileWidth);
     final collapsedNavSurfaceHeight =
-        _usesIosNativeControls ? _iosItemSize + 3 : _itemSize + _inset * 2;
+        _usesIosNativeControls ? _iosNativeBarHeight : _itemSize + _inset * 2;
     final expandedNavSurfaceHeight = collapsedNavSurfaceHeight +
         _createMenuSpacing +
         _createMenuContentHeight;
@@ -3101,7 +3109,7 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
           _trashMorphController.value,
         );
         final collapsedViewportHeight =
-            _usesIosNativeControls ? _iosItemSize + 3 : _itemSize;
+            _usesIosNativeControls ? _iosNativeBarHeight : _itemSize;
         final navViewportHeight = lerpDouble(
           collapsedViewportHeight,
           _trashDropSize - _inset * 2,
@@ -3132,26 +3140,29 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
                   width: draggingToTrash
                       ? _trashDropSize
                       : _searching
-                          ? (MediaQuery.sizeOf(context).width - 32).clamp(
-                              navItemSize * 5 + navGap * 4 + _inset * 2,
-                              420.0,
-                            )
-                          : navItemSize * 5 + navGap * 4 + _inset * 2,
+                          ? searchNavWidth
+                          : _usesIosNativeControls
+                              ? iosNavWidth
+                              : compactNavWidth,
                   child: KeyedSubtree(
                     key: const ValueKey('mobile-create-popout-layout'),
                     child: RepaintBoundary(
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          _MobileNavDrawerSurface(
-                            animation: _createMenuController,
-                            morphProgress: trashMorph,
-                            collapsedHeight: collapsedNavSurfaceHeight,
-                            expandedHeight: expandedNavSurfaceHeight,
-                            trashHeight: _trashDropSize,
-                            collapsedRadius: targetRadius,
-                            trashRadius: _trashDropSize / 2,
-                          ),
+                          if (!_usesIosNativeControls ||
+                              _expanded ||
+                              draggingToTrash ||
+                              trashMorph > 0)
+                            _MobileNavDrawerSurface(
+                              animation: _createMenuController,
+                              morphProgress: trashMorph,
+                              collapsedHeight: collapsedNavSurfaceHeight,
+                              expandedHeight: expandedNavSurfaceHeight,
+                              trashHeight: _trashDropSize,
+                              collapsedRadius: targetRadius,
+                              trashRadius: _trashDropSize / 2,
+                            ),
                           if (!draggingToTrash)
                             Positioned(
                               top: 0,
@@ -3288,23 +3299,44 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
                                           child: _usesIosNativeControls &&
                                                   !draggingToTrash &&
                                                   trashMorph == 0
-                                              ? _IosNativeNavButtonGroup(
-                                                  bucket: bucket,
-                                                  expanded: _expanded,
-                                                  foreground: scheme.onSurface,
-                                                  indicatorFrom: _indicatorFrom,
-                                                  indicatorTarget:
-                                                      _indicatorTarget,
-                                                  onNotes: () =>
-                                                      _selectBucket('active'),
-                                                  onReminders: () =>
-                                                      _selectBucket(
-                                                          'reminders'),
-                                                  onTrash: () =>
-                                                      _selectBucket('trashed'),
-                                                  onSearch: _openSearch,
-                                                  onCreate: _toggleCreate,
-                                                )
+                                              ? _expanded
+                                                  ? _IosNativeNavButtonGroup(
+                                                      bucket: bucket,
+                                                      expanded: _expanded,
+                                                      foreground:
+                                                          scheme.onSurface,
+                                                      indicatorFrom:
+                                                          _indicatorFrom,
+                                                      indicatorTarget:
+                                                          _indicatorTarget,
+                                                      onNotes: () =>
+                                                          _selectBucket(
+                                                              'active'),
+                                                      onReminders: () =>
+                                                          _selectBucket(
+                                                              'reminders'),
+                                                      onTrash: () =>
+                                                          _selectBucket(
+                                                              'trashed'),
+                                                      onSearch: _openSearch,
+                                                      onCreate: _toggleCreate,
+                                                    )
+                                                  : _IosNativeTabBar(
+                                                      bucket: bucket,
+                                                      foreground:
+                                                          scheme.onSurface,
+                                                      onNotes: () =>
+                                                          _selectBucket(
+                                                              'active'),
+                                                      onReminders: () =>
+                                                          _selectBucket(
+                                                              'reminders'),
+                                                      onTrash: () =>
+                                                          _selectBucket(
+                                                              'trashed'),
+                                                      onSearch: _openSearch,
+                                                      onCreate: _toggleCreate,
+                                                    )
                                               : _MobileNavMorphingIconGroup(
                                                   bucket: bucket,
                                                   draggedNote: draggedNote ??
@@ -3630,6 +3662,101 @@ class _NavSelectionIndicator extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _IosNativeTabBar extends StatelessWidget {
+  const _IosNativeTabBar({
+    required this.bucket,
+    required this.foreground,
+    required this.onNotes,
+    required this.onReminders,
+    required this.onTrash,
+    required this.onSearch,
+    required this.onCreate,
+  });
+
+  final String bucket;
+  final Color foreground;
+  final VoidCallback onNotes;
+  final VoidCallback onReminders;
+  final VoidCallback onTrash;
+  final VoidCallback onSearch;
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    const items = [
+      CNTabBarItem(
+        icon: CNSymbol('note.text', size: 18),
+        activeIcon: CNSymbol('note.text', size: 18),
+      ),
+      CNTabBarItem(
+        icon: CNSymbol('bell', size: 18),
+        activeIcon: CNSymbol('bell', size: 18),
+      ),
+      CNTabBarItem(
+        icon: CNSymbol('trash', size: 18),
+        activeIcon: CNSymbol('trash', size: 18),
+      ),
+      CNTabBarItem(
+        icon: CNSymbol('magnifyingglass', size: 18),
+        activeIcon: CNSymbol('magnifyingglass', size: 18),
+      ),
+    ];
+    return SizedBox(
+      key: const ValueKey('ios-native-bottom-navigation'),
+      height: _MobileBottomNavState._iosNativeBarHeight,
+      child: Row(
+        children: [
+          Expanded(
+            child: CNTabBar(
+              key: const ValueKey('ios-native-tab-bar'),
+              items: items,
+              currentIndex: _MobileBottomNavState._slotForBucket(bucket),
+              onTap: (index) {
+                switch (index) {
+                  case 0:
+                    onNotes();
+                    return;
+                  case 1:
+                    onReminders();
+                    return;
+                  case 2:
+                    onTrash();
+                    return;
+                  case 3:
+                    onSearch();
+                    return;
+                }
+              },
+              tint: foreground,
+              height: _MobileBottomNavState._iosNativeBarHeight,
+              shrinkCentered: false,
+            ),
+          ),
+          const SizedBox(width: _MobileBottomNavState._iosGap),
+          SizedBox.square(
+            dimension: _MobileBottomNavState._iosNativeBarHeight,
+            child: Center(
+              child: CNButton.icon(
+                key: const ValueKey('ios-native-nav-create'),
+                icon: const CNSymbol('plus', size: 18),
+                onPressed: onCreate,
+                tint: foreground,
+                config: const CNButtonConfig(
+                  width: _MobileBottomNavState._iosCreateButtonSize,
+                  minHeight: _MobileBottomNavState._iosCreateButtonSize,
+                  padding: EdgeInsets.all(15),
+                  style: CNButtonStyle.prominentGlass,
+                  glassEffectInteractive: true,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -4322,7 +4449,7 @@ class _MobileNavSearchField extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 15),
           child: Icon(
             AppIcons.search,
-            size: 20,
+            size: 18,
             color: scheme.onSurfaceVariant,
           ),
         ),
@@ -4354,7 +4481,7 @@ class _MobileNavSearchField extends StatelessWidget {
           tooltip:
               AppL10n(Localizations.localeOf(context).languageCode).t('close'),
           onPressed: onClose,
-          icon: const Icon(AppIcons.x, size: 19),
+          icon: const Icon(AppIcons.x, size: 17),
         ),
         const SizedBox(width: 3),
       ],
@@ -4369,7 +4496,7 @@ class _MobileNavSearchField extends StatelessWidget {
           interactive: true,
         ),
         child: SizedBox(
-          height: _MobileBottomNavState._iosItemSize,
+          height: _MobileBottomNavState._iosSearchHeight,
           child: content,
         ),
       );

@@ -793,11 +793,26 @@ void main() {
     expect(find.byKey(const ValueKey('notes-glass-header-backdrop')),
         findsNothing);
     expect(find.byKey(const ValueKey('ios-native-create-drawer-glass')),
-        findsOneWidget);
+        findsNothing);
     expect(find.byKey(const ValueKey('ios-native-bottom-navigation')),
         findsOneWidget);
     expect(
-        find.byKey(const ValueKey('ios-native-nav-selection')), findsOneWidget);
+        find.byKey(const ValueKey('ios-native-nav-selection')), findsNothing);
+    final nativeTabBar = tester.widget<CNTabBar>(
+      find.byKey(const ValueKey('ios-native-tab-bar')),
+    );
+    expect(nativeTabBar.items, hasLength(4));
+    expect(nativeTabBar.items.map((item) => item.icon?.name), [
+      'note.text',
+      'bell',
+      'trash',
+      'magnifyingglass',
+    ]);
+    expect(nativeTabBar.items.map((item) => item.icon?.size), everyElement(18));
+    expect(nativeTabBar.items.map((item) => item.label), everyElement(isNull));
+    expect(nativeTabBar.currentIndex, 0);
+    expect(nativeTabBar.height, 64);
+    expect(nativeTabBar.split, isFalse);
     final layoutButton = tester.widget<CNButton>(
       find.descendant(
         of: find.byKey(const ValueKey('mobile-layout-toggle')),
@@ -815,14 +830,12 @@ void main() {
     expect(accountButton.icon?.name, 'person');
     expect(accountButton.icon?.size, AppSizes.iosCompactHeaderIcon);
 
-    tester
-        .widget<CNButton>(
-          find.descendant(
-            of: find.byKey(const ValueKey('ios-native-nav-create')),
-            matching: find.byType(CNButton),
-          ),
-        )
-        .onPressed!();
+    final createButton = tester.widget<CNButton>(
+      find.byKey(const ValueKey('ios-native-nav-create')),
+    );
+    expect(createButton.config.style, CNButtonStyle.prominentGlass);
+    expect(createButton.config.glassEffectInteractive, isTrue);
+    createButton.onPressed!();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 420));
     final nativeActions =

@@ -868,8 +868,16 @@ class _AuthTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final design = context.safernotesTheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
+    final fieldFill = dark
+        ? scheme.surfaceContainerHighest.withValues(alpha: 0.88)
+        : scheme.surface.withValues(alpha: 0.98);
+    final fieldStroke = dark
+        ? scheme.outline.withValues(alpha: 0.62)
+        : scheme.outline.withValues(alpha: 0.42);
+    final radius = BorderRadius.circular(AppRadii.pill);
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
@@ -878,29 +886,46 @@ class _AuthTextField extends StatelessWidget {
       validator: validator,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+        labelStyle: theme.textTheme.bodyLarge?.copyWith(
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.96),
+        ),
+        floatingLabelStyle: theme.textTheme.bodyMedium?.copyWith(
+          color: scheme.primary,
+          fontWeight: FontWeight.w600,
+        ),
+        prefixIcon: Icon(
+          icon,
+          size: 18,
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.96),
+        ),
         suffixIcon: suffix,
         filled: true,
-        fillColor: design.glassFill,
+        fillColor: fieldFill,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadii.pill),
-          borderSide: BorderSide.none,
+          borderRadius: radius,
+          borderSide: BorderSide(color: fieldStroke),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadii.pill),
-          borderSide: BorderSide(color: design.glassStroke),
+          borderRadius: radius,
+          borderSide: BorderSide(color: fieldStroke),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadii.pill),
-          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.5)),
+          borderRadius: radius,
+          borderSide: BorderSide(
+            color: scheme.primary.withValues(alpha: 0.92),
+            width: 1.6,
+          ),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadii.pill),
-          borderSide: BorderSide(color: scheme.error.withValues(alpha: 0.72)),
+          borderRadius: radius,
+          borderSide: BorderSide(
+            color: scheme.error.withValues(alpha: 0.82),
+            width: 1.2,
+          ),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(AppRadii.pill),
-          borderSide: BorderSide(color: scheme.error),
+          borderRadius: radius,
+          borderSide: BorderSide(color: scheme.error, width: 1.6),
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 15),

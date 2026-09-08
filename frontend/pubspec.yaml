@@ -34,7 +34,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/safernotes-logo.png
+    - assets/safernotes-logo-black.png
+    - assets/safernotes-logo-white.png
   fonts:
     - family: Urbanist
       fonts:

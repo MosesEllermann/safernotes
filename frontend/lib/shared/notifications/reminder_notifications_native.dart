@@ -10,7 +10,7 @@ var _initialized = false;
 Future<void> _ensureInitialized() async {
   if (_initialized) return;
   tz_data.initializeTimeZones();
-  const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const android = AndroidInitializationSettings('@drawable/ic_notification');
   const darwin = DarwinInitializationSettings();
   await _notifications.initialize(
     settings: const InitializationSettings(android: android, iOS: darwin),
@@ -59,6 +59,7 @@ Future<void> scheduleReminderNotification({
       android: AndroidNotificationDetails(
         'note_reminders',
         german ? 'Erinnerungen' : 'Reminders',
+        icon: 'ic_notification',
         channelDescription: german
             ? 'Lokale Erinnerungen für Notizen'
             : 'Local reminders for notes',
