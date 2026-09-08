@@ -80,6 +80,10 @@ void main() {
           Theme.of(tester.element(find.byType(NoteEditorPanel))).brightness,
           expected,
         );
+        expect(
+          find.byKey(const ValueKey('desktop-note-editor-backdrop')),
+          width >= 900 ? findsOneWidget : findsNothing,
+        );
         Navigator.of(tester.element(find.byType(NoteEditorPanel))).pop();
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
@@ -109,6 +113,10 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('First note'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('desktop-note-backdrop-note-one')),
+        width >= 900 ? findsOneWidget : findsNothing,
+      );
       if (width < 900) {
         expect(find.byTooltip('Create'), findsOneWidget);
         expect(
@@ -148,6 +156,25 @@ void main() {
     expect(surface.borderRadius, BorderRadius.circular(AppRadii.card));
     expect(surface.clipBehavior, Clip.antiAlias);
     expect(surface.elevation, 0);
+    expect(
+      find.byKey(const ValueKey('desktop-note-editor-backdrop')),
+      findsOneWidget,
+    );
+    final titleRow = find.byKey(
+      const ValueKey('desktop-editor-title-row'),
+    );
+    final backButton = find.byKey(const ValueKey('editor-back-button'));
+    final title = find.byKey(const ValueKey('note-editor-title'));
+    final actions = find.byKey(const ValueKey('editor-header-action-bar'));
+    expect(titleRow, findsOneWidget);
+    expect(
+      tester.getTopLeft(title).dx,
+      greaterThan(tester.getTopRight(backButton).dx),
+    );
+    expect(
+      tester.getTopRight(title).dx,
+      lessThan(tester.getTopLeft(actions).dx),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -185,6 +212,10 @@ void main() {
         Theme.of(tester.element(title)).textTheme.headlineMedium!;
     expect(titleField.style?.fontSize, titleStyle.fontSize);
     expect(titleField.style?.fontWeight, titleStyle.fontWeight);
+    expect(
+      find.byKey(const ValueKey('desktop-note-editor-backdrop')),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -313,6 +344,10 @@ void main() {
 
     expect(find.byKey(const ValueKey('cards-note-overview')), findsOneWidget);
     expect(find.byKey(const ValueKey('mobile-note-list')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('desktop-note-backdrop-note-one')),
+      findsNothing,
+    );
     expect(
       find.byKey(const ValueKey('mobile-bottom-nav-pill')),
       findsOneWidget,
@@ -1032,6 +1067,37 @@ void main() {
       (cardMaterial.shape! as RoundedSuperellipseBorder).borderRadius,
       BorderRadius.circular(AppRadii.noteCard),
     );
+    expect(
+      find.byKey(const ValueKey('desktop-note-backdrop-note-one')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('desktop chrome keeps the rail open and search shadow inset',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await _pumpNotes(tester);
+
+    final appBar = tester.widget<AppBar>(find.byType(AppBar));
+    expect(appBar.toolbarHeight, 96);
+    expect(appBar.actionsPadding, const EdgeInsets.only(bottom: 16));
+    expect(find.byTooltip('Menu'), findsNothing);
+    expect(find.text('New note'), findsOneWidget);
+    expect(find.text('Notes'), findsWidgets);
+
+    final createButton = find.text('New note');
+    final rail = find.ancestor(
+      of: createButton,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is SizedBox && widget.width == 216,
+      ),
+    );
+    expect(rail, findsOneWidget);
   });
 
   testWidgets('mobile list preference renders a compact note list',
@@ -1096,13 +1162,26 @@ void main() {
       find.byKey(const ValueKey('note-list-content-note-one')),
     );
     expect(selectedContent.padding, const EdgeInsets.fromLTRB(12, 9, 10, 9));
-    final editorFrame = tester.widget<ClipRRect>(
+    final editorFrame = tester.widget<ClipPath>(
       find.byKey(const ValueKey('desktop-note-editor-frame')),
     );
+    final frameClipper = editorFrame.clipper! as ShapeBorderClipper;
+    final frameShape = frameClipper.shape as RoundedSuperellipseBorder;
     expect(
-      editorFrame.borderRadius,
-      const BorderRadius.only(topLeft: Radius.circular(12)),
+      frameShape.borderRadius,
+      const BorderRadius.only(topLeft: Radius.circular(AppRadii.xxl)),
     );
+    expect(
+      find.byKey(const ValueKey('desktop-inline-note-filters')),
+      findsOneWidget,
+    );
+    final split = find.byKey(const ValueKey('desktop-split-layout'));
+    final editorTitle = find.byKey(const ValueKey('note-editor-title'));
+    expect(
+      tester.getTopLeft(editorTitle).dy - tester.getTopLeft(split).dy,
+      lessThan(40),
+    );
+    expect(tester.getTopLeft(split).dy, lessThan(240));
     expect(
       find.byKey(const ValueKey('desktop-note-editor-border')),
       findsOneWidget,
@@ -1123,6 +1202,35 @@ void main() {
 
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getString('zk.pref.note_overview_layout'), 'list');
+  });
+
+  testWidgets('pinned notes use the filled heart in desktop list view',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'zk.pref.note_overview_layout': 'list',
+    });
+    tester.view.physicalSize = const Size(1200, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await _pumpNotesWithController(
+      tester,
+      _TestNotesController([
+        _note('favorite', 'Favorite note', 'Saved').copyWith(pinned: true),
+      ]),
+    );
+
+    final row = find.byKey(const ValueKey('note-list-item-favorite'));
+    final heart = find.descendant(
+      of: row,
+      matching: find.byIcon(AppIcons.heartFill),
+    );
+    expect(heart, findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.byIcon(AppIcons.pin)),
+      findsNothing,
+    );
   });
 
   testWidgets('long pressing a list note reorders it between rows',

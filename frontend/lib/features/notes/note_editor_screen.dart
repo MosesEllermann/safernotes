@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
@@ -152,13 +153,17 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     final note = _draft();
-    final surfaceColor = effectiveNoteSurfaceColor(context, _color);
+    final width = MediaQuery.sizeOf(context).width;
+    final bottomToolbar = width < 700;
+    final desktop = width >= 900;
+    final surfaceColor = desktop
+        ? brandNoteSurfaceColor(context, _color)
+        : effectiveNoteSurfaceColor(context, _color);
     final presence = ref
         .watch(presenceProvider)
         .where(
             (item) => item.noteId == note.remoteId && item.status == 'online')
         .toList();
-    final bottomToolbar = MediaQuery.sizeOf(context).width < 700;
     final toolbar = _Toolbar(
       l10n: l10n,
       onFormat: _applyFormat,
@@ -169,6 +174,30 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       canUndo: _checklistMode ? _history.canUndo : _body.hasUndo,
       canRedo: _checklistMode ? _history.canRedo : _body.hasRedo,
       activeActions: _activeFormattingActions(),
+    );
+    final titleField = TextField(
+      key: const ValueKey('note-editor-title'),
+      controller: _title,
+      decoration: _borderlessInput(l10n.t('title')),
+      style: bottomToolbar
+          ? Theme.of(context).textTheme.headlineMedium
+          : Theme.of(context).textTheme.displayMedium,
+    );
+    final headerActions = _EditorHeaderActions(
+      compact: bottomToolbar,
+      l10n: l10n,
+      pinned: _pinned,
+      shared: note.shared,
+      reminderActive: _reminderAt != null,
+      canShare: _reminderAt == null,
+      onPin: () => _recordMutation(
+        () => _pinned = !_pinned,
+        immediate: true,
+      ),
+      onShare: () => _showShareSheet(note),
+      onReminder: _showReminderSheet,
+      onArchive: () => _changeNoteState('archived'),
+      onTrash: () => _changeNoteState('trashed'),
     );
     return Shortcuts(
       shortcuts: {
@@ -204,142 +233,148 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
         },
         child: Focus(
           autofocus: true,
-          child: Material(
-            key: const ValueKey('note-editor-surface'),
-            color: Colors.transparent,
+          child: _DesktopEditorBackdrop(
+            enabled: desktop,
             borderRadius: BorderRadius.circular(
               widget.embedded ? 0 : context.safernotesTheme.noteCardRadius,
             ),
-            clipBehavior: Clip.antiAlias,
-            child: Ink(
-              decoration: BoxDecoration(
-                color: surfaceColor,
-                gradient: brandNoteGradient(context, _color),
+            child: Material(
+              key: const ValueKey('note-editor-surface'),
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(
+                widget.embedded ? 0 : context.safernotesTheme.noteCardRadius,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      bottomToolbar ? 14 : 24,
-                      bottomToolbar ? 16 : 24,
-                      bottomToolbar ? 10 : 20,
-                      10,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            if (!widget.embedded)
-                              _EditorBackButton(
-                                tooltip: l10n.t('close'),
-                                compact: bottomToolbar,
-                                onPressed: () {
-                                  _saveNow();
-                                  Navigator.of(context).maybePop();
-                                },
-                              ),
-                            const Spacer(),
-                            _PresenceDots(presence: presence),
-                            _EditorHeaderActions(
-                              compact: bottomToolbar,
-                              l10n: l10n,
-                              pinned: _pinned,
-                              shared: note.shared,
-                              reminderActive: _reminderAt != null,
-                              canShare: _reminderAt == null,
-                              onPin: () => _recordMutation(
-                                () => _pinned = !_pinned,
-                                immediate: true,
-                              ),
-                              onShare: () => _showShareSheet(note),
-                              onReminder: _showReminderSheet,
-                              onArchive: () => _changeNoteState('archived'),
-                              onTrash: () => _changeNoteState('trashed'),
+              clipBehavior: Clip.antiAlias,
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: surfaceColor,
+                  gradient: brandNoteGradient(context, _color),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        bottomToolbar ? 14 : 24,
+                        bottomToolbar ? 16 : 24,
+                        bottomToolbar ? 10 : 20,
+                        10,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (!desktop) ...[
+                            Row(
+                              children: [
+                                if (!widget.embedded)
+                                  _EditorBackButton(
+                                    tooltip: l10n.t('close'),
+                                    compact: bottomToolbar,
+                                    onPressed: () {
+                                      _saveNow();
+                                      Navigator.of(context).maybePop();
+                                    },
+                                  ),
+                                const Spacer(),
+                                _PresenceDots(presence: presence),
+                                headerActions,
+                              ],
                             ),
-                          ],
-                        ),
-                        SizedBox(height: bottomToolbar ? 16 : 20),
-                        TextField(
-                          key: const ValueKey('note-editor-title'),
-                          controller: _title,
-                          decoration: _borderlessInput(l10n.t('title')),
-                          style: bottomToolbar
-                              ? Theme.of(context).textTheme.headlineMedium
-                              : Theme.of(context).textTheme.displayMedium,
-                        ),
-                      ],
+                            SizedBox(height: bottomToolbar ? 16 : 20),
+                            titleField,
+                          ] else
+                            Row(
+                              key: const ValueKey('desktop-editor-title-row'),
+                              children: [
+                                if (!widget.embedded) ...[
+                                  _EditorBackButton(
+                                    tooltip: l10n.t('close'),
+                                    compact: false,
+                                    onPressed: () {
+                                      _saveNow();
+                                      Navigator.of(context).maybePop();
+                                    },
+                                  ),
+                                  const SizedBox(width: 14),
+                                ],
+                                Expanded(child: titleField),
+                                const SizedBox(width: 14),
+                                _PresenceDots(presence: presence),
+                                headerActions,
+                              ],
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  _LabelEditorRow(
-                    labels: _labels,
-                    l10n: l10n,
-                    onAdd: _promptAddLabel,
-                    onRemove: (label) => _recordMutation(
-                      () => _labels = [..._labels]..remove(label),
-                      immediate: true,
+                    _LabelEditorRow(
+                      labels: _labels,
+                      l10n: l10n,
+                      onAdd: _promptAddLabel,
+                      onRemove: (label) => _recordMutation(
+                        () => _labels = [..._labels]..remove(label),
+                        immediate: true,
+                      ),
                     ),
-                  ),
-                  if (!bottomToolbar) toolbar,
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final editor = _BodyEditor(
-                          controller: _body,
-                          focusNode: _bodyFocusNode,
-                          scrollController: _bodyScrollController,
-                          hint: l10n.t('writeNote'),
-                        );
-                        final checklist = _ChecklistEditor(
-                          items: _checklist,
-                          onChanged: (items) {
-                            _recordMutation(
-                              () => _checklist = orderChecklistItems(items),
-                            );
-                          },
-                        );
-                        return Align(
-                          alignment: Alignment.topCenter,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 900),
-                            child: SizedBox(
-                              height: constraints.maxHeight,
-                              child: AnimatedSwitcher(
-                                key: const ValueKey('editor-content'),
-                                duration: const Duration(milliseconds: 180),
-                                layoutBuilder:
-                                    (currentChild, previousChildren) {
-                                  return Stack(
-                                    alignment: Alignment.topCenter,
-                                    children: [
-                                      ...previousChildren,
-                                      if (currentChild != null) currentChild,
-                                    ],
-                                  );
-                                },
-                                child: _checklistMode
-                                    ? Padding(
-                                        key: const ValueKey('checklist'),
-                                        padding: const EdgeInsets.fromLTRB(
-                                            24, 20, 24, 20),
-                                        child: checklist,
-                                      )
-                                    : Padding(
-                                        key: const ValueKey('body'),
-                                        padding: const EdgeInsets.fromLTRB(
-                                            24, 10, 24, 16),
-                                        child: editor,
-                                      ),
+                    if (!bottomToolbar) toolbar,
+                    Expanded(
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final editor = _BodyEditor(
+                            controller: _body,
+                            focusNode: _bodyFocusNode,
+                            scrollController: _bodyScrollController,
+                            hint: l10n.t('writeNote'),
+                          );
+                          final checklist = _ChecklistEditor(
+                            items: _checklist,
+                            onChanged: (items) {
+                              _recordMutation(
+                                () => _checklist = orderChecklistItems(items),
+                              );
+                            },
+                          );
+                          return Align(
+                            alignment: Alignment.topCenter,
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 900),
+                              child: SizedBox(
+                                height: constraints.maxHeight,
+                                child: AnimatedSwitcher(
+                                  key: const ValueKey('editor-content'),
+                                  duration: const Duration(milliseconds: 180),
+                                  layoutBuilder:
+                                      (currentChild, previousChildren) {
+                                    return Stack(
+                                      alignment: Alignment.topCenter,
+                                      children: [
+                                        ...previousChildren,
+                                        if (currentChild != null) currentChild,
+                                      ],
+                                    );
+                                  },
+                                  child: _checklistMode
+                                      ? Padding(
+                                          key: const ValueKey('checklist'),
+                                          padding: const EdgeInsets.fromLTRB(
+                                              24, 20, 24, 20),
+                                          child: checklist,
+                                        )
+                                      : Padding(
+                                          key: const ValueKey('body'),
+                                          padding: const EdgeInsets.fromLTRB(
+                                              24, 10, 24, 16),
+                                          child: editor,
+                                        ),
+                                ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  if (bottomToolbar) toolbar,
-                ],
+                    if (bottomToolbar) toolbar,
+                  ],
+                ),
               ),
             ),
           ),
@@ -742,6 +777,31 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                 : 'reminderRemoved',
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DesktopEditorBackdrop extends StatelessWidget {
+  const _DesktopEditorBackdrop({
+    required this.enabled,
+    required this.borderRadius,
+    required this.child,
+  });
+
+  final bool enabled;
+  final BorderRadius borderRadius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: BackdropFilter(
+        key: const ValueKey('desktop-note-editor-backdrop'),
+        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        child: child,
       ),
     );
   }

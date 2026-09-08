@@ -38,7 +38,6 @@ final noteQuickFilterProvider =
 
 /// Selected label when [noteQuickFilterProvider] is [NoteQuickFilter.label].
 final noteLabelFilterProvider = StateProvider<String?>((ref) => null);
-final sideNavExpandedProvider = StateProvider<bool>((ref) => true);
 final _draggedNoteProvider = StateProvider<PlainNote?>((ref) => null);
 final _dragTrashHoverProvider = StateProvider<bool>((ref) => false);
 final _noteOverviewResetProvider = StateProvider<int>((ref) => 0);
@@ -262,37 +261,31 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           extendBody: !desktop,
           appBar: desktop
               ? AppBar(
-                  toolbarHeight: 76,
+                  toolbarHeight: 96,
                   titleSpacing: 12,
+                  actionsPadding: const EdgeInsets.only(bottom: 16),
                   surfaceTintColor: Colors.transparent,
                   backgroundColor: Colors.transparent,
-                  title: Row(
-                    children: [
-                      AppIconButton(
-                        tooltip: l10n.t('menu'),
-                        icon: AppIcons.panelLeft,
-                        onPressed: () {
-                          final expanded = ref.read(sideNavExpandedProvider);
-                          ref.read(sideNavExpandedProvider.notifier).state =
-                              !expanded;
-                        },
-                      ),
-                      const SizedBox(width: 8),
-                      const SafernotesLogo(size: 38),
-                      if (showLogoText) ...[
-                        const SizedBox(width: 12),
-                        Text(
-                          l10n.t('appName'),
-                          style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                        ),
-                        const SizedBox(width: 24),
-                      ] else
-                        const SizedBox(width: 10),
-                      const Expanded(child: _SearchField()),
-                    ],
+                  title: Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Row(
+                      children: [
+                        const SafernotesLogo(size: 38),
+                        if (showLogoText) ...[
+                          const SizedBox(width: 12),
+                          Text(
+                            l10n.t('appName'),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(width: 24),
+                        ] else
+                          const SizedBox(width: 10),
+                        const Expanded(child: _SearchField()),
+                      ],
+                    ),
                   ),
                   actions: [
                     const _SyncIndicator(),
@@ -583,6 +576,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
       labels: _availableLabels,
       onEmptyTrash: trashCount == 0 ? null : _emptyTrash,
       emptyingTrash: _emptyingTrash,
+      inlineFilters: splitLayout,
     );
     final compactHeaderChrome = _WorkspaceHeader(
       noteCount: baseNotes.length,
@@ -806,6 +800,17 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
 
   Widget _buildSplitOverview(List<PlainNote> notes, String bucket) {
     final selected = _selectedNote(notes);
+    final editorShape = RoundedSuperellipseBorder(
+      borderRadius: const BorderRadius.only(
+        topLeft: Radius.circular(AppRadii.xxl),
+      ),
+      side: BorderSide(
+        color: Theme.of(context)
+            .colorScheme
+            .outlineVariant
+            .withValues(alpha: 0.42),
+      ),
+    );
     return Row(
       key: const ValueKey('desktop-split-layout'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -835,19 +840,14 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
         Expanded(
           key: const ValueKey('desktop-note-editor-pane'),
           flex: 7,
-          child: ClipRRect(
+          child: ClipPath(
             key: const ValueKey('desktop-note-editor-frame'),
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(12),
+            clipper: ShapeBorderClipper(
+              shape: editorShape,
             ),
-            child: CustomPaint(
+            child: DecoratedBox(
               key: const ValueKey('desktop-note-editor-border'),
-              foregroundPainter: _TopLeftBorderPainter(
-                color: Theme.of(context)
-                    .colorScheme
-                    .outlineVariant
-                    .withValues(alpha: 0.42),
-              ),
+              decoration: ShapeDecoration(shape: editorShape),
               child: selected == null
                   ? const _SelectNoteState()
                   : NoteEditorPanel(note: selected, embedded: true),
@@ -868,8 +868,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
 
   int _noteColumnCount(double screenWidth, bool wide) {
     if (!wide) return 2;
-    final contentWidth =
-        screenWidth - (ref.read(sideNavExpandedProvider) ? 212 : 78) - 64;
+    final contentWidth = screenWidth - 212 - 64;
     return (contentWidth / 290).floor().clamp(2, 5).toInt();
   }
 
@@ -1125,6 +1124,7 @@ class _WorkspaceHeader extends ConsumerWidget {
     required this.onEmptyTrash,
     required this.emptyingTrash,
     this.compactPart = _CompactHeaderPart.all,
+    this.inlineFilters = false,
   });
 
   final int noteCount;
@@ -1137,6 +1137,7 @@ class _WorkspaceHeader extends ConsumerWidget {
   final VoidCallback? onEmptyTrash;
   final bool emptyingTrash;
   final _CompactHeaderPart compactPart;
+  final bool inlineFilters;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1153,56 +1154,71 @@ class _WorkspaceHeader extends ConsumerWidget {
     final compactTopPadding = MediaQuery.paddingOf(context).top + 8;
     final compactHorizontalPadding = compact ? 16.0 : 32.0;
     final compactToolbarHeight = 46.0;
+    final titleBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: compact ? textTheme.headlineMedium : textTheme.displayMedium,
+        ),
+        SizedBox(height: compact ? 1 : 4),
+        _HeaderDateLine(compact: compact),
+      ],
+    );
+    final trashButton = bucket == 'trashed' && onEmptyTrash != null
+        ? Padding(
+            padding: EdgeInsets.only(
+              left: compact ? 8 : 16,
+              bottom: compact ? 0 : 4,
+            ),
+            child: _EmptyTrashButton(
+              compact: compact,
+              busy: emptyingTrash,
+              onPressed: onEmptyTrash,
+            ),
+          )
+        : null;
+    final count = Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        '$noteCount',
+        style: textTheme.titleMedium?.copyWith(
+          color: scheme.onSurfaceVariant,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+    final filters = _QuickFilterChips(noteCount: noteCount, labels: labels);
     final titleAndFilters = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: compact
-                        ? textTheme.headlineMedium
-                        : textTheme.displayMedium,
-                  ),
-                  SizedBox(height: compact ? 1 : 4),
-                  _HeaderDateLine(compact: compact),
-                ],
-              ),
-            ),
-            if (bucket == 'trashed' && onEmptyTrash != null)
-              Padding(
-                padding: EdgeInsets.only(
-                  left: compact ? 8 : 16,
-                  bottom: compact ? 0 : 4,
-                ),
-                child: _EmptyTrashButton(
-                  compact: compact,
-                  busy: emptyingTrash,
-                  onPressed: onEmptyTrash,
-                ),
-              ),
-            if (!compact)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Text(
-                  '$noteCount',
-                  style: textTheme.titleMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-          ],
-        ),
-        SizedBox(height: compact ? 12 : 18),
-        _QuickFilterChips(noteCount: noteCount, labels: labels),
+        if (inlineFilters)
+          Row(
+            key: const ValueKey('desktop-inline-note-filters'),
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              SizedBox(width: 230, child: titleBlock),
+              if (trashButton != null) trashButton,
+              const SizedBox(width: 24),
+              Expanded(child: filters),
+              const SizedBox(width: 16),
+              count,
+            ],
+          )
+        else ...[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(child: titleBlock),
+              if (trashButton != null) trashButton,
+              if (!compact) count,
+            ],
+          ),
+          SizedBox(height: compact ? 12 : 18),
+          filters,
+        ],
         if (showEmailVerification) ...[
           SizedBox(height: compact ? 10 : 12),
           _EmailVerificationBanner(email: email),
@@ -1901,34 +1917,6 @@ class _TrashCanPainter extends CustomPainter {
   }
 }
 
-class _TopLeftBorderPainter extends CustomPainter {
-  const _TopLeftBorderPainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const radius = 12.0;
-    final path = Path()
-      ..moveTo(0.5, size.height)
-      ..lineTo(0.5, radius)
-      ..quadraticBezierTo(0.5, 0.5, radius, 0.5)
-      ..lineTo(size.width, 0.5);
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _TopLeftBorderPainter oldDelegate) {
-    return oldDelegate.color != color;
-  }
-}
-
 class _NoteListPane extends ConsumerWidget {
   const _NoteListPane({
     super.key,
@@ -2262,9 +2250,9 @@ class _NoteListItem extends StatelessWidget {
                           Padding(
                             padding: const EdgeInsets.only(left: 8),
                             child: Icon(
-                              AppIcons.pin,
+                              AppIcons.heartFill,
                               size: 15,
-                              color: scheme.onSurfaceVariant,
+                              color: brandLavender,
                             ),
                           ),
                       ],
@@ -2717,50 +2705,48 @@ class _SideRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
-    final expanded = ref.watch(sideNavExpandedProvider);
     final bucket = ref.watch(noteBucketProvider);
     final canCreate = bucket == 'active' || bucket == 'reminders';
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-      width: expanded ? 216 : 82,
-      padding: EdgeInsets.fromLTRB(14, 20, expanded ? 14 : 12, 0),
-      child: Column(
-        crossAxisAlignment:
-            expanded ? CrossAxisAlignment.stretch : CrossAxisAlignment.center,
-        children: [
-          if (canCreate) ...[
-            _RailCreateButton(expanded: expanded),
-            const SizedBox(height: 18),
+    return SizedBox(
+      width: 216,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 20, 14, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (canCreate) ...[
+              const _RailCreateButton(expanded: true),
+              const SizedBox(height: 18),
+            ],
+            _RailButton(
+              bucket: 'active',
+              icon: AppIcons.notebookText,
+              label: l10n.t('notes'),
+              expanded: true,
+            ),
+            const SizedBox(height: 6),
+            _RailButton(
+              bucket: 'reminders',
+              icon: AppIcons.bell,
+              label: l10n.t('reminders'),
+              expanded: true,
+            ),
+            const SizedBox(height: 6),
+            _RailButton(
+              bucket: 'archived',
+              icon: AppIcons.archive,
+              label: l10n.t('archive'),
+              expanded: true,
+            ),
+            const SizedBox(height: 6),
+            _RailButton(
+              bucket: 'trashed',
+              icon: AppIcons.trash,
+              label: l10n.t('trash'),
+              expanded: true,
+            ),
           ],
-          _RailButton(
-            bucket: 'active',
-            icon: AppIcons.notebookText,
-            label: l10n.t('notes'),
-            expanded: expanded,
-          ),
-          const SizedBox(height: 6),
-          _RailButton(
-            bucket: 'reminders',
-            icon: AppIcons.bell,
-            label: l10n.t('reminders'),
-            expanded: expanded,
-          ),
-          const SizedBox(height: 6),
-          _RailButton(
-            bucket: 'archived',
-            icon: AppIcons.archive,
-            label: l10n.t('archive'),
-            expanded: expanded,
-          ),
-          const SizedBox(height: 6),
-          _RailButton(
-            bucket: 'trashed',
-            icon: AppIcons.trash,
-            label: l10n.t('trash'),
-            expanded: expanded,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -5144,7 +5130,9 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
     final scheme = Theme.of(context).colorScheme;
     final design = context.safernotesTheme;
     final bg = brandNoteSurfaceColor(context, note.color);
-    final compact = MediaQuery.sizeOf(context).width < 700;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 700;
+    final desktop = width >= 900;
     final constrainedRaster = compact && _usesAndroidRasterBudget;
     final cardCornerRadius =
         compact ? AppRadii.noteCardCompact : AppRadii.noteCard;
@@ -5197,171 +5185,178 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
               ),
             ],
           ),
-          child: Material(
-            color: bg,
-            elevation: 0,
+          child: _DesktopNoteBackdrop(
+            noteId: note.localId,
+            enabled: desktop,
             shape: cardShape,
-            clipBehavior: Clip.antiAlias,
-            child: Ink(
-              decoration: ShapeDecoration(
-                gradient: brandNoteGradient(context, note.color),
-                shape: cardShape,
-              ),
-              child: InkWell(
-                onTap: widget.onTap,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: compact ? 136 : 168,
-                  ),
-                  child: Padding(
-                    key: ValueKey('note-card-content-${note.localId}'),
-                    padding: EdgeInsets.fromLTRB(
-                      compact ? 14 : 24,
-                      compact ? 12 : 18,
-                      compact ? 14 : 18,
-                      compact ? 14 : 20,
+            child: Material(
+              color: bg,
+              elevation: 0,
+              shape: cardShape,
+              clipBehavior: Clip.antiAlias,
+              child: Ink(
+                decoration: ShapeDecoration(
+                  gradient: brandNoteGradient(context, note.color),
+                  shape: cardShape,
+                ),
+                child: InkWell(
+                  onTap: widget.onTap,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: compact ? 136 : 168,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: displayTitle.isEmpty
-                                  ? const SizedBox.shrink()
-                                  : Padding(
-                                      padding: EdgeInsets.only(
-                                        top: compact ? 3 : 6,
-                                        right: compact ? 6 : 8,
+                    child: Padding(
+                      key: ValueKey('note-card-content-${note.localId}'),
+                      padding: EdgeInsets.fromLTRB(
+                        compact ? 14 : 24,
+                        compact ? 12 : 18,
+                        compact ? 14 : 18,
+                        compact ? 14 : 20,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: displayTitle.isEmpty
+                                    ? const SizedBox.shrink()
+                                    : Padding(
+                                        padding: EdgeInsets.only(
+                                          top: compact ? 3 : 6,
+                                          right: compact ? 6 : 8,
+                                        ),
+                                        child: Text(
+                                          displayTitle,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .titleLarge
+                                              ?.copyWith(height: 1.15),
+                                        ),
                                       ),
-                                      child: Text(
-                                        displayTitle,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleLarge
-                                            ?.copyWith(height: 1.15),
-                                      ),
+                              ),
+                              _NoteFavoriteButton(
+                                noteId: note.localId,
+                                tooltip: note.pinned
+                                    ? l10n.t('unpin')
+                                    : l10n.t('pin'),
+                                icon: note.pinned
+                                    ? AppIcons.heartFill
+                                    : AppIcons.heart,
+                                selected: note.pinned,
+                                size: compact
+                                    ? AppSizes.favoriteButtonCompact
+                                    : AppSizes.favoriteButton,
+                                iconSize: compact ? 17 : 19,
+                                enableBlur: !compact,
+                                onPressed: widget.onTogglePin,
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: compact ? 8 : 12),
+                          if (note.labels.isNotEmpty) ...[
+                            _NoteLabelChips(labels: note.labels),
+                            SizedBox(height: compact ? 8 : 12),
+                          ],
+                          note.checklist.isNotEmpty && note.body.trim().isEmpty
+                              ? _ChecklistPreview(items: note.checklist)
+                              : _FormattedPreview(
+                                  text: note.body,
+                                  delta: note.richTextDelta,
+                                ),
+                          if (showFooter) ...[
+                            SizedBox(height: compact ? 10 : 16),
+                            SizedBox(
+                              height: compact ? 30 : 36,
+                              child: Row(
+                                children: [
+                                  if (note.checklist.isNotEmpty)
+                                    _MetaPill(
+                                      icon: AppIcons.squareCheck,
+                                      label:
+                                          '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
                                     ),
-                            ),
-                            _NoteFavoriteButton(
-                              noteId: note.localId,
-                              tooltip:
-                                  note.pinned ? l10n.t('unpin') : l10n.t('pin'),
-                              icon: note.pinned
-                                  ? AppIcons.heartFill
-                                  : AppIcons.heart,
-                              selected: note.pinned,
-                              size: compact
-                                  ? AppSizes.favoriteButtonCompact
-                                  : AppSizes.favoriteButton,
-                              iconSize: compact ? 17 : 19,
-                              enableBlur: !compact,
-                              onPressed: widget.onTogglePin,
+                                  if (note.conflicted)
+                                    _MetaPill(
+                                      icon: AppIcons.circleAlert,
+                                      label: l10n.t('conflict'),
+                                      color: scheme.error,
+                                    ),
+                                  if (note.dirty)
+                                    _MetaPill(
+                                      icon: AppIcons.cloudUpload,
+                                      label: l10n.t('synced'),
+                                      color: scheme.tertiary,
+                                    ),
+                                  if (note.reminderAt != null)
+                                    _MetaPill(
+                                      icon: AppIcons.bell,
+                                      label: _formatReminder(
+                                          note.reminderAt!, l10n),
+                                      color: scheme.primary,
+                                    ),
+                                  if (note.shared)
+                                    _MetaPill(
+                                      icon: AppIcons.users,
+                                      label: l10n.t('shared'),
+                                      color: scheme.primary,
+                                    ),
+                                  const Spacer(),
+                                  if (_hovered && showHoverActions)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (note.state != 'active')
+                                          AppIconButton(
+                                            tooltip: l10n.t('restore'),
+                                            icon: AppIcons.rotateCcw,
+                                            onPressed: widget.onRestore,
+                                          ),
+                                        if (note.state == 'active')
+                                          AppIconButton(
+                                            tooltip: l10n.t('archiveAction'),
+                                            icon: AppIcons.archive,
+                                            onPressed: widget.onArchive,
+                                          ),
+                                        if (note.state == 'active' &&
+                                            note.reminderAt == null)
+                                          AppIconButton(
+                                            tooltip:
+                                                l10n.t('collaboratorInvite'),
+                                            icon: note.shared
+                                                ? AppIcons.users
+                                                : AppIcons.userPlus,
+                                            onPressed: widget.onInvite,
+                                          ),
+                                        if (note.state != 'trashed')
+                                          AppIconButton(
+                                            tooltip: l10n.t('reminder'),
+                                            icon: AppIcons.bell,
+                                            onPressed: widget.onReminder,
+                                          ),
+                                        if (note.state != 'trashed')
+                                          AppIconButton(
+                                            tooltip: l10n.t('trash'),
+                                            icon: AppIcons.trash,
+                                            onPressed: widget.onTrash,
+                                          )
+                                        else
+                                          AppIconButton(
+                                            tooltip: l10n.t('deleteForever'),
+                                            icon: AppIcons.trash2,
+                                            onPressed: widget.onDeleteForever,
+                                          ),
+                                      ],
+                                    ),
+                                ],
+                              ),
                             ),
                           ],
-                        ),
-                        SizedBox(height: compact ? 8 : 12),
-                        if (note.labels.isNotEmpty) ...[
-                          _NoteLabelChips(labels: note.labels),
-                          SizedBox(height: compact ? 8 : 12),
                         ],
-                        note.checklist.isNotEmpty && note.body.trim().isEmpty
-                            ? _ChecklistPreview(items: note.checklist)
-                            : _FormattedPreview(
-                                text: note.body,
-                                delta: note.richTextDelta,
-                              ),
-                        if (showFooter) ...[
-                          SizedBox(height: compact ? 10 : 16),
-                          SizedBox(
-                            height: compact ? 30 : 36,
-                            child: Row(
-                              children: [
-                                if (note.checklist.isNotEmpty)
-                                  _MetaPill(
-                                    icon: AppIcons.squareCheck,
-                                    label:
-                                        '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
-                                  ),
-                                if (note.conflicted)
-                                  _MetaPill(
-                                    icon: AppIcons.circleAlert,
-                                    label: l10n.t('conflict'),
-                                    color: scheme.error,
-                                  ),
-                                if (note.dirty)
-                                  _MetaPill(
-                                    icon: AppIcons.cloudUpload,
-                                    label: l10n.t('synced'),
-                                    color: scheme.tertiary,
-                                  ),
-                                if (note.reminderAt != null)
-                                  _MetaPill(
-                                    icon: AppIcons.bell,
-                                    label:
-                                        _formatReminder(note.reminderAt!, l10n),
-                                    color: scheme.primary,
-                                  ),
-                                if (note.shared)
-                                  _MetaPill(
-                                    icon: AppIcons.users,
-                                    label: l10n.t('shared'),
-                                    color: scheme.primary,
-                                  ),
-                                const Spacer(),
-                                if (_hovered && showHoverActions)
-                                  Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      if (note.state != 'active')
-                                        AppIconButton(
-                                          tooltip: l10n.t('restore'),
-                                          icon: AppIcons.rotateCcw,
-                                          onPressed: widget.onRestore,
-                                        ),
-                                      if (note.state == 'active')
-                                        AppIconButton(
-                                          tooltip: l10n.t('archiveAction'),
-                                          icon: AppIcons.archive,
-                                          onPressed: widget.onArchive,
-                                        ),
-                                      if (note.state == 'active' &&
-                                          note.reminderAt == null)
-                                        AppIconButton(
-                                          tooltip: l10n.t('collaboratorInvite'),
-                                          icon: note.shared
-                                              ? AppIcons.users
-                                              : AppIcons.userPlus,
-                                          onPressed: widget.onInvite,
-                                        ),
-                                      if (note.state != 'trashed')
-                                        AppIconButton(
-                                          tooltip: l10n.t('reminder'),
-                                          icon: AppIcons.bell,
-                                          onPressed: widget.onReminder,
-                                        ),
-                                      if (note.state != 'trashed')
-                                        AppIconButton(
-                                          tooltip: l10n.t('trash'),
-                                          icon: AppIcons.trash,
-                                          onPressed: widget.onTrash,
-                                        )
-                                      else
-                                        AppIconButton(
-                                          tooltip: l10n.t('deleteForever'),
-                                          icon: AppIcons.trash2,
-                                          onPressed: widget.onDeleteForever,
-                                        ),
-                                    ],
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -5369,6 +5364,36 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DesktopNoteBackdrop extends StatelessWidget {
+  const _DesktopNoteBackdrop({
+    required this.noteId,
+    required this.enabled,
+    required this.shape,
+    required this.child,
+  });
+
+  final String noteId;
+  final bool enabled;
+  final ShapeBorder shape;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    return ClipPath(
+      clipper: ShapeBorderClipper(
+        shape: shape,
+        textDirection: Directionality.of(context),
+      ),
+      child: BackdropFilter(
+        key: ValueKey('desktop-note-backdrop-$noteId'),
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: child,
       ),
     );
   }
