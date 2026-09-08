@@ -43,12 +43,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Create'));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    final reminderOption = find.ancestor(
-      of: find.text('Set reminder'),
-      matching: find.byType(InkWell),
+    await tester.tap(
+      find.byKey(const ValueKey('mobile-create-reminder-action')),
     );
-    tester.widget<InkWell>(reminderOption).onTap?.call();
     await tester.pumpAndSettle();
 
     expect(

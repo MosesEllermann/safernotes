@@ -14,6 +14,11 @@ void main() {
       'profile',
       'personalVault',
       'essentialAnnual',
+      'noteMovedToTrash',
+      'noteArchived',
+      'noteRestored',
+      'noteDeletedPermanently',
+      'localUsageEstimate',
     ];
     const english = AppL10n('en');
     const german = AppL10n('de');

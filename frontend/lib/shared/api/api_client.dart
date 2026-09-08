@@ -181,6 +181,15 @@ class ApiClient {
         .toList();
   }
 
+  Future<int> emptyTrash(String accessToken) async {
+    final json = await _post(
+      '/api/v1/notes/trash/empty/',
+      const <String, dynamic>{},
+      accessToken: accessToken,
+    );
+    return json['deleted_count'] as int? ?? 0;
+  }
+
   Future<List<CollaboratorPresence>> fetchPresence(String accessToken) async {
     final json = await _get('/api/v1/collaboration/presence/', accessToken);
     final results = json['results'] as List? ?? json as List;
@@ -311,6 +320,21 @@ class ApiClient {
       ),
     );
     return SubscriptionInfo.fromJson(_decode(response));
+  }
+
+  Future<SubscriptionUsage> fetchSubscriptionUsage({
+    required String accessToken,
+    required String tenant,
+  }) async {
+    final response = await _request(
+      () => _http.get(
+        Uri.parse('$baseUrl/api/v1/subscription/usage').replace(
+          queryParameters: {'tenant': tenant},
+        ),
+        headers: {'Authorization': 'Bearer $accessToken'},
+      ),
+    );
+    return SubscriptionUsage.fromJson(_decode(response));
   }
 
   Future<CheckoutSession> createCheckout({
@@ -457,6 +481,68 @@ class SubscriptionInfo {
     );
   }
 }
+
+class SubscriptionUsage {
+  const SubscriptionUsage({
+    required this.plan,
+    required this.storageBytesUsed,
+    required this.storageBytesLimit,
+    required this.notesCount,
+    required this.maxNotes,
+    this.notesBytesUsed = 0,
+    this.attachmentsBytesUsed = 0,
+  });
+
+  final String plan;
+  final int storageBytesUsed;
+  final int storageBytesLimit;
+  final int notesCount;
+  final int? maxNotes;
+  final int notesBytesUsed;
+  final int attachmentsBytesUsed;
+
+  Map<String, dynamic> toJson() => {
+        'plan': plan,
+        'usage': {
+          'storage_bytes_used': storageBytesUsed,
+          'notes_bytes_used': notesBytesUsed,
+          'attachments_bytes_used': attachmentsBytesUsed,
+          'notes_count': notesCount,
+        },
+        'limits': {
+          'storage_bytes': storageBytesLimit,
+          'max_notes': maxNotes,
+        },
+      };
+
+  factory SubscriptionUsage.fromJson(Map<String, dynamic> json) {
+    final usage = Map<String, dynamic>.from(
+      json['usage'] as Map? ?? const {},
+    );
+    final limits = Map<String, dynamic>.from(
+      json['limits'] as Map? ?? const {},
+    );
+    return SubscriptionUsage(
+      plan: json['plan'] as String? ?? 'free',
+      storageBytesUsed: _jsonInt(
+        usage['storage_bytes_used'] ?? usage['ciphertext_bytes_used'],
+      ),
+      storageBytesLimit: _jsonInt(limits['storage_bytes']),
+      notesCount: _jsonInt(usage['notes_count']),
+      maxNotes:
+          limits['max_notes'] == null ? null : _jsonInt(limits['max_notes']),
+      notesBytesUsed: _jsonInt(usage['notes_bytes_used']),
+      attachmentsBytesUsed: _jsonInt(usage['attachments_bytes_used']),
+    );
+  }
+}
+
+int _jsonInt(dynamic value) => switch (value) {
+      int number => number,
+      num number => number.toInt(),
+      String text => int.tryParse(text) ?? 0,
+      _ => 0,
+    };
 
 class CheckoutSession {
   const CheckoutSession({

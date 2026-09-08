@@ -17,6 +17,21 @@ def test_usage_view_requires_tenant_membership(db, owner_user):
     assert response.status_code == 400
 
 
+def test_usage_view_returns_total_workspace_storage(db, tenant, owner_user, note):
+    request = APIRequestFactory().get(
+        "/api/v1/subscription/usage",
+        {"tenant": str(tenant.id)},
+    )
+    force_authenticate(request, user=owner_user)
+
+    response = UsageView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data["usage"]["notes_bytes_used"] == note.storage_bytes
+    assert response.data["usage"]["attachments_bytes_used"] == 0
+    assert response.data["usage"]["storage_bytes_used"] == note.storage_bytes
+
+
 def test_checkout_view_rejects_invalid_plan(db, tenant, owner_user):
     request = APIRequestFactory().post(
         "/api/v1/subscription/checkout",
@@ -72,9 +87,7 @@ def test_paddle_checkout_creates_transaction_with_custom_data(db, tenant, owner_
             return False
 
         def read(self):
-            return (
-                b'{"data":{"id":"txn_1","checkout":{"url":"https://checkout.paddle.com/txn_1"}}}'
-            )
+            return b'{"data":{"id":"txn_1","checkout":{"url":"https://checkout.paddle.com/txn_1"}}}'
 
     def fake_urlopen(request, timeout):
         nonlocal captured_url

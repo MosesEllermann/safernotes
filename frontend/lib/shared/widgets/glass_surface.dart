@@ -93,6 +93,7 @@ class GlassCircleButton extends StatefulWidget {
     this.size = 44,
     this.iconSize = 20,
     this.selectedColor,
+    this.enableBlur = true,
   });
 
   final IconData icon;
@@ -102,6 +103,7 @@ class GlassCircleButton extends StatefulWidget {
   final double size;
   final double iconSize;
   final Color? selectedColor;
+  final bool enableBlur;
 
   @override
   State<GlassCircleButton> createState() => _GlassCircleButtonState();
@@ -123,6 +125,29 @@ class _GlassCircleButtonState extends State<GlassCircleButton> {
             : dark
                 ? Colors.white.withValues(alpha: 0.92)
                 : scheme.onSurface.withValues(alpha: 0.82);
+    final control = AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOutCubic,
+      width: widget.size,
+      height: widget.size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: widget.selected
+            ? accent.withValues(alpha: dark ? 0.22 : 0.20)
+            : _hovered
+                ? (dark
+                    ? Colors.white.withValues(alpha: 0.16)
+                    : Colors.black.withValues(alpha: 0.07))
+                : (dark
+                    ? Colors.white.withValues(alpha: 0.10)
+                    : Colors.black.withValues(alpha: 0.04)),
+      ),
+      child: Icon(
+        widget.icon,
+        size: widget.iconSize,
+        color: iconColor,
+      ),
+    );
     return Tooltip(
       message: widget.tooltip,
       child: MouseRegion(
@@ -147,32 +172,12 @@ class _GlassCircleButtonState extends State<GlassCircleButton> {
             duration: const Duration(milliseconds: 160),
             curve: Curves.easeOutCubic,
             child: ClipOval(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOutCubic,
-                  width: widget.size,
-                  height: widget.size,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: widget.selected
-                        ? accent.withValues(alpha: dark ? 0.22 : 0.20)
-                        : _hovered
-                            ? (dark
-                                ? Colors.white.withValues(alpha: 0.16)
-                                : Colors.black.withValues(alpha: 0.07))
-                            : (dark
-                                ? Colors.white.withValues(alpha: 0.10)
-                                : Colors.black.withValues(alpha: 0.04)),
-                  ),
-                  child: Icon(
-                    widget.icon,
-                    size: widget.iconSize,
-                    color: iconColor,
-                  ),
-                ),
-              ),
+              child: widget.enableBlur
+                  ? BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: control,
+                    )
+                  : control,
             ),
           ),
         ),

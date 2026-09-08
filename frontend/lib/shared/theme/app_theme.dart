@@ -19,6 +19,13 @@ abstract final class AppSpacing {
   static const double xxxl = 32;
 }
 
+/// Shared component dimensions that establish the app's visual scale.
+abstract final class AppSizes {
+  static const double favoriteButtonCompact = 36;
+  static const double favoriteButton = 42;
+  static const double iosCompactHeaderIcon = 17;
+}
+
 abstract final class AppRadii {
   static const double xs = 6;
   static const double sm = 8;
@@ -27,8 +34,53 @@ abstract final class AppRadii {
   static const double xl = 22;
   static const double xxl = 28;
   static const double hero = 34;
+  static const double favoriteButtonCompact =
+      AppSizes.favoriteButtonCompact / 2;
+  static const double favoriteButton = AppSizes.favoriteButton / 2;
+  static const double noteCardCornerScale = 1.7;
+  static const double noteCardCompact =
+      favoriteButtonCompact * noteCardCornerScale;
+  static const double noteCard = favoriteButton * noteCardCornerScale;
   static const double card = 38;
   static const double pill = 999;
+}
+
+/// One neutral frosted-glass recipe for the two viewport chrome surfaces:
+/// the fixed notes header and the bottom navigation drawer.
+///
+/// Keeping these tokens separate from ordinary cards prevents ambient note
+/// colours from tinting the app chrome while still allowing the blurred canvas
+/// and notes underneath to remain visible.
+abstract final class AppChromeGlass {
+  static const double lightBlur = 36;
+  static const double darkBlur = 44;
+  static const double lightWebBlur = 32;
+  static const double darkWebBlur = 38;
+  static const double lightConstrainedBlur = 12;
+  static const double darkConstrainedBlur = 14;
+
+  // Keep the light chrome translucent; elevation comes from its edge and
+  // shadow so the blurred note colours remain visible through the surface.
+  static const Color lightTint = Color(0x4dffffff);
+  static const Color lightHeaderTint = Color(0x26ffffff);
+  static const Color darkTint = Color(0x33000000);
+  static const Color darkOuterStroke = Color(0x24ffffff);
+  static const Color lightOuterStroke = Color(0x18000000);
+  static const Color lightInnerStroke = Color(0xb5ffffff);
+  static const Color lightShadow = Color(0x33000000);
+  static const Color darkShadow = Color(0x30000000);
+
+  static Color tint(Brightness brightness) =>
+      brightness == Brightness.dark ? darkTint : lightTint;
+
+  static Color shadow(Brightness brightness) =>
+      brightness == Brightness.dark ? darkShadow : lightShadow;
+
+  static Color outerStroke(Brightness brightness) =>
+      brightness == Brightness.dark ? darkOuterStroke : lightOuterStroke;
+
+  static Color innerStroke(Brightness brightness) =>
+      brightness == Brightness.dark ? Colors.transparent : lightInnerStroke;
 }
 
 /// Base canvas colours the translucent surfaces are composited over.
@@ -42,10 +94,10 @@ Color canvasBaseColor(Brightness brightness) =>
 List<Color> ambientMeshColors(Brightness brightness) {
   if (brightness == Brightness.dark) {
     return const [
-      Color(0xff3f6b48),
-      Color(0xff2f6b78),
-      Color(0xff294f63),
-      Color(0xff4d7550),
+      Color(0xff203029),
+      Color(0xff1d2d31),
+      Color(0xff19282d),
+      Color(0xff24322c),
     ];
   }
   return const [
@@ -55,6 +107,9 @@ List<Color> ambientMeshColors(Brightness brightness) {
     Color(0xffbfd8e4),
   ];
 }
+
+double ambientMeshIntensity(Brightness brightness) =>
+    brightness == Brightness.dark ? 0.42 : 0.78;
 
 @immutable
 class SafernotesTheme extends ThemeExtension<SafernotesTheme> {

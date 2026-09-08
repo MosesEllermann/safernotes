@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter/services.dart';
@@ -18,6 +20,9 @@ import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
 import 'package:safernotes_app/shared/widgets/app_canvas.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
+
+bool get _usesIosNativeEditorControls =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
 class NoteEditorScreen extends StatelessWidget {
   const NoteEditorScreen({super.key, required this.note});
@@ -221,75 +226,49 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                       bottomToolbar ? 10 : 20,
                       10,
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (!widget.embedded)
-                          AppIconButton(
-                            tooltip: l10n.t('close'),
-                            icon: AppIcons.chevronLeft,
-                            size: bottomToolbar ? 44 : 36,
-                            onPressed: () {
-                              _saveNow();
-                              Navigator.of(context).maybePop();
-                            },
-                          ),
-                        Expanded(
-                          child: TextField(
-                            controller: _title,
-                            decoration: _borderlessInput(l10n.t('title')),
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineLarge
-                                ?.copyWith(fontWeight: FontWeight.w600),
-                          ),
+                        Row(
+                          children: [
+                            if (!widget.embedded)
+                              _EditorBackButton(
+                                tooltip: l10n.t('close'),
+                                compact: bottomToolbar,
+                                onPressed: () {
+                                  _saveNow();
+                                  Navigator.of(context).maybePop();
+                                },
+                              ),
+                            const Spacer(),
+                            _PresenceDots(presence: presence),
+                            _EditorHeaderActions(
+                              compact: bottomToolbar,
+                              l10n: l10n,
+                              pinned: _pinned,
+                              shared: note.shared,
+                              reminderActive: _reminderAt != null,
+                              canShare: _reminderAt == null,
+                              onPin: () => _recordMutation(
+                                () => _pinned = !_pinned,
+                                immediate: true,
+                              ),
+                              onShare: () => _showShareSheet(note),
+                              onReminder: _showReminderSheet,
+                              onArchive: () => _changeNoteState('archived'),
+                              onTrash: () => _changeNoteState('trashed'),
+                            ),
+                          ],
                         ),
-                        _PresenceDots(presence: presence),
-                        AppIconButton(
-                          tooltip: _pinned ? l10n.t('unpin') : l10n.t('pin'),
-                          icon: _pinned ? AppIcons.heartFill : AppIcons.heart,
-                          size: bottomToolbar ? 44 : 36,
-                          selected: _pinned,
-                          onPressed: () => _recordMutation(
-                            () => _pinned = !_pinned,
-                            immediate: true,
-                          ),
+                        SizedBox(height: bottomToolbar ? 16 : 20),
+                        TextField(
+                          key: const ValueKey('note-editor-title'),
+                          controller: _title,
+                          decoration: _borderlessInput(l10n.t('title')),
+                          style: bottomToolbar
+                              ? Theme.of(context).textTheme.headlineMedium
+                              : Theme.of(context).textTheme.displayMedium,
                         ),
-                        if (_reminderAt == null)
-                          AppIconButton(
-                            tooltip: l10n.t('collaboratorInvite'),
-                            icon: note.shared
-                                ? AppIcons.users
-                                : AppIcons.userPlus,
-                            size: bottomToolbar ? 44 : 36,
-                            onPressed: () => _showShareSheet(note),
-                          ),
-                        AppIconButton(
-                          tooltip: l10n.t('reminder'),
-                          icon: _reminderAt == null
-                              ? AppIcons.bell
-                              : AppIcons.bellRing,
-                          size: bottomToolbar ? 44 : 36,
-                          selected: _reminderAt != null,
-                          onPressed: () => _showReminderSheet(),
-                        ),
-                        if (bottomToolbar)
-                          _EditorOverflowMenu(
-                            l10n: l10n,
-                            onArchive: () => _changeNoteState('archived'),
-                            onTrash: () => _changeNoteState('trashed'),
-                          )
-                        else ...[
-                          AppIconButton(
-                            tooltip: l10n.t('archiveNote'),
-                            icon: AppIcons.archive,
-                            onPressed: () => _changeNoteState('archived'),
-                          ),
-                          AppIconButton(
-                            tooltip: l10n.t('moveToTrash'),
-                            icon: AppIcons.trash,
-                            onPressed: () => _changeNoteState('trashed'),
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -805,55 +784,70 @@ class _Toolbar extends StatelessWidget {
           'clear', AppIcons.removeFormatting, l10n.t('clearFormatting')),
     ];
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Material(
-        color: scheme.surface.withValues(alpha: 0.68),
-        borderRadius: BorderRadius.circular(AppRadii.xxl),
-        clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-          child: Row(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      AppIconButton(
-                        tooltip: l10n.t('undo'),
-                        icon: AppIcons.undo2,
-                        onPressed: canUndo ? onUndo : null,
-                      ),
-                      AppIconButton(
-                        tooltip: l10n.t('redo'),
-                        icon: AppIcons.redo2,
-                        onPressed: canRedo ? onRedo : null,
-                      ),
-                      if (showFormatting) ...[
-                        const SizedBox(width: 8),
-                        for (final item in buttons)
-                          AppIconButton(
-                            tooltip: item.tooltip,
-                            icon: item.icon,
-                            selected: activeActions.contains(item.action),
-                            onPressed: () => onFormat(item.action),
-                          ),
-                      ],
+    final nativeGlass = _usesIosNativeEditorControls;
+    final content = Material(
+      color: nativeGlass
+          ? Colors.transparent
+          : scheme.surface.withValues(alpha: 0.68),
+      borderRadius: BorderRadius.circular(AppRadii.xxl),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Row(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    AppIconButton(
+                      tooltip: l10n.t('undo'),
+                      icon: AppIcons.undo2,
+                      onPressed: canUndo ? onUndo : null,
+                    ),
+                    AppIconButton(
+                      tooltip: l10n.t('redo'),
+                      icon: AppIcons.redo2,
+                      onPressed: canRedo ? onRedo : null,
+                    ),
+                    if (showFormatting) ...[
+                      const SizedBox(width: 8),
+                      for (final item in buttons)
+                        AppIconButton(
+                          tooltip: item.tooltip,
+                          icon: item.icon,
+                          selected: activeActions.contains(item.action),
+                          onPressed: () => onFormat(item.action),
+                        ),
                     ],
-                  ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              AppIconButton(
-                tooltip: l10n.t('background'),
-                icon: AppIcons.palette,
-                onPressed: onBackground,
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 8),
+            AppIconButton(
+              tooltip: l10n.t('background'),
+              icon: AppIcons.palette,
+              onPressed: onBackground,
+            ),
+          ],
         ),
       ),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: nativeGlass
+          ? LiquidGlassContainer(
+              key: const ValueKey('ios-editor-formatting-glass'),
+              config: LiquidGlassConfig(
+                effect: CNGlassEffect.regular,
+                shape: CNGlassEffectShape.capsule,
+                tint: scheme.surface.withValues(alpha: 0.08),
+                interactive: true,
+              ),
+              child: content,
+            )
+          : content,
     );
   }
 }
@@ -1888,64 +1882,189 @@ class _ChecklistActionButton extends StatelessWidget {
   }
 }
 
-enum _EditorOverflowAction { archive, trash }
+class _EditorBackButton extends StatelessWidget {
+  const _EditorBackButton({
+    required this.tooltip,
+    required this.compact,
+    required this.onPressed,
+  });
 
-class _EditorOverflowMenu extends StatelessWidget {
-  const _EditorOverflowMenu({
+  final String tooltip;
+  final bool compact;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (compact && _usesIosNativeEditorControls) {
+      return Tooltip(
+        message: tooltip,
+        child: SizedBox.square(
+          key: const ValueKey('ios-editor-back-button'),
+          dimension: 44,
+          child: CNButton.icon(
+            icon: const CNSymbol('chevron.left', size: 17),
+            onPressed: onPressed,
+            tint: Theme.of(context).colorScheme.onSurface,
+            config: const CNButtonConfig(
+              style: CNButtonStyle.glass,
+              width: 44,
+              minHeight: 44,
+              padding: EdgeInsets.zero,
+              glassEffectId: 'note-editor-back',
+              glassEffectInteractive: true,
+            ),
+          ),
+        ),
+      );
+    }
+    return AppIconButton(
+      key: const ValueKey('editor-back-button'),
+      tooltip: tooltip,
+      icon: AppIcons.chevronLeft,
+      size: compact ? 44 : 36,
+      onPressed: onPressed,
+    );
+  }
+}
+
+class _EditorHeaderActions extends StatelessWidget {
+  const _EditorHeaderActions({
+    required this.compact,
     required this.l10n,
+    required this.pinned,
+    required this.shared,
+    required this.reminderActive,
+    required this.canShare,
+    required this.onPin,
+    required this.onShare,
+    required this.onReminder,
     required this.onArchive,
     required this.onTrash,
   });
 
+  final bool compact;
   final AppL10n l10n;
+  final bool pinned;
+  final bool shared;
+  final bool reminderActive;
+  final bool canShare;
+  final VoidCallback onPin;
+  final VoidCallback onShare;
+  final VoidCallback onReminder;
   final VoidCallback onArchive;
   final VoidCallback onTrash;
+
+  CNButtonData _nativeButton({
+    required String symbol,
+    required String effectId,
+    required Color tint,
+    required VoidCallback? onPressed,
+    bool selected = false,
+  }) {
+    return CNButtonData.icon(
+      icon: CNSymbol(symbol, size: 17),
+      onPressed: onPressed,
+      enabled: onPressed != null,
+      tint: tint,
+      config: CNButtonDataConfig(
+        width: 40,
+        minHeight: 40,
+        padding: EdgeInsets.zero,
+        style: selected ? CNButtonStyle.prominentGlass : CNButtonStyle.glass,
+        glassEffectUnionId: 'note-editor-header-actions',
+        glassEffectId: effectId,
+        glassEffectInteractive: true,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SizedBox.square(
-      dimension: 44,
-      child: PopupMenuButton<_EditorOverflowAction>(
-        tooltip: l10n.t('moreActions'),
-        padding: EdgeInsets.zero,
-        iconSize: 20,
-        icon: const Icon(AppIcons.ellipsis),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        onSelected: (action) {
-          switch (action) {
-            case _EditorOverflowAction.archive:
-              onArchive();
-            case _EditorOverflowAction.trash:
-              onTrash();
-          }
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem(
-            value: _EditorOverflowAction.archive,
-            child: Row(
-              children: [
-                const Icon(AppIcons.archive, size: 19),
-                const SizedBox(width: 12),
-                Text(l10n.t('archiveNote')),
-              ],
+    if (compact && _usesIosNativeEditorControls) {
+      return SizedBox(
+        key: const ValueKey('ios-editor-header-action-bar'),
+        width: 226,
+        height: 43,
+        child: CNGlassButtonGroup(
+          axis: Axis.horizontal,
+          spacing: 4,
+          spacingForGlass: 36,
+          buttons: [
+            _nativeButton(
+              symbol: pinned ? 'heart.fill' : 'heart',
+              effectId: 'note-editor-pin',
+              tint: pinned ? brandLavender : scheme.onSurface,
+              selected: pinned,
+              onPressed: onPin,
             ),
-          ),
-          PopupMenuItem(
-            value: _EditorOverflowAction.trash,
-            child: Row(
-              children: [
-                Icon(AppIcons.trash, size: 19, color: scheme.error),
-                const SizedBox(width: 12),
-                Text(
-                  l10n.t('moveToTrash'),
-                  style: TextStyle(color: scheme.error),
-                ),
-              ],
+            _nativeButton(
+              symbol: shared ? 'person.2.fill' : 'person.badge.plus',
+              effectId: 'note-editor-share',
+              tint: scheme.onSurface,
+              onPressed: canShare ? onShare : null,
             ),
-          ),
-        ],
-      ),
+            _nativeButton(
+              symbol: reminderActive ? 'bell.fill' : 'bell',
+              effectId: 'note-editor-reminder',
+              tint: reminderActive ? scheme.primary : scheme.onSurface,
+              selected: reminderActive,
+              onPressed: onReminder,
+            ),
+            _nativeButton(
+              symbol: 'archivebox',
+              effectId: 'note-editor-archive',
+              tint: scheme.onSurface,
+              onPressed: onArchive,
+            ),
+            _nativeButton(
+              symbol: 'trash',
+              effectId: 'note-editor-trash',
+              tint: scheme.error,
+              onPressed: onTrash,
+            ),
+          ],
+        ),
+      );
+    }
+    final size = compact ? 40.0 : 36.0;
+    return Row(
+      key: const ValueKey('editor-header-action-bar'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppIconButton(
+          tooltip: pinned ? l10n.t('unpin') : l10n.t('pin'),
+          icon: pinned ? AppIcons.heartFill : AppIcons.heart,
+          size: size,
+          selected: pinned,
+          onPressed: onPin,
+        ),
+        AppIconButton(
+          tooltip: l10n.t('collaboratorInvite'),
+          icon: shared ? AppIcons.users : AppIcons.userPlus,
+          size: size,
+          onPressed: canShare ? onShare : null,
+        ),
+        AppIconButton(
+          tooltip: l10n.t('reminder'),
+          icon: reminderActive ? AppIcons.bellRing : AppIcons.bell,
+          size: size,
+          selected: reminderActive,
+          onPressed: onReminder,
+        ),
+        AppIconButton(
+          tooltip: l10n.t('archiveNote'),
+          icon: AppIcons.archive,
+          size: size,
+          onPressed: onArchive,
+        ),
+        AppIconButton(
+          tooltip: l10n.t('moveToTrash'),
+          icon: AppIcons.trash,
+          size: size,
+          onPressed: onTrash,
+        ),
+      ],
     );
   }
 }

@@ -39,6 +39,7 @@ abstract final class AppIcons {
   static const IconData filePlus2 = PhosphorIconsRegular.filePlus;
   static const IconData folderLock = PhosphorIconsRegular.folderLock;
   static const IconData globe = PhosphorIconsRegular.globeSimple;
+  static const IconData hardDrive = PhosphorIconsRegular.hardDrive;
   static const IconData grid2X2 = PhosphorIconsRegular.squaresFour;
   static const IconData heart = PhosphorIconsRegular.heart;
   static const IconData heartFill = PhosphorIconsFill.heart;

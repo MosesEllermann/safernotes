@@ -110,6 +110,54 @@ void main() {
     expect(saved.conflicted, isFalse);
     expect(container.read(syncStatusProvider), SyncStatus.saved);
   });
+
+  test('state changes preserve the latest note and can be undone', () async {
+    final initial = _note(body: 'old body', dirty: false);
+    final store = _MemoryOfflineStore([initial]);
+    final api = _VersionedApiClient(serverVersion: 1);
+    final auth = Completer<AppSession?>();
+    final container = _container(store: store, api: api, auth: auth);
+    addTearDown(container.dispose);
+
+    await container.read(notesControllerProvider.future);
+    final controller = container.read(notesControllerProvider.notifier);
+    await controller.saveDraft(
+      draft: initial.copyWith(body: 'latest body'),
+    );
+    await controller.changeState(initial, 'trashed');
+    var saved = container.read(notesControllerProvider).requireValue.single;
+    expect(saved.body, 'latest body');
+    expect(saved.state, 'trashed');
+
+    await controller.changeState(initial, 'active');
+    saved = container.read(notesControllerProvider).requireValue.single;
+    expect(saved.body, 'latest body');
+    expect(saved.state, 'active');
+  });
+
+  test('empty trash deletes local tombstones after the server confirms',
+      () async {
+    final initial = _note(body: 'discard me', dirty: false, state: 'trashed');
+    final store = _MemoryOfflineStore([initial]);
+    final api = _VersionedApiClient(serverVersion: 1);
+    final auth = Completer<AppSession?>();
+    final container = _container(store: store, api: api, auth: auth);
+    addTearDown(container.dispose);
+
+    await container.read(notesControllerProvider.future);
+    auth.complete(_session);
+    await container.read(authControllerProvider.future);
+
+    final deletedCount =
+        await container.read(notesControllerProvider.notifier).emptyTrash();
+
+    expect(deletedCount, 1);
+    expect(api.emptyTrashCalls, 1);
+    final saved = container.read(notesControllerProvider).requireValue.single;
+    expect(saved.state, 'deleted');
+    expect(saved.dirty, isFalse);
+    expect(container.read(syncStatusProvider), SyncStatus.saved);
+  });
 }
 
 ProviderContainer _container({
@@ -135,7 +183,11 @@ const _session = AppSession(
   masterKey: [0, 1, 2, 3],
 );
 
-PlainNote _note({required String body, required bool dirty}) {
+PlainNote _note({
+  required String body,
+  required bool dirty,
+  String state = 'active',
+}) {
   return PlainNote(
     localId: 'local-note',
     remoteId: 'remote-note',
@@ -148,6 +200,7 @@ PlainNote _note({required String body, required bool dirty}) {
     sortOrder: 0,
     dirty: dirty,
     version: 1,
+    state: state,
   );
 }
 
@@ -207,6 +260,13 @@ class _VersionedApiClient extends ApiClient {
   final expectedVersions = <int?>[];
   final sentBodies = <String>[];
   int conflictResponses = 0;
+  int emptyTrashCalls = 0;
+
+  @override
+  Future<int> emptyTrash(String accessToken) async {
+    emptyTrashCalls += 1;
+    return 1;
+  }
 
   @override
   Future<Map<String, dynamic>> syncBatch({

@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
+import 'dart:ui' show ImageFilter, lerpDouble;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cupertino_native_better/cupertino_native_better.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/notes/note_editor_screen.dart';
@@ -34,6 +39,45 @@ final noteQuickFilterProvider =
 /// Selected label when [noteQuickFilterProvider] is [NoteQuickFilter.label].
 final noteLabelFilterProvider = StateProvider<String?>((ref) => null);
 final sideNavExpandedProvider = StateProvider<bool>((ref) => true);
+final _draggedNoteProvider = StateProvider<PlainNote?>((ref) => null);
+final _dragTrashHoverProvider = StateProvider<bool>((ref) => false);
+final _noteOverviewResetProvider = StateProvider<int>((ref) => 0);
+final _accountUsageProvider = FutureProvider.autoDispose
+    .family<SubscriptionUsage, ({String accessToken, String tenant})>(
+        (ref, credentials) async {
+  final cacheKey = 'zk.account_usage.${credentials.tenant}';
+  try {
+    final usage = await ref.read(apiClientProvider).fetchSubscriptionUsage(
+          accessToken: credentials.accessToken,
+          tenant: credentials.tenant,
+        );
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString(cacheKey, jsonEncode(usage.toJson()));
+    return usage;
+  } catch (error, stackTrace) {
+    final preferences = await SharedPreferences.getInstance();
+    final cached = preferences.getString(cacheKey);
+    if (cached != null) {
+      try {
+        return SubscriptionUsage.fromJson(
+          Map<String, dynamic>.from(jsonDecode(cached) as Map),
+        );
+      } catch (_) {
+        await preferences.remove(cacheKey);
+      }
+    }
+    Error.throwWithStackTrace(error, stackTrace);
+  }
+});
+
+/// The Pixel-class Android path has a tighter raster budget than iOS for
+/// several overlapping backdrop filters. Keep this centralized so expensive
+/// visual effects can retain their full fidelity everywhere else.
+bool get _usesAndroidRasterBudget =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+bool get _usesIosNativeControls =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
 class NotesScreen extends ConsumerStatefulWidget {
   const NotesScreen({super.key, this.invitationId});
@@ -191,99 +235,142 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final width = MediaQuery.sizeOf(context).width;
     final desktop = width >= 900;
     final showLogoText = width >= 620;
+    final mediaQuery = MediaQuery.of(context);
+    final systemGestureGuardHeight = math.max(
+      mediaQuery.viewPadding.bottom,
+      mediaQuery.systemGestureInsets.bottom,
+    );
     final noteOverviewLayout =
         ref.watch(appPreferencesProvider).valueOrNull?.noteOverviewLayout ??
             NoteOverviewLayout.cards;
-    return AppCanvas(
-      key: const ValueKey('notes-app-canvas'),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        extendBody: !desktop,
-        appBar: desktop
-            ? AppBar(
-                toolbarHeight: 76,
-                titleSpacing: 12,
-                surfaceTintColor: Colors.transparent,
-                backgroundColor: Colors.transparent,
-                title: Row(
-                  children: [
-                    AppIconButton(
-                      tooltip: l10n.t('menu'),
-                      icon: AppIcons.panelLeft,
-                      onPressed: () {
-                        final expanded = ref.read(sideNavExpandedProvider);
-                        ref.read(sideNavExpandedProvider.notifier).state =
-                            !expanded;
-                      },
-                    ),
-                    const SizedBox(width: 8),
-                    const SafernotesLogo(size: 38),
-                    if (showLogoText) ...[
-                      const SizedBox(width: 12),
-                      Text(
-                        l10n.t('appName'),
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
+    final systemOverlayStyle = (Theme.of(context).brightness == Brightness.dark
+            ? SystemUiOverlayStyle.light
+            : SystemUiOverlayStyle.dark)
+        .copyWith(
+      statusBarColor: Colors.transparent,
+      systemStatusBarContrastEnforced: false,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarContrastEnforced: false,
+    );
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      key: const ValueKey('notes-system-ui-overlay'),
+      value: systemOverlayStyle,
+      child: AppCanvas(
+        key: const ValueKey('notes-app-canvas'),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBody: !desktop,
+          appBar: desktop
+              ? AppBar(
+                  toolbarHeight: 76,
+                  titleSpacing: 12,
+                  surfaceTintColor: Colors.transparent,
+                  backgroundColor: Colors.transparent,
+                  title: Row(
+                    children: [
+                      AppIconButton(
+                        tooltip: l10n.t('menu'),
+                        icon: AppIcons.panelLeft,
+                        onPressed: () {
+                          final expanded = ref.read(sideNavExpandedProvider);
+                          ref.read(sideNavExpandedProvider.notifier).state =
+                              !expanded;
+                        },
                       ),
-                      const SizedBox(width: 24),
-                    ] else
-                      const SizedBox(width: 10),
-                    const Expanded(child: _SearchField()),
-                  ],
-                ),
-                actions: [
-                  const _SyncIndicator(),
-                  AppIconButton(
-                    key: const ValueKey('note-overview-layout-toggle'),
-                    tooltip: l10n.t(
-                      noteOverviewLayout == NoteOverviewLayout.cards
-                          ? 'switchToListView'
-                          : 'switchToCardsView',
-                    ),
-                    icon: noteOverviewLayout == NoteOverviewLayout.cards
-                        ? AppIcons.columns2
-                        : AppIcons.grid2X2,
-                    onPressed: () => ref
-                        .read(appPreferencesProvider.notifier)
-                        .setNoteOverviewLayout(
-                          noteOverviewLayout == NoteOverviewLayout.cards
-                              ? NoteOverviewLayout.list
-                              : NoteOverviewLayout.cards,
+                      const SizedBox(width: 8),
+                      const SafernotesLogo(size: 38),
+                      if (showLogoText) ...[
+                        const SizedBox(width: 12),
+                        Text(
+                          l10n.t('appName'),
+                          style:
+                              Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
                         ),
+                        const SizedBox(width: 24),
+                      ] else
+                        const SizedBox(width: 10),
+                      const Expanded(child: _SearchField()),
+                    ],
                   ),
-                  AppIconButton(
-                    tooltip: l10n.t('settings'),
-                    icon: AppIcons.settings,
-                    onPressed: () => _openSettings(context),
-                  ),
-                  _AccountButton(email: session?.email ?? ''),
-                  const SizedBox(width: 8),
-                ],
-              )
-            : null,
-        bottomNavigationBar: desktop ? null : const _MobileBottomNav(),
-        body: SafeArea(
-          child: notes.when(
-            data: (items) => Column(
-              children: [
-                if (session != null && !session.emailVerified)
-                  _EmailVerificationBanner(email: session.email),
-                Expanded(
-                  child: _KeepWorkspace(
-                    notes: items,
-                    email: session?.email ?? '',
-                    layout: noteOverviewLayout,
+                  actions: [
+                    const _SyncIndicator(),
+                    AppIconButton(
+                      key: const ValueKey('note-overview-layout-toggle'),
+                      tooltip: l10n.t(
+                        noteOverviewLayout == NoteOverviewLayout.cards
+                            ? 'switchToListView'
+                            : 'switchToCardsView',
+                      ),
+                      icon: noteOverviewLayout == NoteOverviewLayout.cards
+                          ? AppIcons.columns2
+                          : AppIcons.grid2X2,
+                      onPressed: () => ref
+                          .read(appPreferencesProvider.notifier)
+                          .setNoteOverviewLayout(
+                            noteOverviewLayout == NoteOverviewLayout.cards
+                                ? NoteOverviewLayout.list
+                                : NoteOverviewLayout.cards,
+                          ),
+                    ),
+                    AppIconButton(
+                      tooltip: l10n.t('settings'),
+                      icon: AppIcons.settings,
+                      onPressed: () => _openSettings(context, ref),
+                    ),
+                    _AccountButton(email: session?.email ?? ''),
+                    const SizedBox(width: 8),
+                  ],
+                )
+              : null,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: SafeArea(
+                  top: desktop,
+                  bottom: desktop,
+                  child: notes.when(
+                    data: (items) => _KeepWorkspace(
+                      notes: items,
+                      email: session?.email ?? '',
+                      showEmailVerification:
+                          session != null && !session.emailVerified,
+                      layout: noteOverviewLayout,
+                    ),
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (error, _) => _ErrorState(
+                      message: error.toString(),
+                      onRetry: () => ref
+                          .read(notesControllerProvider.notifier)
+                          .pullRemote(),
+                    ),
                   ),
                 ),
-              ],
-            ),
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (error, _) => _ErrorState(
-              message: error.toString(),
-              onRetry: () =>
-                  ref.read(notesControllerProvider.notifier).pullRemote(),
-            ),
+              ),
+              if (!desktop &&
+                  _usesAndroidRasterBudget &&
+                  systemGestureGuardHeight > 0)
+                Positioned(
+                  key: const ValueKey('android-system-gesture-guard'),
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: systemGestureGuardHeight + 8,
+                  child: const Listener(
+                    behavior: HitTestBehavior.opaque,
+                    child: SizedBox.expand(),
+                  ),
+                ),
+              if (!desktop)
+                const Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _MobileBottomNav(),
+                ),
+            ],
           ),
         ),
       ),
@@ -395,41 +482,75 @@ class _KeepWorkspace extends ConsumerStatefulWidget {
   const _KeepWorkspace({
     required this.notes,
     required this.email,
+    required this.showEmailVerification,
     required this.layout,
   });
 
   final List<PlainNote> notes;
   final String email;
+  final bool showEmailVerification;
   final NoteOverviewLayout layout;
 
   @override
   ConsumerState<_KeepWorkspace> createState() => _KeepWorkspaceState();
 }
 
-class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
+class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
+    with WidgetsBindingObserver {
   String? _draggedId;
   int? _dropIndex;
   String? _selectedNoteId;
   final _trashHovering = ValueNotifier(false);
+  final _overviewScrollController = ScrollController();
+  final _compactHeaderOpacity = ValueNotifier<double>(1);
 
   /// Live pointer position during a drag. `DragTargetDetails.offset` reports
   /// the feedback's top-left corner, which is useless for deciding whether the
   /// pointer sits above or below a row's midpoint.
   final _dragPointer = ValueNotifier<Offset?>(null);
   late final ProviderSubscription<String> _bucketSubscription;
+  late final ProviderSubscription<int> _resetSubscription;
+  double _compactHeaderHeight = 190;
+  bool _emptyingTrash = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _overviewScrollController.addListener(_updateCompactHeaderOpacity);
     _bucketSubscription = ref.listenManual<String>(
       noteBucketProvider,
-      (_, __) => _clearDragPreview(),
+      (_, __) {
+        _clearDragPreview();
+        _resetOverviewScroll();
+      },
+    );
+    _resetSubscription = ref.listenManual<int>(
+      _noteOverviewResetProvider,
+      (_, __) => _resetOverviewScroll(),
     );
   }
 
   @override
+  void didUpdateWidget(covariant _KeepWorkspace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.layout != widget.layout) _resetOverviewScroll();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _resetOverviewScroll();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _overviewScrollController
+      ..removeListener(_updateCompactHeaderOpacity)
+      ..dispose();
+    _compactHeaderOpacity.dispose();
     _bucketSubscription.close();
+    _resetSubscription.close();
     _trashHovering.dispose();
     _dragPointer.dispose();
     super.dispose();
@@ -446,10 +567,67 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     ref.watch(noteLabelFilterProvider);
     final baseNotes = _filteredNotes;
     final filtered = _previewNotes(baseNotes);
+    final trashCount =
+        widget.notes.where((note) => note.state == 'trashed').length;
     final dragging = _draggedId != null;
     final listLayout = widget.layout == NoteOverviewLayout.list;
     final splitLayout = wide && listLayout;
-    final showTrashTarget = dragging && bucket != 'trashed';
+    final showTrashTarget = dragging && bucket != 'trashed' && !compact;
+    final header = _WorkspaceHeader(
+      noteCount: baseNotes.length,
+      compact: compact,
+      wide: wide,
+      email: widget.email,
+      showEmailVerification: widget.showEmailVerification,
+      layout: widget.layout,
+      labels: _availableLabels,
+      onEmptyTrash: trashCount == 0 ? null : _emptyTrash,
+      emptyingTrash: _emptyingTrash,
+    );
+    final compactHeaderChrome = _WorkspaceHeader(
+      noteCount: baseNotes.length,
+      compact: compact,
+      wide: wide,
+      email: widget.email,
+      showEmailVerification: widget.showEmailVerification,
+      layout: widget.layout,
+      labels: _availableLabels,
+      onEmptyTrash: trashCount == 0 ? null : _emptyTrash,
+      emptyingTrash: _emptyingTrash,
+      compactPart: _CompactHeaderPart.chrome,
+    );
+    final compactHeaderBody = _WorkspaceHeader(
+      noteCount: baseNotes.length,
+      compact: compact,
+      wide: wide,
+      email: widget.email,
+      showEmailVerification: widget.showEmailVerification,
+      layout: widget.layout,
+      labels: _availableLabels,
+      onEmptyTrash: trashCount == 0 ? null : _emptyTrash,
+      emptyingTrash: _emptyingTrash,
+      compactPart: _CompactHeaderPart.body,
+    );
+    final overview = splitLayout
+        ? _buildSplitOverview(baseNotes, bucket)
+        : listLayout
+            ? _buildMobileList(
+                baseNotes,
+                bucket,
+                topPadding: compact ? _compactHeaderHeight : 0,
+                controller: compact ? _overviewScrollController : null,
+              )
+            : _buildCardOverview(
+                sourceNotes: baseNotes,
+                filtered: filtered,
+                compact: compact,
+                wide: wide,
+                screenWidth: screenWidth,
+                dragging: dragging,
+                bucket: bucket,
+                topPadding: compact ? _compactHeaderHeight : 0,
+                controller: compact ? _overviewScrollController : null,
+              );
     return Stack(
       children: [
         Row(
@@ -457,40 +635,49 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
           children: [
             if (wide) const _SideRail(),
             Expanded(
-              child: Column(
-                children: [
-                  _WorkspaceHeader(
-                    noteCount: baseNotes.length,
-                    compact: compact,
-                    wide: wide,
-                    email: widget.email,
-                    layout: widget.layout,
-                    labels: _availableLabels,
-                  ),
-                  Expanded(
-                    child: splitLayout
-                        ? _buildSplitOverview(baseNotes, bucket)
-                        : listLayout
-                            ? _buildMobileList(baseNotes, bucket)
-                            : _buildCardOverview(
-                                sourceNotes: baseNotes,
-                                filtered: filtered,
-                                compact: compact,
-                                wide: wide,
-                                screenWidth: screenWidth,
-                                dragging: dragging,
-                                bucket: bucket,
+              child: compact
+                  ? Stack(
+                      children: [
+                        Positioned.fill(
+                          child: RepaintBoundary(child: overview),
+                        ),
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: _MeasureSize(
+                            onChange: _updateCompactHeaderHeight,
+                            child: _FadingCompactHeader(
+                              opacity: _compactHeaderOpacity,
+                              child: _NotesGlassHeaderCard(
+                                child: compactHeaderBody,
                               ),
-                  ),
-                ],
-              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          child: compactHeaderChrome,
+                        ),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        header,
+                        Expanded(child: overview),
+                      ],
+                    ),
             ),
           ],
         ),
         Positioned(
           left: 0,
           right: 0,
-          bottom: compact ? 12 : 20,
+          // Stay above the floating mobile navigation while dragging so the
+          // drop target remains reachable even though the nav overlays notes.
+          bottom: compact ? 92 : 20,
           child: IgnorePointer(
             ignoring: !showTrashTarget,
             child: AnimatedSlide(
@@ -524,12 +711,17 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     required double screenWidth,
     required bool dragging,
     required String bucket,
+    double topPadding = 0,
+    ScrollController? controller,
   }) {
     final noteColumnCount = compact ? 2 : _noteColumnCount(screenWidth, wide);
     return CustomScrollView(
       key: const ValueKey('cards-note-overview'),
+      controller: controller,
       slivers: [
-        SliverToBoxAdapter(child: SizedBox(height: wide ? 8 : 4)),
+        SliverToBoxAdapter(
+          child: SizedBox(height: topPadding + (wide ? 8 : 10)),
+        ),
         if (filtered.isEmpty)
           const SliverFillRemaining(
             hasScrollBody: false,
@@ -538,7 +730,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
         else
           SliverPadding(
             padding: compact
-                ? const EdgeInsets.fromLTRB(16, 0, 16, 104)
+                ? const EdgeInsets.fromLTRB(12, 0, 12, 112)
                 : EdgeInsets.fromLTRB(
                     wide ? 32 : 12,
                     0,
@@ -564,11 +756,18 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
     );
   }
 
-  Widget _buildMobileList(List<PlainNote> notes, String bucket) {
+  Widget _buildMobileList(
+    List<PlainNote> notes,
+    String bucket, {
+    double topPadding = 0,
+    ScrollController? controller,
+  }) {
     if (notes.isEmpty) return const _EmptyState();
     return _NoteListPane(
       key: const ValueKey('mobile-note-list'),
       notes: notes,
+      controller: controller,
+      topPadding: topPadding + 8,
       bottomPadding: 96,
       dragging: _draggedId != null,
       draggedId: _draggedId,
@@ -582,6 +781,27 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
       onDragEnded: _clearDragPreview,
       onSelected: (note) => _openEditor(context, ref, note),
     );
+  }
+
+  void _updateCompactHeaderHeight(Size size) {
+    if (!mounted || (size.height - _compactHeaderHeight).abs() < 0.5) return;
+    setState(() => _compactHeaderHeight = size.height);
+  }
+
+  void _updateCompactHeaderOpacity() {
+    if (!_overviewScrollController.hasClients) return;
+    final next = (1 - (_overviewScrollController.offset / 30)).clamp(0.0, 1.0);
+    if ((next - _compactHeaderOpacity.value).abs() < 0.01) return;
+    _compactHeaderOpacity.value = next;
+  }
+
+  void _resetOverviewScroll() {
+    if (!mounted) return;
+    _compactHeaderOpacity.value = 1;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_overviewScrollController.hasClients) return;
+      _overviewScrollController.jumpTo(0);
+    });
   }
 
   Widget _buildSplitOverview(List<PlainNote> notes, String bucket) {
@@ -683,6 +903,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
   void _startDrag(PlainNote note) {
     if (!mounted) return;
     _trashHovering.value = false;
+    ref.read(_dragTrashHoverProvider.notifier).state = false;
     // Seed the drop index with the note's own position so the placeholder
     // gap opens exactly where the note sat. Without this the list collapses
     // by one row the moment the drag starts and the pointer ends up over the
@@ -694,41 +915,111 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
       _draggedId = note.localId;
       _dropIndex = origin < 0 ? null : origin;
     });
+    ref.read(_draggedNoteProvider.notifier).state = note;
     _dragPointer.value = null;
   }
 
   void _clearDragPreview() {
     if (!mounted) return;
     _trashHovering.value = false;
+    ref.read(_dragTrashHoverProvider.notifier).state = false;
     if (_draggedId == null && _dropIndex == null) return;
     setState(() {
       _draggedId = null;
       _dropIndex = null;
     });
+    ref.read(_draggedNoteProvider.notifier).state = null;
   }
 
   void _moveToTrash(PlainNote note) {
-    final previousState = note.state;
-    unawaited(
-      ref.read(notesControllerProvider.notifier).changeState(note, 'trashed'),
-    );
     _clearDragPreview();
+    _changeNoteStateWithFeedback(
+      context: context,
+      ref: ref,
+      note: note,
+      nextState: 'trashed',
+    );
+  }
+
+  Future<void> _emptyTrash() async {
+    if (_emptyingTrash) return;
+    final trashedCount =
+        widget.notes.where((note) => note.state == 'trashed').length;
+    if (trashedCount == 0) return;
     final l10n = ref.read(l10nProvider);
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(l10n.t('noteMovedToTrash')),
-        action: SnackBarAction(
-          label: l10n.t('undo'),
-          onPressed: () => unawaited(
-            ref
-                .read(notesControllerProvider.notifier)
-                .changeState(note, previousState),
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(AppIcons.trash2),
+        title: Text(l10n.t('emptyTrashTitle')),
+        content: Text(
+          l10n.t(
+            'emptyTrashConfirmation',
+            params: {'count': trashedCount},
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.t('cancel')),
+          ),
+          FilledButton(
+            key: const ValueKey('confirm-empty-trash'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: Text(l10n.t('deleteAll')),
+          ),
+        ],
       ),
     );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _emptyingTrash = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final deletedCount =
+          await ref.read(notesControllerProvider.notifier).emptyTrash();
+      if (!mounted) return;
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            persist: false,
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              MediaQuery.sizeOf(context).width < 700 ? 96 : 16,
+            ),
+            content: Text(
+              l10n.t('trashEmptied', params: {'count': deletedCount}),
+            ),
+          ),
+        );
+    } catch (_) {
+      if (!mounted) return;
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            persist: false,
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              MediaQuery.sizeOf(context).width < 700 ? 96 : 16,
+            ),
+            content: Text(l10n.t('emptyTrashFailed')),
+          ),
+        );
+    } finally {
+      if (mounted) setState(() => _emptyingTrash = false);
+    }
   }
 
   List<PlainNote> get _filteredNotes {
@@ -781,22 +1072,71 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace> {
   }
 }
 
+const _noteStateFeedbackDuration = Duration(seconds: 4);
+
+void _changeNoteStateWithFeedback({
+  required BuildContext context,
+  required WidgetRef ref,
+  required PlainNote note,
+  required String nextState,
+}) {
+  final previousState = note.state;
+  final notesController = ref.read(notesControllerProvider.notifier);
+  final transition = notesController.changeState(note, nextState);
+  final l10n = ref.read(l10nProvider);
+  final messageKey = switch (nextState) {
+    'archived' => 'noteArchived',
+    'active' => 'noteRestored',
+    'deleted' => 'noteDeletedPermanently',
+    _ => 'noteMovedToTrash',
+  };
+  final messenger = ScaffoldMessenger.of(context);
+  final mobile = MediaQuery.sizeOf(context).width < 700;
+  messenger.clearSnackBars();
+  messenger.showSnackBar(
+    SnackBar(
+      duration: _noteStateFeedbackDuration,
+      persist: false,
+      behavior: SnackBarBehavior.floating,
+      margin: EdgeInsets.fromLTRB(16, 0, 16, mobile ? 96 : 16),
+      content: Text(l10n.t(messageKey)),
+      action: SnackBarAction(
+        label: l10n.t('undo'),
+        onPressed: () => unawaited(() async {
+          await transition;
+          await notesController.changeState(note, previousState);
+        }()),
+      ),
+    ),
+  );
+}
+
+enum _CompactHeaderPart { all, chrome, body }
+
 class _WorkspaceHeader extends ConsumerWidget {
   const _WorkspaceHeader({
     required this.noteCount,
     required this.compact,
     required this.wide,
     required this.email,
+    required this.showEmailVerification,
     required this.layout,
     required this.labels,
+    required this.onEmptyTrash,
+    required this.emptyingTrash,
+    this.compactPart = _CompactHeaderPart.all,
   });
 
   final int noteCount;
   final bool compact;
   final bool wide;
   final String email;
+  final bool showEmailVerification;
   final NoteOverviewLayout layout;
   final List<String> labels;
+  final VoidCallback? onEmptyTrash;
+  final bool emptyingTrash;
+  final _CompactHeaderPart compactPart;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -810,12 +1150,106 @@ class _WorkspaceHeader extends ConsumerWidget {
     };
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final compactTopPadding = MediaQuery.paddingOf(context).top + 8;
+    final compactHorizontalPadding = compact ? 16.0 : 32.0;
+    final compactToolbarHeight = 46.0;
+    final titleAndFilters = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: compact
+                        ? textTheme.headlineMedium
+                        : textTheme.displayMedium,
+                  ),
+                  SizedBox(height: compact ? 1 : 4),
+                  _HeaderDateLine(compact: compact),
+                ],
+              ),
+            ),
+            if (bucket == 'trashed' && onEmptyTrash != null)
+              Padding(
+                padding: EdgeInsets.only(
+                  left: compact ? 8 : 16,
+                  bottom: compact ? 0 : 4,
+                ),
+                child: _EmptyTrashButton(
+                  compact: compact,
+                  busy: emptyingTrash,
+                  onPressed: onEmptyTrash,
+                ),
+              ),
+            if (!compact)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Text(
+                  '$noteCount',
+                  style: textTheme.titleMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        SizedBox(height: compact ? 12 : 18),
+        _QuickFilterChips(noteCount: noteCount, labels: labels),
+        if (showEmailVerification) ...[
+          SizedBox(height: compact ? 10 : 12),
+          _EmailVerificationBanner(email: email),
+        ],
+      ],
+    );
+    if (compact && compactPart == _CompactHeaderPart.chrome) {
+      return Padding(
+        key: const ValueKey('notes-workspace-header-chrome'),
+        padding: EdgeInsets.fromLTRB(
+          compactHorizontalPadding,
+          compactTopPadding,
+          compactHorizontalPadding,
+          0,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _MobileLayoutButton(layout: layout),
+            _AccountButton(
+              key: const ValueKey('mobile-account-menu'),
+              email: email,
+              compact: true,
+            ),
+          ],
+        ),
+      );
+    }
+    if (compact && compactPart == _CompactHeaderPart.body) {
+      return Padding(
+        key: const ValueKey('notes-workspace-header-body'),
+        padding: EdgeInsets.fromLTRB(
+          compactHorizontalPadding,
+          compactTopPadding + compactToolbarHeight + 14,
+          compactHorizontalPadding,
+          16,
+        ),
+        child: titleAndFilters,
+      );
+    }
     return Padding(
+      key: const ValueKey('notes-workspace-header'),
       padding: EdgeInsets.fromLTRB(
-        compact ? 20 : 32,
-        wide ? 18 : (compact ? 14 : 10),
-        compact ? 20 : 32,
-        compact ? 12 : 16,
+        compactHorizontalPadding,
+        wide ? 18 : (compact ? compactTopPadding : 10),
+        compactHorizontalPadding,
+        16,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -832,49 +1266,114 @@ class _WorkspaceHeader extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 26),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: compact
-                          ? textTheme.headlineLarge
-                          : textTheme.displayMedium,
-                    ),
-                    const SizedBox(height: 4),
-                    _HeaderDateLine(compact: compact),
-                  ],
-                ),
-              ),
-              if (!compact)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text(
-                    '$noteCount',
-                    style: textTheme.titleMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          _QuickFilterChips(noteCount: noteCount, labels: labels),
-          if (compact) ...[
             const SizedBox(height: 14),
-            const _SearchField(compact: true),
           ],
+          titleAndFilters,
         ],
       ),
+    );
+  }
+}
+
+class _EmptyTrashButton extends ConsumerWidget {
+  const _EmptyTrashButton({
+    required this.compact,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final bool compact;
+  final bool busy;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = ref.watch(l10nProvider);
+    final scheme = Theme.of(context).colorScheme;
+    return TextButton.icon(
+      key: const ValueKey('empty-trash-button'),
+      onPressed: busy ? null : onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: scheme.error,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 8 : 12,
+          vertical: compact ? 7 : 9,
+        ),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      icon: busy
+          ? SizedBox.square(
+              dimension: compact ? 16 : 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: scheme.error,
+              ),
+            )
+          : Icon(AppIcons.trash2, size: compact ? 17 : 19),
+      label: Text(
+        l10n.t('emptyTrash'),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+/// A viewport-fixed content header for mobile/tablet. It reserves space above
+/// the notes and fades out as the list scrolls underneath it.
+class _NotesGlassHeaderCard extends StatelessWidget {
+  const _NotesGlassHeaderCard({required this.child});
+
+  final Widget child;
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      key: const ValueKey('notes-glass-header-card'),
+      child: child,
+    );
+  }
+}
+
+class _FadingCompactHeader extends StatelessWidget {
+  const _FadingCompactHeader({
+    required this.opacity,
+    required this.child,
+  });
+
+  final ValueListenable<double> opacity;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<double>(
+      valueListenable: opacity,
+      child: child,
+      builder: (context, value, child) {
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(end: value),
+          duration: const Duration(milliseconds: 170),
+          curve: Curves.easeOutCubic,
+          child: child,
+          builder: (context, animated, child) {
+            final eased = Curves.easeOutCubic.transform(animated);
+            return IgnorePointer(
+              ignoring: animated < 0.05,
+              child: Opacity(
+                key: const ValueKey('notes-header-scroll-fade'),
+                opacity: animated,
+                child: Transform.translate(
+                  offset: Offset(0, -18 * (1 - eased)),
+                  child: Transform.scale(
+                    alignment: Alignment.topCenter,
+                    scale: 0.985 + 0.015 * eased,
+                    child: child,
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -926,6 +1425,7 @@ class _HeaderDateLine extends ConsumerWidget {
           fontSize: compact ? 14 : 15,
         );
     return Text.rich(
+      key: const ValueKey('notes-header-date'),
       TextSpan(
         children: [
           TextSpan(
@@ -960,6 +1460,7 @@ class _QuickFilterChips extends ConsumerWidget {
     }
 
     return SingleChildScrollView(
+      key: const ValueKey('note-filter-chips'),
       scrollDirection: Axis.horizontal,
       clipBehavior: Clip.none,
       child: Row(
@@ -1014,71 +1515,97 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final design = context.safernotesTheme;
+    final compact = MediaQuery.sizeOf(context).width < 700;
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final fill = selected
         ? (accent
             ? brandLavender
-            : (dark ? Colors.white.withValues(alpha: 0.94) : Colors.white))
-        : design.glassFill;
+            : (dark ? const Color(0xffe8e1f2) : const Color(0xfffffcff)))
+        : (dark ? const Color(0xff2a3432) : const Color(0xffe9e3ec));
     final textColor = selected
-        ? (accent
-            ? const Color(0xff231a38)
-            : (dark ? const Color(0xff17201f) : scheme.onSurface))
-        : scheme.onSurface.withValues(alpha: 0.75);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(AppRadii.pill),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-        child: Material(
-          color: fill,
-          child: InkWell(
-            onTap: onTap,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              padding: EdgeInsets.fromLTRB(count != null ? 8 : 20, 11, 20, 11),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(AppRadii.pill),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (count != null) ...[
-                    Container(
-                      width: 26,
-                      height: 26,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: brandLavender,
-                      ),
-                      child: Text(
-                        '$count',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xff231a38),
-                            ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                  Text(
-                    label,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: textColor,
-                          fontWeight:
-                              selected ? FontWeight.w600 : FontWeight.w500,
+        ? (accent ? const Color(0xff231a38) : const Color(0xff211d27))
+        : scheme.onSurface.withValues(alpha: 0.9);
+    final borderColor = selected
+        ? (dark
+            ? Colors.white.withValues(alpha: 0.24)
+            : Colors.white.withValues(alpha: 0.9))
+        : (dark
+            ? Colors.white.withValues(alpha: 0.1)
+            : scheme.outlineVariant.withValues(alpha: 0.72));
+    final countFill = dark && selected
+        ? const Color(0xff4b4354)
+        : dark
+            ? const Color(0xffd8dfdc)
+            : const Color(0xffd9d4da);
+    final countTextColor =
+        dark && selected ? const Color(0xfff8f4fa) : const Color(0xff27302e);
+    final verticalPadding = compact ? 8.0 : 11.0;
+    final content = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          padding: EdgeInsets.fromLTRB(
+            count != null ? 7 : (compact ? 16 : 20),
+            verticalPadding,
+            compact ? 16 : 20,
+            verticalPadding,
+          ),
+          decoration: BoxDecoration(
+            color: fill,
+            borderRadius: BorderRadius.circular(AppRadii.pill),
+            border: Border.all(color: borderColor, width: 0.8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (count != null) ...[
+                Container(
+                  key: const ValueKey('note-filter-count-badge'),
+                  width: compact ? 24 : 26,
+                  height: compact ? 24 : 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: countFill,
+                  ),
+                  child: Text(
+                    '$count',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: countTextColor,
                         ),
                   ),
-                ],
+                ),
+                SizedBox(width: compact ? 8 : 10),
+              ],
+              Text(
+                label,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: textColor,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
               ),
-            ),
+            ],
           ),
         ),
       ),
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(AppRadii.pill),
+      // Compact chips are deliberately near-opaque foreground surfaces. A
+      // second blur here would muddy their colour and add three saveLayers to
+      // every scrolling frame without improving their separation.
+      child: compact
+          ? content
+          : BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+              child: content,
+            ),
     );
   }
 }
@@ -1094,40 +1621,134 @@ class _MobileLayoutButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
     final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final iosIconTint = dark ? const Color(0xfff8fbf9) : scheme.onSurface;
     final cards = layout == NoteOverviewLayout.cards;
     final tooltip = l10n.t(
       cards ? 'switchToListView' : 'switchToCardsView',
     );
+    void toggleLayout() =>
+        ref.read(appPreferencesProvider.notifier).setNoteOverviewLayout(
+              cards ? NoteOverviewLayout.list : NoteOverviewLayout.cards,
+            );
+    if (_usesIosNativeControls) {
+      return Tooltip(
+        message: tooltip,
+        child: SizedBox.square(
+          key: const ValueKey('mobile-layout-toggle'),
+          dimension: _MobileBottomNavState._iosItemSize,
+          child: CNButton.icon(
+            icon: CNSymbol(
+              'square.grid.2x2',
+              size: AppSizes.iosCompactHeaderIcon,
+              mode: CNSymbolRenderingMode.monochrome,
+            ),
+            onPressed: toggleLayout,
+            tint: iosIconTint,
+            config: const CNButtonConfig(
+              style: CNButtonStyle.glass,
+              width: _MobileBottomNavState._iosItemSize,
+              minHeight: _MobileBottomNavState._iosItemSize,
+              padding: EdgeInsets.all(18),
+              glassEffectId: 'notes-layout-toggle',
+              glassEffectInteractive: true,
+            ),
+          ),
+        ),
+      );
+    }
     return Tooltip(
       message: tooltip,
-      child: Material(
+      child: _MobileHeaderGlassButtonSurface(
         key: const ValueKey('mobile-layout-toggle'),
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () =>
-              ref.read(appPreferencesProvider.notifier).setNoteOverviewLayout(
-                    cards ? NoteOverviewLayout.list : NoteOverviewLayout.cards,
-                  ),
-          child: Ink(
-            height: 52,
-            width: 52,
-            decoration: BoxDecoration(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white.withValues(alpha: 0.10)
-                  : Colors.black.withValues(alpha: 0.05),
-              shape: BoxShape.circle,
+        onTap: toggleLayout,
+        child: Icon(
+          AppIcons.grid2X2,
+          size: 20,
+          color: scheme.onSurface,
+        ),
+      ),
+    );
+  }
+}
+
+class _MobileHeaderGlassButtonSurface extends StatelessWidget {
+  const _MobileHeaderGlassButtonSurface({
+    super.key,
+    required this.child,
+    required this.onTap,
+  });
+
+  final Widget child;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    final shape = RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(_MobileBottomNavState._itemSize / 2),
+    );
+    final surface = Stack(
+      fit: StackFit.expand,
+      children: [
+        DecoratedBox(
+          key: const ValueKey('mobile-header-button-fill'),
+          decoration: ShapeDecoration(
+            color: AppChromeGlass.tint(brightness),
+            shape: shape.copyWith(
+              side: BorderSide(
+                color: AppChromeGlass.outerStroke(brightness),
+                width: 1,
+              ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  cards ? AppIcons.columns2 : AppIcons.grid2X2,
-                  size: 20,
-                  color: scheme.onSurface,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.all(0.75),
+          child: DecoratedBox(
+            key: const ValueKey('mobile-header-button-highlight'),
+            decoration: ShapeDecoration(
+              shape: shape.copyWith(
+                side: BorderSide(
+                  color: AppChromeGlass.innerStroke(brightness),
+                  width: 0.55,
                 ),
-              ],
+              ),
+            ),
+          ),
+        ),
+        Center(child: child),
+      ],
+    );
+    return SizedBox.square(
+      dimension: _MobileBottomNavState._itemSize,
+      child: RepaintBoundary(
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            shape: shape,
+            shadows: [
+              BoxShadow(
+                color: AppChromeGlass.shadow(brightness),
+                blurRadius: brightness == Brightness.dark ? 14 : 26,
+                spreadRadius: brightness == Brightness.dark ? 0 : 1,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: ClipPath(
+            clipper: ShapeBorderClipper(shape: shape),
+            child: BackdropFilter(
+              key: const ValueKey('mobile-header-button-backdrop'),
+              filter: _NotesChromeGlass.filter(brightness),
+              child: Material(
+                color: Colors.transparent,
+                shape: shape,
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onTap,
+                  child: surface,
+                ),
+              ),
             ),
           ),
         ),
@@ -1323,6 +1944,8 @@ class _NoteListPane extends ConsumerWidget {
     required this.dragPointer,
     this.draggedId,
     this.selectedNoteId,
+    this.controller,
+    this.topPadding = 8,
     this.bottomPadding = 24,
   });
 
@@ -1338,6 +1961,8 @@ class _NoteListPane extends ConsumerWidget {
   final ValueListenable<Offset?> dragPointer;
   final String? draggedId;
   final String? selectedNoteId;
+  final ScrollController? controller;
+  final double topPadding;
   final double bottomPadding;
 
   @override
@@ -1360,7 +1985,8 @@ class _NoteListPane extends ConsumerWidget {
     final trailingIndex = notes.length - (draggedIndex >= 0 ? 1 : 0);
 
     return ListView.separated(
-      padding: EdgeInsets.fromLTRB(12, 8, 12, bottomPadding),
+      controller: controller,
+      padding: EdgeInsets.fromLTRB(12, topPadding, 12, bottomPadding),
       itemCount: notes.length + 1,
       separatorBuilder: (_, index) => const SizedBox(height: 6),
       itemBuilder: (context, index) {
@@ -1515,6 +2141,7 @@ class _DraggableNoteListEntry extends StatefulWidget {
 
 class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
   final _entryKey = GlobalKey();
+  int? _hoverDropIndex;
 
   void _reportPointer(Offset position) {
     final notifier = widget.dragPointer;
@@ -1529,15 +2156,14 @@ class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
       onMove: (details) {
         final box = _entryKey.currentContext?.findRenderObject() as RenderBox?;
         if (box == null || !box.hasSize) return;
-        final pointer = widget.dragPointer.value ?? details.offset;
+        // Draggables use [pointerDragAnchorStrategy], so the target offset is
+        // the live pointer position and is available before onDragUpdate.
+        final pointer = details.offset;
         final local = box.globalToLocal(pointer);
-        // ignore: avoid_print
-        print('DBG onMove row=${widget.index} ins=${widget.insertionIndex} '
-            'local=${local.dy} h=${box.size.height} '
-            'ptr=${widget.dragPointer.value} off=${details.offset}');
         final nextIndex = local.dy < box.size.height / 2
             ? widget.insertionIndex
             : widget.insertionIndex + 1;
+        _hoverDropIndex = nextIndex;
         if (widget.dropIndex != nextIndex) {
           widget.onDropIndexChanged(nextIndex);
         }
@@ -1545,10 +2171,15 @@ class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
       onLeave: (_) {
         if (widget.dragging) widget.onDropIndexChanged(null);
       },
-      onAcceptWithDetails: (details) => widget.onCommitReorder(
-        details.data.localId,
-        widget.dropIndex ?? widget.insertionIndex,
-      ),
+      onAcceptWithDetails: (details) {
+        final targetIndex =
+            _hoverDropIndex ?? widget.dropIndex ?? widget.insertionIndex;
+        _hoverDropIndex = null;
+        widget.onCommitReorder(
+          details.data.localId,
+          targetIndex,
+        );
+      },
       builder: (context, _, __) => KeyedSubtree(
         key: _entryKey,
         child: _MeasuredNoteDraggable(
@@ -1812,24 +2443,34 @@ class _AnimatedCardGridState extends ConsumerState<_AnimatedCardGrid> {
   static const _motionCurve = Curves.easeOutCubic;
 
   final Map<String, double> _heights = {};
+  final Map<String, double> _pendingHeights = {};
   final _gridKey = GlobalKey();
   String? _activeDraggedId;
   int? _activeDropIndex;
   var _animatePositions = false;
+  var _heightUpdateScheduled = false;
 
   void _reportHeight(String noteId, Size size) {
-    final previous = _heights[noteId];
+    final previous = _pendingHeights[noteId] ?? _heights[noteId];
     if (!mounted ||
         (previous != null && (previous - size.height).abs() < 0.5)) {
       return;
     }
-    setState(() => _heights[noteId] = size.height);
-    if (!_animatePositions &&
-        widget.notes.every((note) => _heights.containsKey(note.localId))) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _animatePositions = true);
+    _pendingHeights[noteId] = size.height;
+    if (_heightUpdateScheduled) return;
+    _heightUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _heightUpdateScheduled = false;
+      if (!mounted || _pendingHeights.isEmpty) return;
+      setState(() {
+        _heights.addAll(_pendingHeights);
+        _pendingHeights.clear();
+        if (!_animatePositions &&
+            widget.notes.every((note) => _heights.containsKey(note.localId))) {
+          _animatePositions = true;
+        }
       });
-    }
+    });
   }
 
   @override
@@ -1990,25 +2631,39 @@ class _CardDropPlacementState extends ConsumerState<_CardDropPlacement> {
   @override
   Widget build(BuildContext context) {
     final note = widget.note;
-    final card = _KeepNoteCard(
-      note: note,
-      onTap: () => _openEditor(context, ref, note),
-      onTogglePin: () =>
-          ref.read(notesControllerProvider.notifier).togglePinned(note),
-      onInvite: () => _showInviteSheet(context, ref, note),
-      onReminder: () => _showReminderSheet(context, ref, note),
-      onArchive: () => ref
-          .read(notesControllerProvider.notifier)
-          .changeState(note, 'archived'),
-      onTrash: () => ref
-          .read(notesControllerProvider.notifier)
-          .changeState(note, 'trashed'),
-      onRestore: () => ref
-          .read(notesControllerProvider.notifier)
-          .changeState(note, 'active'),
-      onDeleteForever: () => ref
-          .read(notesControllerProvider.notifier)
-          .changeState(note, 'deleted'),
+    final card = RepaintBoundary(
+      child: _KeepNoteCard(
+        note: note,
+        onTap: () => _openEditor(context, ref, note),
+        onTogglePin: () =>
+            ref.read(notesControllerProvider.notifier).togglePinned(note),
+        onInvite: () => _showInviteSheet(context, ref, note),
+        onReminder: () => _showReminderSheet(context, ref, note),
+        onArchive: () => _changeNoteStateWithFeedback(
+          context: context,
+          ref: ref,
+          note: note,
+          nextState: 'archived',
+        ),
+        onTrash: () => _changeNoteStateWithFeedback(
+          context: context,
+          ref: ref,
+          note: note,
+          nextState: 'trashed',
+        ),
+        onRestore: () => _changeNoteStateWithFeedback(
+          context: context,
+          ref: ref,
+          note: note,
+          nextState: 'active',
+        ),
+        onDeleteForever: () => _changeNoteStateWithFeedback(
+          context: context,
+          ref: ref,
+          note: note,
+          nextState: 'deleted',
+        ),
+      ),
     );
     return _MeasuredNoteDraggable(
       key: ValueKey('compact-note-drag-${note.localId}'),
@@ -2249,20 +2904,77 @@ class _MobileBottomNav extends ConsumerStatefulWidget {
   ConsumerState<_MobileBottomNav> createState() => _MobileBottomNavState();
 }
 
-class _MobileBottomNavState extends ConsumerState<_MobileBottomNav> {
+class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
+    with TickerProviderStateMixin {
   /// Concentric geometry: outer radius == item radius + inset, so every
   /// corner in the bar reads as part of one shape.
-  static const double _itemSize = 52;
-  static const double _gap = 6;
+  static const double _itemSize = 50;
+  static const double _gap = 7;
   static const double _inset = 6;
   static const double _barRadius = _itemSize / 2 + _inset;
+  static const double _iosItemSize = 54;
+  static const double _iosGap = 7;
+  static const double _trashDropSize = 88;
+  static const double _createMenuContentHeight = 76;
+  static const double _createMenuSpacing = 7;
+  static const double _createMenuInset = 8;
+  static const double _expandedDrawerTopRadius = 32;
+  static const double _createActionRadius =
+      _expandedDrawerTopRadius - _createMenuInset;
+  static const Color _lightSelectionOverlay = Color(0x12000000);
+  static const Color _darkSelectionOverlay = Color(0x24ffffff);
 
   var _expanded = false;
-  double? _pressedAnchorX;
+  var _searching = false;
+  static const double? _pressedAnchorX = null;
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  late final AnimationController _createMenuController;
+  late final AnimationController _trashMorphController;
+  PlainNote? _morphingDraggedNote;
 
   /// Slot the liquid indicator animates from, so it can stretch mid-flight.
   double _indicatorFrom = 0;
   int _indicatorTarget = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _createMenuController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 230),
+      reverseDuration: const Duration(milliseconds: 180),
+    );
+    final draggedNote = ref.read(_draggedNoteProvider);
+    _morphingDraggedNote = draggedNote;
+    _trashMorphController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+      reverseDuration: const Duration(milliseconds: 320),
+      value: draggedNote != null && draggedNote.state != 'trashed' ? 1 : 0,
+    );
+    ref.listenManual<PlainNote?>(_draggedNoteProvider, (previous, next) {
+      final draggingToTrash = next != null && next.state != 'trashed';
+      if (draggingToTrash) {
+        if (_expanded) {
+          _expanded = false;
+          _createMenuController.reverse();
+        }
+        _morphingDraggedNote = next;
+        _trashMorphController.forward();
+      } else {
+        unawaited(_reverseTrashMorph());
+      }
+    });
+  }
+
+  Future<void> _reverseTrashMorph() async {
+    await _trashMorphController.reverse();
+    if (!mounted) return;
+    final draggedNote = ref.read(_draggedNoteProvider);
+    if (draggedNote != null && draggedNote.state != 'trashed') return;
+    setState(() => _morphingDraggedNote = null);
+  }
 
   static int _slotForBucket(String bucket) => switch (bucket) {
         'reminders' => 1,
@@ -2279,25 +2991,65 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav> {
       });
     }
     _collapse();
+    _closeSearch();
     ref.read(noteBucketProvider.notifier).state = bucket;
   }
 
   void _toggleCreate() {
-    setState(() => _expanded = !_expanded);
+    _setCreateMenuExpanded(!_expanded);
   }
 
-  void _setPressedAnchor(double? anchorX) {
-    if (_pressedAnchorX == anchorX) return;
-    setState(() => _pressedAnchorX = anchorX);
+  void _setPressedAnchor(double? _) {
+    // Individual buttons handle their own press feedback. Keeping the full
+    // navigation surface static avoids recompositing it for every pointer tap.
   }
 
   void _collapse() {
-    if (_expanded) setState(() => _expanded = false);
+    _setCreateMenuExpanded(false);
+  }
+
+  void _setCreateMenuExpanded(bool expanded) {
+    if (_expanded == expanded) return;
+    setState(() => _expanded = expanded);
+    if (expanded) {
+      _createMenuController.forward();
+    } else {
+      _createMenuController.reverse();
+    }
+  }
+
+  void _openSearch() {
+    if (_searching) return;
+    setState(() {
+      _expanded = false;
+      _searching = true;
+    });
+    _createMenuController.reverse();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _searchFocusNode.requestFocus();
+    });
+  }
+
+  void _closeSearch() {
+    if (!_searching && _searchController.text.isEmpty) return;
+    _searchFocusNode.unfocus();
+    _searchController.clear();
+    ref.read(noteSearchProvider.notifier).state = '';
+    if (_searching) setState(() => _searching = false);
+  }
+
+  @override
+  void dispose() {
+    _createMenuController.dispose();
+    _trashMorphController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _runCreateAction(_MobileCreateAction action) async {
-    _collapse();
-    await Future<void>.delayed(const Duration(milliseconds: 120));
+    if (_expanded) setState(() => _expanded = false);
+    await _createMenuController.reverse();
     if (!mounted) return;
     switch (action) {
       case _MobileCreateAction.note:
@@ -2313,251 +3065,1400 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav> {
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     final bucket = ref.watch(noteBucketProvider);
+    final draggedNote = ref.watch(_draggedNoteProvider);
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
+    final draggingToTrash =
+        draggedNote != null && draggedNote.state != 'trashed';
     final targetRadius = _barRadius;
+    final navItemSize = _usesIosNativeControls ? _iosItemSize : _itemSize;
+    final navGap = _usesIosNativeControls ? _iosGap : _gap;
+    final collapsedNavSurfaceHeight =
+        _usesIosNativeControls ? _iosItemSize + 3 : _itemSize + _inset * 2;
+    final expandedNavSurfaceHeight = collapsedNavSurfaceHeight +
+        _createMenuSpacing +
+        _createMenuContentHeight;
+    final popoutHeight =
+        draggingToTrash ? _trashDropSize : expandedNavSurfaceHeight;
     final indicatorSlot = _slotForBucket(bucket);
     if (indicatorSlot != _indicatorTarget) {
       _indicatorFrom = _indicatorTarget.toDouble();
       _indicatorTarget = indicatorSlot;
     }
-    return SafeArea(
-      top: false,
-      minimum: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-      child: Center(
-        heightFactor: 1,
-        child: AnimatedSize(
-          duration: const Duration(milliseconds: 360),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.bottomCenter,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(end: _pressedAnchorX == null ? 0 : 1),
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOutCubic,
-            builder: (context, press, child) => Transform.scale(
-              alignment: Alignment(_pressedAnchorX ?? 0, 1),
-              scaleX: 1 + press * 0.018,
-              scaleY: 1 - press * 0.012,
-              child: child,
-            ),
-            child: TweenAnimationBuilder<double>(
-              tween: Tween(end: targetRadius),
-              duration: const Duration(milliseconds: 360),
-              curve: Curves.easeOutQuart,
-              builder: (context, radiusValue, child) {
-                final radius = BorderRadius.circular(radiusValue);
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 360),
-                  curve: Curves.easeOutQuart,
-                  width: _itemSize * 4 + _gap * 3 + _inset * 2,
-                  decoration: BoxDecoration(
-                    borderRadius: radius,
-                    boxShadow: [
-                      BoxShadow(
-                        color:
-                            Colors.black.withValues(alpha: dark ? 0.24 : 0.06),
-                        blurRadius: _expanded ? 30 : 16,
-                        offset: const Offset(0, 12),
-                      ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: radius,
-                    child: child,
-                  ),
-                );
-              },
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                child: Material(
-                  key: const ValueKey('mobile-bottom-nav-pill'),
-                  color: dark
-                      ? Colors.white.withValues(alpha: 0.10)
-                      : Colors.white.withValues(alpha: 0.62),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(targetRadius),
-                  ),
-                  clipBehavior: Clip.none,
-                  child: Padding(
-                    padding: const EdgeInsets.all(_inset),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ClipRect(
-                          child: AnimatedAlign(
-                            duration: const Duration(milliseconds: 340),
-                            curve: Curves.easeOutQuart,
-                            alignment: Alignment.topCenter,
-                            heightFactor: _expanded ? 1 : 0,
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 220),
-                              curve: Curves.easeOutCubic,
-                              opacity: _expanded ? 1 : 0,
-                              child: IgnorePointer(
-                                ignoring: !_expanded,
-                                child: AnimatedSlide(
-                                  duration: const Duration(milliseconds: 340),
-                                  curve: Curves.easeOutQuart,
-                                  offset: _expanded
-                                      ? Offset.zero
-                                      : const Offset(0, .16),
-                                  child: Padding(
-                                    padding:
-                                        const EdgeInsets.fromLTRB(0, 0, 0, 8),
-                                    child: Column(
-                                      children: [
-                                        _MobileCreateInlineAction(
-                                          key: const ValueKey(
-                                            'mobile-create-note-action',
-                                          ),
-                                          icon: AppIcons.filePlus2,
-                                          label: l10n.t('newNote'),
-                                          onTap: () => unawaited(
+    return AnimatedBuilder(
+      animation: _trashMorphController,
+      builder: (context, _) {
+        final trashMorph = Curves.easeInOutCubic.transform(
+          _trashMorphController.value,
+        );
+        final collapsedViewportHeight =
+            _usesIosNativeControls ? _iosItemSize + 3 : _itemSize;
+        final navViewportHeight = lerpDouble(
+          collapsedViewportHeight,
+          _trashDropSize - _inset * 2,
+          trashMorph,
+        )!;
+        return SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          child: Transform.translate(
+            key: const ValueKey('mobile-nav-trash-lift'),
+            offset: Offset(0, -12 * trashMorph),
+            child: Center(
+              heightFactor: 1,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(end: _pressedAnchorX == null ? 0 : 1),
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOutCubic,
+                builder: (context, press, child) => Transform.scale(
+                  alignment: Alignment(_pressedAnchorX ?? 0, 1),
+                  scaleX: 1 + press * 0.018,
+                  scaleY: 1 - press * 0.012,
+                  child: child,
+                ),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOutCubic,
+                  height: popoutHeight,
+                  width: draggingToTrash
+                      ? _trashDropSize
+                      : _searching
+                          ? (MediaQuery.sizeOf(context).width - 32).clamp(
+                              navItemSize * 5 + navGap * 4 + _inset * 2,
+                              420.0,
+                            )
+                          : navItemSize * 5 + navGap * 4 + _inset * 2,
+                  child: KeyedSubtree(
+                    key: const ValueKey('mobile-create-popout-layout'),
+                    child: RepaintBoundary(
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          _MobileNavDrawerSurface(
+                            animation: _createMenuController,
+                            morphProgress: trashMorph,
+                            collapsedHeight: collapsedNavSurfaceHeight,
+                            expandedHeight: expandedNavSurfaceHeight,
+                            trashHeight: _trashDropSize,
+                            collapsedRadius: targetRadius,
+                            trashRadius: _trashDropSize / 2,
+                          ),
+                          if (!draggingToTrash)
+                            Positioned(
+                              top: 0,
+                              left: _createMenuInset,
+                              right: _createMenuInset,
+                              height: _createMenuContentHeight,
+                              child: ClipRect(
+                                key: const ValueKey(
+                                  'mobile-create-actions-clip',
+                                ),
+                                child: IgnorePointer(
+                                  ignoring: !_expanded,
+                                  child: _usesIosNativeControls
+                                      ? _IosNativeCreateActions(
+                                          animation: _createMenuController,
+                                          noteLabel: l10n.t('newNote'),
+                                          reminderLabel: l10n.t('reminder'),
+                                          listLabel: l10n.t('newChecklist'),
+                                          onNote: () => unawaited(
                                             _runCreateAction(
-                                              _MobileCreateAction.note,
-                                            ),
+                                                _MobileCreateAction.note),
                                           ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        _MobileCreateInlineAction(
-                                          key: const ValueKey(
-                                            'mobile-create-reminder-action',
-                                          ),
-                                          icon: AppIcons.bellPlus,
-                                          label: l10n.t('setReminder'),
-                                          onTap: () => unawaited(
+                                          onReminder: () => unawaited(
                                             _runCreateAction(
                                               _MobileCreateAction.reminder,
                                             ),
                                           ),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        _MobileCreateInlineAction(
-                                          key: const ValueKey(
-                                            'mobile-create-list-action',
-                                          ),
-                                          icon: AppIcons.listChecks,
-                                          label: l10n.t('newChecklist'),
-                                          onTap: () => unawaited(
+                                          onList: () => unawaited(
                                             _runCreateAction(
-                                              _MobileCreateAction.list,
-                                            ),
+                                                _MobileCreateAction.list),
+                                          ),
+                                        )
+                                      : Padding(
+                                          padding: const EdgeInsets.only(
+                                            top: _createMenuInset,
+                                          ),
+                                          child: _CreateActionsReveal(
+                                            animation: _createMenuController,
+                                            children: [
+                                              _MobileCreateDrawerAction(
+                                                key: const ValueKey(
+                                                  'mobile-create-note-action',
+                                                ),
+                                                icon: AppIcons.filePlus2,
+                                                label: l10n.t('newNote'),
+                                                semanticLabel:
+                                                    l10n.t('newNote'),
+                                                onTap: () => unawaited(
+                                                  _runCreateAction(
+                                                    _MobileCreateAction.note,
+                                                  ),
+                                                ),
+                                              ),
+                                              _MobileCreateDrawerAction(
+                                                key: const ValueKey(
+                                                  'mobile-create-reminder-action',
+                                                ),
+                                                icon: AppIcons.bellPlus,
+                                                label: l10n.t('reminder'),
+                                                semanticLabel:
+                                                    l10n.t('setReminder'),
+                                                onTap: () => unawaited(
+                                                  _runCreateAction(
+                                                    _MobileCreateAction
+                                                        .reminder,
+                                                  ),
+                                                ),
+                                              ),
+                                              _MobileCreateDrawerAction(
+                                                key: const ValueKey(
+                                                  'mobile-create-list-action',
+                                                ),
+                                                icon: AppIcons.listChecks,
+                                                label: l10n.t('newChecklist'),
+                                                semanticLabel:
+                                                    l10n.t('newChecklist'),
+                                                onTap: () => unawaited(
+                                                  _runCreateAction(
+                                                    _MobileCreateAction.list,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
-                                      ],
+                                ),
+                              ),
+                            ),
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: _MobileNavGlassSurface(
+                              child: SizedBox(
+                                key: const ValueKey(
+                                  'mobile-nav-morphing-viewport',
+                                ),
+                                height: navViewportHeight,
+                                child: AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 220),
+                                  reverseDuration:
+                                      const Duration(milliseconds: 240),
+                                  switchInCurve: Curves.easeOutCubic,
+                                  switchOutCurve: Curves.easeInCubic,
+                                  transitionBuilder: (child, animation) =>
+                                      FadeTransition(
+                                    opacity: animation,
+                                    child: ScaleTransition(
+                                      scale: Tween<double>(begin: 0.96, end: 1)
+                                          .animate(animation),
+                                      child: child,
                                     ),
                                   ),
+                                  child: _searching && !draggingToTrash
+                                      ? KeyedSubtree(
+                                          key: const ValueKey(
+                                            'mobile-nav-search-mode',
+                                          ),
+                                          child: _MobileNavSearchField(
+                                            controller: _searchController,
+                                            focusNode: _searchFocusNode,
+                                            hintText: l10n.t('searchNotes'),
+                                            onChanged: (value) => ref
+                                                .read(
+                                                    noteSearchProvider.notifier)
+                                                .state = value,
+                                            onClose: _closeSearch,
+                                          ),
+                                        )
+                                      : KeyedSubtree(
+                                          key: const ValueKey(
+                                            'mobile-nav-icons-mode',
+                                          ),
+                                          child: _usesIosNativeControls &&
+                                                  !draggingToTrash &&
+                                                  trashMorph == 0
+                                              ? _IosNativeNavButtonGroup(
+                                                  bucket: bucket,
+                                                  expanded: _expanded,
+                                                  foreground: scheme.onSurface,
+                                                  indicatorFrom: _indicatorFrom,
+                                                  indicatorTarget:
+                                                      _indicatorTarget,
+                                                  onNotes: () =>
+                                                      _selectBucket('active'),
+                                                  onReminders: () =>
+                                                      _selectBucket(
+                                                          'reminders'),
+                                                  onTrash: () =>
+                                                      _selectBucket('trashed'),
+                                                  onSearch: _openSearch,
+                                                  onCreate: _toggleCreate,
+                                                )
+                                              : _MobileNavMorphingIconGroup(
+                                                  bucket: bucket,
+                                                  draggedNote: draggedNote ??
+                                                      _morphingDraggedNote,
+                                                  morphProgress: trashMorph,
+                                                  dark: dark,
+                                                  indicatorFrom: _indicatorFrom,
+                                                  indicatorTarget:
+                                                      _indicatorTarget,
+                                                  notesTooltip: l10n.t('notes'),
+                                                  remindersTooltip:
+                                                      l10n.t('reminders'),
+                                                  trashTooltip: l10n.t('trash'),
+                                                  searchTooltip:
+                                                      l10n.t('searchNotes'),
+                                                  createExpanded: _expanded,
+                                                  onNotes: () =>
+                                                      _selectBucket('active'),
+                                                  onReminders: () =>
+                                                      _selectBucket(
+                                                          'reminders'),
+                                                  onTrash: () =>
+                                                      _selectBucket('trashed'),
+                                                  onSearch: _openSearch,
+                                                  onCreate: _toggleCreate,
+                                                  onPressChanged:
+                                                      _setPressedAnchor,
+                                                ),
+                                        ),
                                 ),
                               ),
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _MobileNavMorphingIconGroup extends StatelessWidget {
+  const _MobileNavMorphingIconGroup({
+    required this.bucket,
+    required this.draggedNote,
+    required this.morphProgress,
+    required this.dark,
+    required this.indicatorFrom,
+    required this.indicatorTarget,
+    required this.notesTooltip,
+    required this.remindersTooltip,
+    required this.trashTooltip,
+    required this.searchTooltip,
+    required this.createExpanded,
+    required this.onNotes,
+    required this.onReminders,
+    required this.onTrash,
+    required this.onSearch,
+    required this.onCreate,
+    required this.onPressChanged,
+  });
+
+  final String bucket;
+  final PlainNote? draggedNote;
+  final double morphProgress;
+  final bool dark;
+  final double indicatorFrom;
+  final int indicatorTarget;
+  final String notesTooltip;
+  final String remindersTooltip;
+  final String trashTooltip;
+  final String searchTooltip;
+  final bool createExpanded;
+  final VoidCallback onNotes;
+  final VoidCallback onReminders;
+  final VoidCallback onTrash;
+  final VoidCallback onSearch;
+  final VoidCallback onCreate;
+  final ValueChanged<double?> onPressChanged;
+
+  static const _slots = [-2.0, -1.0, 0.0, 1.0, 2.0];
+
+  @override
+  Widget build(BuildContext context) {
+    final width =
+        _MobileBottomNavState._itemSize * 5 + _MobileBottomNavState._gap * 4;
+    final morph = morphProgress.clamp(0.0, 1.0);
+    final sideMorph = Curves.easeOutCubic.transform(
+      (morph / 0.55).clamp(0.0, 1.0),
+    );
+    final sideFade = Curves.easeOutCubic.transform(
+      (morph / 0.20).clamp(0.0, 1.0),
+    );
+    final sideIconOpacity = 1 - sideFade;
+    final backedMorph = Curves.easeInOutCubic.transform(
+      (morph / 0.58).clamp(0.0, 1.0),
+    );
+    final backedFade = Curves.easeOutCubic.transform(
+      (morph / 0.24).clamp(0.0, 1.0),
+    );
+    final backedOpacity = 1 - backedFade;
+    final sideIconScale = 1 - sideMorph * 0.12;
+    final backedIconScale = 1 - backedMorph * 0.5;
+    final notesBacked = indicatorTarget == 0;
+    final remindersBacked = indicatorTarget == 1;
+    return OverflowBox(
+      alignment: Alignment.center,
+      minWidth: width,
+      maxWidth: width,
+      child: SizedBox(
+        width: width,
+        height: _MobileBottomNavState._itemSize,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            _NavSelectionIndicator(
+              dark: dark,
+              indicatorFrom: indicatorFrom,
+              indicatorTarget: indicatorTarget,
+              groupWidth: width,
+              morphProgress: backedMorph,
+              opacity: backedOpacity,
+            ),
+            _MorphingNavSlot(
+              key: const ValueKey('mobile-nav-notes-morph-slot'),
+              slot: _slots[0],
+              morph: notesBacked ? backedMorph : sideMorph,
+              opacity: notesBacked ? backedOpacity : sideIconOpacity,
+              scale: notesBacked ? backedIconScale : sideIconScale,
+              scaleKey: const ValueKey('mobile-nav-notes-morph-scale'),
+              child: _MobileNavIcon(
+                key: const ValueKey('mobile-nav-notes'),
+                icon: AppIcons.notebookText,
+                tooltip: notesTooltip,
+                size: _MobileBottomNavState._itemSize,
+                selected: bucket == 'active' || bucket == 'archived',
+                onPressChanged: (pressed) =>
+                    onPressChanged(pressed ? -0.72 : null),
+                onPressed: onNotes,
+              ),
+            ),
+            _MorphingNavSlot(
+              key: const ValueKey('mobile-nav-reminders-morph-slot'),
+              slot: _slots[1],
+              morph: remindersBacked ? backedMorph : sideMorph,
+              opacity: remindersBacked ? backedOpacity : sideIconOpacity,
+              scale: remindersBacked ? backedIconScale : sideIconScale,
+              scaleKey: const ValueKey('mobile-nav-reminders-morph-scale'),
+              child: _MobileNavIcon(
+                key: const ValueKey('mobile-nav-reminders'),
+                icon: AppIcons.bell,
+                tooltip: remindersTooltip,
+                size: _MobileBottomNavState._itemSize,
+                selected: bucket == 'reminders',
+                onPressChanged: (pressed) =>
+                    onPressChanged(pressed ? -0.24 : null),
+                onPressed: onReminders,
+              ),
+            ),
+            _MorphingNavSlot(
+              key: const ValueKey('mobile-nav-search-morph-slot'),
+              slot: _slots[3],
+              morph: sideMorph,
+              opacity: sideIconOpacity,
+              scale: sideIconScale,
+              scaleKey: const ValueKey('mobile-nav-search-morph-scale'),
+              child: _MobileNavIcon(
+                key: const ValueKey('mobile-nav-search'),
+                icon: AppIcons.search,
+                tooltip: searchTooltip,
+                size: _MobileBottomNavState._itemSize,
+                selected: false,
+                onPressChanged: (_) {},
+                onPressed: onSearch,
+              ),
+            ),
+            _MorphingNavSlot(
+              key: const ValueKey('mobile-nav-create-morph-slot'),
+              slot: _slots[4],
+              morph: backedMorph,
+              opacity: backedOpacity,
+              scale: backedIconScale,
+              scaleKey: const ValueKey('mobile-nav-create-morph-scale'),
+              child: _MobileCreateToggleButton(
+                expanded: createExpanded,
+                dark: dark,
+                size: _MobileBottomNavState._itemSize,
+                onPressChanged: (pressed) =>
+                    onPressChanged(pressed ? 0.72 : null),
+                onPressed: onCreate,
+              ),
+            ),
+            _MorphingNavSlot(
+              key: const ValueKey('mobile-nav-trash-morph-slot'),
+              slot: _slots[2],
+              morph: morph,
+              child: draggedNote == null
+                  ? _MobileNavIcon(
+                      key: const ValueKey('mobile-nav-trash'),
+                      icon: AppIcons.trash2,
+                      tooltip: trashTooltip,
+                      size: _MobileBottomNavState._itemSize,
+                      selected: bucket == 'trashed',
+                      onPressChanged: (pressed) =>
+                          onPressChanged(pressed ? 0.24 : null),
+                      onPressed: onTrash,
+                    )
+                  : _MobileNavTrashDropButton(
+                      key: const ValueKey('mobile-nav-trash-drop-target'),
+                      note: draggedNote!,
+                      morphProgress: morph,
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MorphingNavSlot extends StatelessWidget {
+  const _MorphingNavSlot({
+    super.key,
+    required this.slot,
+    required this.morph,
+    required this.child,
+    this.opacity = 1,
+    this.scale = 1,
+    this.scaleKey,
+  });
+
+  final double slot;
+  final double morph;
+  final Widget child;
+  final double opacity;
+  final double scale;
+  final Key? scaleKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final slotExtent =
+        _MobileBottomNavState._itemSize + _MobileBottomNavState._gap;
+    final x = slot * slotExtent * (1 - morph);
+    final y = 10 * morph * slot.abs();
+    final easedOpacity = opacity.clamp(0.0, 1.0);
+    return Transform.translate(
+      offset: Offset(x, y),
+      child: Opacity(
+        opacity: easedOpacity,
+        child: Transform.scale(key: scaleKey, scale: scale, child: child),
+      ),
+    );
+  }
+}
+
+class _NavSelectionIndicator extends StatelessWidget {
+  const _NavSelectionIndicator({
+    required this.dark,
+    required this.indicatorFrom,
+    required this.indicatorTarget,
+    required this.groupWidth,
+    required this.morphProgress,
+    required this.opacity,
+  });
+
+  final bool dark;
+  final double indicatorFrom;
+  final int indicatorTarget;
+  final double groupWidth;
+  final double morphProgress;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: indicatorTarget.toDouble()),
+      duration: const Duration(milliseconds: 480),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        final span = (indicatorTarget - indicatorFrom).abs();
+        final progress = span == 0
+            ? 1.0
+            : ((value - indicatorFrom).abs() / span).clamp(0.0, 1.0);
+        final bell = math.sin(math.pi * progress);
+        final stretch = 1 + bell * 0.42;
+        final squash = 1 - bell * 0.13;
+        final morph = morphProgress.clamp(0.0, 1.0);
+        final morphScale = 1 - morph * 0.5;
+        final width = _MobileBottomNavState._itemSize * stretch * morphScale;
+        final height = _MobileBottomNavState._itemSize * squash * morphScale;
+        final slotExtent =
+            _MobileBottomNavState._itemSize + _MobileBottomNavState._gap;
+        final slotCenter =
+            value * slotExtent + _MobileBottomNavState._itemSize / 2;
+        final centerX = lerpDouble(slotCenter, groupWidth / 2, morph)!;
+        final distanceFromCenter = (value - 2).abs();
+        final centerY = _MobileBottomNavState._itemSize / 2 +
+            10 * morph * distanceFromCenter;
+        return Positioned(
+          key: const ValueKey('mobile-nav-selection-morph'),
+          left: centerX - width / 2,
+          top: centerY - height / 2,
+          width: width,
+          height: height,
+          child: Opacity(
+            opacity: opacity.clamp(0.0, 1.0),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: dark
+                    ? _MobileBottomNavState._darkSelectionOverlay
+                    : _MobileBottomNavState._lightSelectionOverlay,
+                borderRadius:
+                    BorderRadius.circular(_MobileBottomNavState._itemSize / 2),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _IosNativeNavButtonGroup extends StatelessWidget {
+  const _IosNativeNavButtonGroup({
+    required this.bucket,
+    required this.expanded,
+    required this.foreground,
+    required this.indicatorFrom,
+    required this.indicatorTarget,
+    required this.onNotes,
+    required this.onReminders,
+    required this.onTrash,
+    required this.onSearch,
+    required this.onCreate,
+  });
+
+  final String bucket;
+  final bool expanded;
+  final Color foreground;
+  final double indicatorFrom;
+  final int indicatorTarget;
+  final VoidCallback onNotes;
+  final VoidCallback onReminders;
+  final VoidCallback onTrash;
+  final VoidCallback onSearch;
+  final VoidCallback onCreate;
+
+  Widget _button({
+    required String symbol,
+    required String effectId,
+    required VoidCallback onPressed,
+    bool prominent = false,
+    Color? prominentFill,
+    Color? prominentForeground,
+  }) {
+    return SizedBox.square(
+      key: ValueKey(effectId),
+      dimension: _MobileBottomNavState._iosItemSize,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (prominent)
+            IgnorePointer(
+              child: LiquidGlassContainer(
+                key: ValueKey('$effectId-glass'),
+                config: LiquidGlassConfig(
+                  effect: CNGlassEffect.regular,
+                  shape: CNGlassEffectShape.circle,
+                  tint: prominentFill,
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          CNButton.icon(
+            icon: CNSymbol(
+              symbol,
+              size: 18,
+              mode: CNSymbolRenderingMode.monochrome,
+            ),
+            onPressed: onPressed,
+            // Keep every tab symbol neutral. Selection is communicated by the
+            // moving native glass lens, while the create control keeps a
+            // deliberately inverted neutral symbol.
+            tint: prominent ? prominentForeground : foreground,
+            config: const CNButtonConfig(
+              width: _MobileBottomNavState._iosItemSize,
+              minHeight: _MobileBottomNavState._iosItemSize,
+              padding: EdgeInsets.all(18),
+              style: CNButtonStyle.plain,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final itemSize = _MobileBottomNavState._iosItemSize;
+    final gap = _MobileBottomNavState._iosGap;
+    final slotExtent = itemSize + gap;
+    return SizedBox(
+      key: const ValueKey('ios-native-bottom-navigation'),
+      height: itemSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween(
+              begin: indicatorFrom,
+              end: indicatorTarget.toDouble(),
+            ),
+            duration: const Duration(milliseconds: 460),
+            curve: Curves.easeOutCubic,
+            child: LiquidGlassContainer(
+              key: const ValueKey('ios-native-nav-selection'),
+              config: LiquidGlassConfig(
+                effect: CNGlassEffect.regular,
+                shape: CNGlassEffectShape.capsule,
+                tint: dark
+                    ? Colors.white.withValues(alpha: 0.09)
+                    : Colors.black.withValues(alpha: 0.055),
+              ),
+              child: const SizedBox.expand(),
+            ),
+            builder: (context, value, child) {
+              final span = (indicatorTarget - indicatorFrom).abs();
+              final progress = span == 0
+                  ? 1.0
+                  : ((value - indicatorFrom).abs() / span).clamp(0.0, 1.0);
+              final bell = math.sin(math.pi * progress);
+              final width = itemSize * (1 + bell * 0.34);
+              final height = itemSize * (1 - bell * 0.08);
+              return Positioned(
+                left: value * slotExtent - (width - itemSize) / 2,
+                top: (itemSize - height) / 2,
+                width: width,
+                height: height,
+                child: child!,
+              );
+            },
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _button(
+                symbol: 'note.text',
+                effectId: 'ios-native-nav-notes',
+                onPressed: onNotes,
+              ),
+              SizedBox(width: gap),
+              _button(
+                symbol: 'bell',
+                effectId: 'ios-native-nav-reminders',
+                onPressed: onReminders,
+              ),
+              SizedBox(width: gap),
+              _button(
+                symbol: 'trash',
+                effectId: 'ios-native-nav-trash',
+                onPressed: onTrash,
+              ),
+              SizedBox(width: gap),
+              _button(
+                symbol: 'magnifyingglass',
+                effectId: 'ios-native-nav-search',
+                onPressed: onSearch,
+              ),
+              SizedBox(width: gap),
+              _button(
+                symbol: expanded ? 'xmark' : 'plus',
+                effectId: 'ios-native-nav-create',
+                prominent: true,
+                prominentFill: dark
+                    ? Colors.white.withValues(alpha: 0.72)
+                    : const Color(0xd917201f),
+                prominentForeground:
+                    dark ? const Color(0xff17201f) : Colors.white,
+                onPressed: onCreate,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MobileNavTrashDropButton extends ConsumerStatefulWidget {
+  const _MobileNavTrashDropButton({
+    super.key,
+    required this.note,
+    required this.morphProgress,
+  });
+
+  final PlainNote note;
+  final double morphProgress;
+
+  @override
+  ConsumerState<_MobileNavTrashDropButton> createState() =>
+      _MobileNavTrashDropButtonState();
+}
+
+class _MobileNavTrashDropButtonState
+    extends ConsumerState<_MobileNavTrashDropButton> {
+  var _hovered = false;
+
+  void _setHovered(bool hovered) {
+    if (_hovered == hovered) return;
+    setState(() => _hovered = hovered);
+    ref.read(_dragTrashHoverProvider.notifier).state = hovered;
+  }
+
+  void _accept(PlainNote note) {
+    ref.read(_draggedNoteProvider.notifier).state = null;
+    ref.read(_dragTrashHoverProvider.notifier).state = false;
+    _changeNoteStateWithFeedback(
+      context: context,
+      ref: ref,
+      note: note,
+      nextState: 'trashed',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = ref.watch(l10nProvider);
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final navForeground = dark
+        ? Colors.white.withValues(alpha: 0.7)
+        : const Color(0xff171c19).withValues(alpha: 0.72);
+    final morphForeground = Color.lerp(
+      navForeground,
+      scheme.onSurface,
+      widget.morphProgress,
+    )!;
+    return DragTarget<PlainNote>(
+      onWillAcceptWithDetails: (details) {
+        _setHovered(true);
+        return details.data.localId == widget.note.localId;
+      },
+      onLeave: (_) => _setHovered(false),
+      onAcceptWithDetails: (details) {
+        _setHovered(false);
+        _accept(details.data);
+      },
+      builder: (context, candidateData, rejectedData) {
+        final active = _hovered || candidateData.isNotEmpty;
+        return Tooltip(
+          message: l10n.t('moveToTrash'),
+          child: Semantics(
+            label: l10n.t('moveToTrash'),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: active ? 1 : 0),
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, child) {
+                final glow = Curves.easeOutCubic.transform(value);
+                final settle = math.sin(glow * math.pi);
+                return Transform.scale(
+                  scaleX: 1 + glow * 0.012 + settle * 0.006,
+                  scaleY: 1 + glow * 0.008 - settle * 0.004,
+                  child: Transform.translate(
+                    offset: Offset(0, -1 * glow),
+                    child: SizedBox.square(
+                      dimension: _MobileBottomNavState._trashDropSize -
+                          _MobileBottomNavState._inset * 2,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color:
+                                  scheme.error.withValues(alpha: 0.18 * glow),
+                              blurRadius: 20 + 9 * glow,
+                              spreadRadius: 1 + glow,
+                            ),
+                          ],
                         ),
-                        SizedBox(
-                          height: _itemSize,
-                          child: Stack(
-                            children: [
-                              // Liquid indicator: stretches while travelling
-                              // between slots, then settles.
-                              TweenAnimationBuilder<double>(
-                                tween: Tween(
-                                  end: _indicatorTarget.toDouble(),
-                                ),
-                                duration: const Duration(milliseconds: 480),
-                                curve: Curves.easeOutCubic,
-                                builder: (context, value, child) {
-                                  final span =
-                                      (_indicatorTarget - _indicatorFrom).abs();
-                                  final progress = span == 0
-                                      ? 1.0
-                                      : ((value - _indicatorFrom).abs() / span)
-                                          .clamp(0.0, 1.0);
-                                  final bell = math.sin(math.pi * progress);
-                                  final stretch = 1 + bell * 0.42;
-                                  final squash = 1 - bell * 0.13;
-                                  final width = _itemSize * stretch;
-                                  final height = _itemSize * squash;
-                                  return Positioned(
-                                    left: value * (_itemSize + _gap) -
-                                        (width - _itemSize) / 2,
-                                    top: (_itemSize - height) / 2,
-                                    width: width,
-                                    height: height,
-                                    child: DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        color: dark
-                                            ? Colors.white
-                                                .withValues(alpha: 0.14)
-                                            : Colors.black
-                                                .withValues(alpha: 0.07),
-                                        borderRadius: BorderRadius.circular(
-                                          _itemSize / 2,
+                        child: Center(
+                          child: Transform.scale(
+                            key: const ValueKey(
+                              'mobile-nav-trash-icon-scale',
+                            ),
+                            scale: 1 + widget.morphProgress * 0.65,
+                            child: Icon(
+                              AppIcons.trash2,
+                              key: const ValueKey(
+                                'mobile-nav-trash-icon-color',
+                              ),
+                              size: 20,
+                              color: Color.lerp(
+                                morphForeground,
+                                scheme.error,
+                                glow,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _IosNativeCreateActions extends StatelessWidget {
+  const _IosNativeCreateActions({
+    required this.animation,
+    required this.noteLabel,
+    required this.reminderLabel,
+    required this.listLabel,
+    required this.onNote,
+    required this.onReminder,
+    required this.onList,
+  });
+
+  final Animation<double> animation;
+  final String noteLabel;
+  final String reminderLabel;
+  final String listLabel;
+  final VoidCallback onNote;
+  final VoidCallback onReminder;
+  final VoidCallback onList;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final foreground = theme.colorScheme.onSurface;
+    final dark = theme.brightness == Brightness.dark;
+    return Padding(
+      padding:
+          const EdgeInsets.only(top: _MobileBottomNavState._createMenuInset),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemWidth = (constraints.maxWidth - 12) / 3;
+          return AnimatedBuilder(
+            animation: animation,
+            builder: (context, child) {
+              final value = animation.value;
+              final visibleCount = value < 0.60
+                  ? 0
+                  : value < 0.72
+                      ? 1
+                      : value < 0.84
+                          ? 2
+                          : 3;
+              if (visibleCount == 0) return const SizedBox.expand();
+              final actions = <({
+                String label,
+                String symbol,
+                String effectId,
+                VoidCallback onPressed,
+              })>[
+                (
+                  label: noteLabel,
+                  symbol: 'doc.badge.plus',
+                  effectId: 'notes-create-note',
+                  onPressed: onNote,
+                ),
+                (
+                  label: reminderLabel,
+                  symbol: 'bell.badge',
+                  effectId: 'notes-create-reminder',
+                  onPressed: onReminder,
+                ),
+                (
+                  label: listLabel,
+                  symbol: 'checklist',
+                  effectId: 'notes-create-list',
+                  onPressed: onList,
+                ),
+              ];
+              return Row(
+                key: const ValueKey('ios-native-create-actions'),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (var index = 0; index < actions.length; index++) ...[
+                    if (index > 0) const SizedBox(width: 6),
+                    Expanded(
+                      child: index < visibleCount
+                          ? SizedBox(
+                              height: 64,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  IgnorePointer(
+                                    child: LiquidGlassContainer(
+                                      key: ValueKey(
+                                        'ios-native-${actions[index].effectId}-glass',
+                                      ),
+                                      config: LiquidGlassConfig(
+                                        effect: CNGlassEffect.regular,
+                                        shape: CNGlassEffectShape.rect,
+                                        cornerRadius: _MobileBottomNavState
+                                            ._createActionRadius,
+                                        tint: Colors.white.withValues(
+                                          alpha: dark ? 0.045 : 0.10,
                                         ),
                                       ),
+                                      child: const SizedBox.expand(),
                                     ),
-                                  );
-                                },
-                              ),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _MobileNavIcon(
-                                    key: const ValueKey('mobile-nav-notes'),
-                                    icon: AppIcons.notebookText,
-                                    tooltip: l10n.t('notes'),
-                                    size: _itemSize,
-                                    selected: bucket == 'active' ||
-                                        bucket == 'archived',
-                                    accent: scheme.primary,
-                                    onPressChanged: (pressed) =>
-                                        _setPressedAnchor(
-                                            pressed ? -0.72 : null),
-                                    onPressed: () => _selectBucket('active'),
                                   ),
-                                  const SizedBox(width: _gap),
-                                  _MobileNavIcon(
-                                    key: const ValueKey('mobile-nav-reminders'),
-                                    icon: AppIcons.bell,
-                                    tooltip: l10n.t('reminders'),
-                                    size: _itemSize,
-                                    selected: bucket == 'reminders',
-                                    accent: scheme.primary,
-                                    onPressChanged: (pressed) =>
-                                        _setPressedAnchor(
-                                            pressed ? -0.24 : null),
-                                    onPressed: () => _selectBucket('reminders'),
-                                  ),
-                                  const SizedBox(width: _gap),
-                                  _MobileNavIcon(
-                                    key: const ValueKey('mobile-nav-trash'),
-                                    icon: AppIcons.trash2,
-                                    tooltip: l10n.t('trash'),
-                                    size: _itemSize,
-                                    selected: bucket == 'trashed',
-                                    accent: scheme.primary,
-                                    onPressChanged: (pressed) =>
-                                        _setPressedAnchor(
-                                            pressed ? 0.24 : null),
-                                    onPressed: () => _selectBucket('trashed'),
-                                  ),
-                                  const SizedBox(width: _gap),
-                                  _MobileCreateToggleButton(
-                                    expanded: _expanded,
-                                    dark: dark,
-                                    size: _itemSize,
-                                    onPressChanged: (pressed) =>
-                                        _setPressedAnchor(
-                                            pressed ? 0.72 : null),
-                                    onPressed: _toggleCreate,
+                                  CNButton(
+                                    key: ValueKey(
+                                      'ios-native-${actions[index].effectId}',
+                                    ),
+                                    label: actions[index].label,
+                                    icon: CNSymbol(
+                                      actions[index].symbol,
+                                      size: 13,
+                                      mode: CNSymbolRenderingMode.monochrome,
+                                    ),
+                                    tint: foreground,
+                                    onPressed: actions[index].onPressed,
+                                    config: CNButtonConfig(
+                                      width: itemWidth,
+                                      minHeight: 64,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 7,
+                                        vertical: 8,
+                                      ),
+                                      borderRadius: _MobileBottomNavState
+                                          ._createActionRadius,
+                                      imagePadding: 4,
+                                      imagePlacement: CNImagePlacement.leading,
+                                      style: CNButtonStyle.plain,
+                                      maxLines: 1,
+                                      labelFontSize: 11.5,
+                                      labelFontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
-                        ),
-                      ],
+                            )
+                          : const SizedBox(height: 64),
+                    ),
+                  ],
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MobileNavDrawerSurface extends StatelessWidget {
+  const _MobileNavDrawerSurface({
+    required this.animation,
+    required this.morphProgress,
+    required this.collapsedHeight,
+    required this.expandedHeight,
+    required this.trashHeight,
+    required this.collapsedRadius,
+    required this.trashRadius,
+  });
+
+  final Animation<double> animation;
+  final double morphProgress;
+  final double collapsedHeight;
+  final double expandedHeight;
+  final double trashHeight;
+  final double collapsedRadius;
+  final double trashRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    final constrainedRaster = _usesAndroidRasterBudget;
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final animatedMorph = morphProgress.clamp(0.0, 1.0);
+        final menuProgress = Curves.easeOutCubic.transform(animation.value);
+        final menuHeight =
+            lerpDouble(collapsedHeight, expandedHeight, menuProgress)!;
+        final morphHeight =
+            lerpDouble(collapsedHeight, trashHeight, animatedMorph)!;
+        final height = lerpDouble(menuHeight, morphHeight, animatedMorph)!;
+        final menuBorderRadius = BorderRadius.only(
+          topLeft: const Radius.circular(
+            _MobileBottomNavState._expandedDrawerTopRadius,
+          ),
+          topRight: const Radius.circular(
+            _MobileBottomNavState._expandedDrawerTopRadius,
+          ),
+          bottomLeft: Radius.circular(collapsedRadius),
+          bottomRight: Radius.circular(collapsedRadius),
+        );
+        final borderRadius = animatedMorph > 0
+            ? BorderRadius.circular(
+                lerpDouble(collapsedRadius, trashRadius, animatedMorph)!,
+              )
+            : BorderRadius.lerp(
+                BorderRadius.circular(collapsedRadius),
+                menuBorderRadius,
+                menuProgress,
+              )!;
+        final shape = RoundedSuperellipseBorder(
+          borderRadius: borderRadius,
+        );
+        final fill = _usesIosNativeControls
+            ? Colors.transparent
+            : AppChromeGlass.tint(brightness);
+        final surface = Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              key: const ValueKey('mobile-nav-drawer-fill'),
+              decoration: ShapeDecoration(
+                color: fill,
+                shape: shape.copyWith(
+                  side: BorderSide(
+                    color: _usesIosNativeControls
+                        ? Colors.transparent
+                        : AppChromeGlass.outerStroke(brightness),
+                    width: 1,
+                  ),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: Padding(
+                padding: const EdgeInsets.all(0.75),
+                child: DecoratedBox(
+                  key: const ValueKey('mobile-nav-inner-highlight'),
+                  decoration: ShapeDecoration(
+                    shape: shape.copyWith(
+                      side: BorderSide(
+                        color: _usesIosNativeControls
+                            ? Colors.transparent
+                            : AppChromeGlass.innerStroke(brightness),
+                        width: 0.55,
+                      ),
                     ),
                   ),
+                ),
+              ),
+            ),
+          ],
+        );
+        return Positioned(
+          key: const ValueKey('mobile-nav-drawer-surface-position'),
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: height,
+          child: RepaintBoundary(
+            child: DecoratedBox(
+              decoration: ShapeDecoration(
+                shape: shape,
+                shadows: _usesIosNativeControls
+                    ? null
+                    : constrainedRaster
+                        ? [
+                            BoxShadow(
+                              color: AppChromeGlass.shadow(brightness),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ]
+                        : brightness == Brightness.dark
+                            ? [
+                                BoxShadow(
+                                  color: AppChromeGlass.shadow(brightness),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 9),
+                                ),
+                              ]
+                            : [
+                                BoxShadow(
+                                  color: AppChromeGlass.shadow(brightness),
+                                  blurRadius: 42,
+                                  spreadRadius: 3,
+                                  offset: const Offset(0, 14),
+                                ),
+                                BoxShadow(
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  blurRadius: 18,
+                                  spreadRadius: -3,
+                                  offset: const Offset(0, -3),
+                                ),
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.11),
+                                  blurRadius: 18,
+                                  spreadRadius: 0.75,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+              ),
+              child: ClipPath(
+                clipper: ShapeBorderClipper(shape: shape),
+                child: _usesIosNativeControls
+                    ? LiquidGlassContainer(
+                        key: const ValueKey('ios-native-create-drawer-glass'),
+                        config: LiquidGlassConfig(
+                          effect: CNGlassEffect.regular,
+                          shape: CNGlassEffectShape.rect,
+                          cornerRadius:
+                              _MobileBottomNavState._expandedDrawerTopRadius,
+                          tint: brightness == Brightness.dark
+                              ? Colors.black.withValues(alpha: 0.12)
+                              : canvasBaseLight.withValues(alpha: 0.025),
+                        ),
+                        child: surface,
+                      )
+                    : BackdropFilter(
+                        key: const ValueKey('mobile-bottom-nav-backdrop'),
+                        filter: _NotesChromeGlass.filter(brightness),
+                        child: surface,
+                      ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+abstract final class _NotesChromeGlass {
+  static final ImageFilter _lightFull = ImageFilter.blur(
+    sigmaX: AppChromeGlass.lightBlur,
+    sigmaY: AppChromeGlass.lightBlur,
+  );
+  static final ImageFilter _darkFull = ImageFilter.blur(
+    sigmaX: AppChromeGlass.darkBlur,
+    sigmaY: AppChromeGlass.darkBlur,
+  );
+  static final ImageFilter _lightWeb = ImageFilter.blur(
+    sigmaX: AppChromeGlass.lightWebBlur,
+    sigmaY: AppChromeGlass.lightWebBlur,
+  );
+  static final ImageFilter _darkWeb = ImageFilter.blur(
+    sigmaX: AppChromeGlass.darkWebBlur,
+    sigmaY: AppChromeGlass.darkWebBlur,
+  );
+  static final ImageFilter _lightConstrained = ImageFilter.blur(
+    sigmaX: AppChromeGlass.lightConstrainedBlur,
+    sigmaY: AppChromeGlass.lightConstrainedBlur,
+  );
+  static final ImageFilter _darkConstrained = ImageFilter.blur(
+    sigmaX: AppChromeGlass.darkConstrainedBlur,
+    sigmaY: AppChromeGlass.darkConstrainedBlur,
+  );
+
+  static ImageFilter filter(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    if (_usesAndroidRasterBudget) {
+      return dark ? _darkConstrained : _lightConstrained;
+    }
+    if (kIsWeb) return dark ? _darkWeb : _lightWeb;
+    return dark ? _darkFull : _lightFull;
+  }
+}
+
+class _MobileNavGlassSurface extends StatelessWidget {
+  const _MobileNavGlassSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      key: const ValueKey('mobile-bottom-nav-pill'),
+      child: _usesIosNativeControls
+          ? child
+          : Padding(
+              padding: const EdgeInsets.all(_MobileBottomNavState._inset),
+              child: child,
+            ),
+    );
+  }
+}
+
+class _MobileNavSearchField extends StatelessWidget {
+  const _MobileNavSearchField({
+    required this.controller,
+    required this.focusNode,
+    required this.hintText,
+    required this.onChanged,
+    required this.onClose,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final String hintText;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final content = Row(
+      key: const ValueKey('mobile-nav-search-field'),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          child: Icon(
+            AppIcons.search,
+            size: 20,
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+        Expanded(
+          child: TextField(
+            key: const ValueKey('mobile-nav-search-input'),
+            controller: controller,
+            focusNode: focusNode,
+            onChanged: onChanged,
+            textInputAction: TextInputAction.search,
+            style: Theme.of(context).textTheme.bodyLarge,
+            decoration: InputDecoration(
+              filled: false,
+              fillColor: Colors.transparent,
+              hintText: hintText,
+              hintStyle: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: scheme.onSurface.withValues(alpha: 0.45),
+                  ),
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        ),
+        IconButton(
+          key: const ValueKey('mobile-nav-search-close'),
+          tooltip:
+              AppL10n(Localizations.localeOf(context).languageCode).t('close'),
+          onPressed: onClose,
+          icon: const Icon(AppIcons.x, size: 19),
+        ),
+        const SizedBox(width: 3),
+      ],
+    );
+    if (_usesIosNativeControls) {
+      return LiquidGlassContainer(
+        key: const ValueKey('ios-native-nav-search-surface'),
+        config: LiquidGlassConfig(
+          effect: CNGlassEffect.regular,
+          shape: CNGlassEffectShape.capsule,
+          tint: scheme.surface.withValues(alpha: 0.08),
+          interactive: true,
+        ),
+        child: SizedBox(
+          height: _MobileBottomNavState._iosItemSize,
+          child: content,
+        ),
+      );
+    }
+    return content;
+  }
+}
+
+class _MobileCreateDrawerAction extends StatefulWidget {
+  const _MobileCreateDrawerAction({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.semanticLabel,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String semanticLabel;
+  final VoidCallback onTap;
+
+  @override
+  State<_MobileCreateDrawerAction> createState() =>
+      _MobileCreateDrawerActionState();
+}
+
+class _MobileCreateDrawerActionState extends State<_MobileCreateDrawerAction> {
+  var _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    // Concentric geometry: inner radius = outer top radius - its inset.
+    const shape = RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.all(
+        Radius.circular(_MobileBottomNavState._createActionRadius),
+      ),
+    );
+    final restingFill = dark
+        ? _MobileBottomNavState._darkSelectionOverlay
+        : _MobileBottomNavState._lightSelectionOverlay;
+    final pressedFill = dark
+        ? Colors.white.withValues(alpha: 0.15)
+        : Colors.white.withValues(alpha: 0.90);
+    final iconColor = scheme.onSurface.withValues(alpha: 0.92);
+    return Tooltip(
+      message: widget.semanticLabel,
+      child: Semantics(
+        button: true,
+        label: widget.semanticLabel,
+        child: Material(
+          color: _pressed ? pressedFill : restingFill,
+          shape: shape,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            customBorder: shape,
+            onHighlightChanged: (highlighted) {
+              if (_pressed != highlighted) {
+                setState(() => _pressed = highlighted);
+              }
+            },
+            onTap: widget.onTap,
+            child: AnimatedScale(
+              scale: _pressed ? 0.94 : 1,
+              duration: const Duration(milliseconds: 130),
+              curve: Curves.easeOutCubic,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox.square(
+                      dimension: 22,
+                      child: Center(
+                        child: Icon(
+                          widget.icon,
+                          size: 18,
+                          color: iconColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.label,
+                      maxLines: 1,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            height: 1.05,
+                            fontSize: 12,
+                            color: scheme.onSurface,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -2568,86 +4469,77 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav> {
   }
 }
 
-class _MobileCreateInlineAction extends StatefulWidget {
-  const _MobileCreateInlineAction({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
+class _CreateActionsReveal extends StatelessWidget {
+  const _CreateActionsReveal({
+    required this.animation,
+    required this.children,
   });
 
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
+  final Animation<double> animation;
+  final List<Widget> children;
 
-  @override
-  State<_MobileCreateInlineAction> createState() =>
-      _MobileCreateInlineActionState();
-}
+  double _bubbleProgress(double progress, int index) {
+    final start = index * 0.08;
+    return ((progress - start) / (1 - start)).clamp(0.0, 1.0);
+  }
 
-class _MobileCreateInlineActionState extends State<_MobileCreateInlineAction> {
-  var _pressed = false;
+  double _closingBubbleProgress(double progress, int index) {
+    final fadeFloor = 0.52 + index * 0.02;
+    return ((progress - fadeFloor) / (1 - fadeFloor)).clamp(0.0, 1.0);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTap: widget.onTap,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(end: _pressed ? 1 : 0),
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOutCubic,
-        builder: (context, value, child) => Transform.scale(
-          scaleX: 1 + value * 0.025,
-          scaleY: 1 - value * 0.045,
-          child: child,
-        ),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          height: 52,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: dark
-                ? Colors.white.withValues(alpha: 0.08)
-                : const Color(0xfffbfaf6).withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(AppRadii.pill),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 28,
-                height: 32,
-                alignment: Alignment.center,
-                child: Icon(
-                  widget.icon,
-                  size: 20,
-                  color: dark
-                      ? Colors.white.withValues(alpha: 0.82)
-                      : const Color(0xff171c19),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  widget.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: dark
-                            ? Colors.white.withValues(alpha: 0.86)
-                            : scheme.onSurface,
-                        fontWeight: FontWeight.w700,
+    return SizedBox(
+      height: 68,
+      child: AnimatedBuilder(
+        animation: animation,
+        builder: (context, _) {
+          final progress = animation.value;
+          if (progress <= 0) return const SizedBox.shrink();
+          final closing = animation.status == AnimationStatus.reverse;
+          final movementProgress =
+              closing ? 1.0 : Curves.easeOutCubic.transform(progress);
+          return Transform.translate(
+            key: const ValueKey('mobile-create-actions-progress'),
+            offset: Offset(0, 75 * (1 - movementProgress)),
+            child: RepaintBoundary(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var index = 0; index < children.length; index++) ...[
+                    if (index > 0) const SizedBox(width: 7),
+                    Expanded(
+                      child: Builder(
+                        builder: (context) {
+                          final local = closing
+                              ? _closingBubbleProgress(progress, index)
+                              : _bubbleProgress(progress, index);
+                          final eased = Curves.easeInOutCubic.transform(local);
+                          final overshoot = math.sin(math.pi * local) * 0.07;
+                          return Opacity(
+                            opacity: Curves.easeOutQuad.transform(local),
+                            child: Transform.translate(
+                              offset: Offset(0, 9 * (1 - eased)),
+                              child: Transform.scale(
+                                key: ValueKey(
+                                  'mobile-create-action-bubble-$index',
+                                ),
+                                scale: 0.52 + eased * 0.48 + overshoot,
+                                alignment: Alignment.center,
+                                child: children[index],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                ),
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -2750,7 +4642,6 @@ class _MobileNavIcon extends StatefulWidget {
     required this.icon,
     required this.tooltip,
     required this.selected,
-    required this.accent,
     required this.onPressChanged,
     required this.onPressed,
   });
@@ -2759,7 +4650,6 @@ class _MobileNavIcon extends StatefulWidget {
   final IconData icon;
   final String tooltip;
   final bool selected;
-  final Color accent;
   final ValueChanged<bool> onPressChanged;
   final VoidCallback onPressed;
 
@@ -2777,16 +4667,11 @@ class _MobileNavIconState extends State<_MobileNavIcon> {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final lightIconColor = const Color(0xff171c19).withValues(
-      alpha: widget.selected ? 0.78 : 0.72,
-    );
+    final lightIconColor = const Color(0xff171c19).withValues(alpha: 0.72);
     // The shared liquid indicator paints the selected background.
     const background = Colors.transparent;
-    final foreground = dark
-        ? (widget.selected
-            ? widget.accent
-            : Colors.white.withValues(alpha: 0.7))
-        : lightIconColor;
+    final foreground =
+        dark ? Colors.white.withValues(alpha: 0.7) : lightIconColor;
     return Tooltip(
       message: widget.tooltip,
       child: Semantics(
@@ -2841,9 +4726,7 @@ class _MobileNavIconState extends State<_MobileNavIcon> {
 }
 
 class _SearchField extends ConsumerWidget {
-  const _SearchField({this.compact = false});
-
-  final bool compact;
+  const _SearchField();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -2879,15 +4762,14 @@ class _SearchField extends ConsumerWidget {
                         color: scheme.onSurface.withValues(alpha: 0.45),
                       ),
                   prefixIcon: Padding(
-                    padding: EdgeInsets.only(left: compact ? 20 : 18),
+                    padding: const EdgeInsets.only(left: 18),
                     child: Icon(
                       AppIcons.search,
                       size: 19,
                       color: scheme.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
-                  prefixIconConstraints:
-                      BoxConstraints(minWidth: compact ? 52 : 48),
+                  prefixIconConstraints: const BoxConstraints(minWidth: 48),
                   filled: true,
                   fillColor: dark
                       ? const Color(0xff232e2c).withValues(alpha: 0.9)
@@ -2970,40 +4852,38 @@ class _EmailVerificationBannerState
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Material(
-        color: scheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(AppRadii.xl),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () => _showEmailVerificationDialog(context, ref, widget.email),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                Icon(AppIcons.mailWarning, size: 18, color: scheme.onSurface),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    l10n.t('emailConfirmBanner'),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  l10n.t('enterCode'),
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: scheme.primary,
-                        fontWeight: FontWeight.w800,
+    return Material(
+      key: const ValueKey('email-verification-banner'),
+      color: scheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(AppRadii.xl),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _showEmailVerificationDialog(context, ref, widget.email),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Icon(AppIcons.mailWarning, size: 18, color: scheme.onSurface),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  l10n.t('emailConfirmBanner'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                l10n.t('enterCode'),
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ],
           ),
         ),
       ),
@@ -3263,9 +5143,15 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
     final l10n = AppL10n(Localizations.localeOf(context).languageCode);
     final scheme = Theme.of(context).colorScheme;
     final design = context.safernotesTheme;
-    final radius = BorderRadius.circular(design.noteCardRadius);
     final bg = brandNoteSurfaceColor(context, note.color);
-    final showHoverActions = MediaQuery.sizeOf(context).width >= 700;
+    final compact = MediaQuery.sizeOf(context).width < 700;
+    final constrainedRaster = compact && _usesAndroidRasterBudget;
+    final cardCornerRadius =
+        compact ? AppRadii.noteCardCompact : AppRadii.noteCard;
+    final cardShape = RoundedSuperellipseBorder(
+      borderRadius: BorderRadius.circular(cardCornerRadius),
+    );
+    final showHoverActions = !compact;
     final displayTitle =
         note.title.trim() == 'Untitled note' ? '' : note.title.trim();
     final hasMetadata = note.checklist.isNotEmpty ||
@@ -3286,178 +5172,196 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
         child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: radius,
-            boxShadow: [
+          decoration: ShapeDecoration(
+            shape: cardShape,
+            shadows: [
               BoxShadow(
                 color: design.glassShadow,
-                blurRadius: _hovered ? 34 : 24,
-                offset: Offset(0, _hovered ? 16 : 12),
+                blurRadius: _hovered
+                    ? 30
+                    : constrainedRaster
+                        ? 8
+                        : compact
+                            ? 14
+                            : 22,
+                offset: Offset(
+                  0,
+                  _hovered
+                      ? 14
+                      : constrainedRaster
+                          ? 4
+                          : compact
+                              ? 7
+                              : 11,
+                ),
               ),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: radius,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Material(
-                color: Colors.transparent,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: radius),
-                clipBehavior: Clip.antiAlias,
-                child: Ink(
-                  decoration: BoxDecoration(
-                    color: bg,
-                    gradient: brandNoteGradient(context, note.color),
+          child: Material(
+            color: bg,
+            elevation: 0,
+            shape: cardShape,
+            clipBehavior: Clip.antiAlias,
+            child: Ink(
+              decoration: ShapeDecoration(
+                gradient: brandNoteGradient(context, note.color),
+                shape: cardShape,
+              ),
+              child: InkWell(
+                onTap: widget.onTap,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: compact ? 136 : 168,
                   ),
-                  child: InkWell(
-                    onTap: widget.onTap,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minHeight: 168),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 18, 18, 20),
-                        child: Column(
+                  child: Padding(
+                    key: ValueKey('note-card-content-${note.localId}'),
+                    padding: EdgeInsets.fromLTRB(
+                      compact ? 14 : 24,
+                      compact ? 12 : 18,
+                      compact ? 14 : 18,
+                      compact ? 14 : 20,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: displayTitle.isEmpty
-                                      ? const SizedBox.shrink()
-                                      : Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: 6,
-                                            right: 8,
-                                          ),
-                                          child: Text(
-                                            displayTitle,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .titleLarge
-                                                ?.copyWith(height: 1.15),
-                                          ),
-                                        ),
-                                ),
-                                GlassCircleButton(
-                                  tooltip: note.pinned
-                                      ? l10n.t('unpin')
-                                      : l10n.t('pin'),
-                                  icon: note.pinned
-                                      ? AppIcons.heartFill
-                                      : AppIcons.heart,
-                                  selected: note.pinned,
-                                  size: 42,
-                                  iconSize: 19,
-                                  onPressed: widget.onTogglePin,
-                                ),
-                              ],
+                            Expanded(
+                              child: displayTitle.isEmpty
+                                  ? const SizedBox.shrink()
+                                  : Padding(
+                                      padding: EdgeInsets.only(
+                                        top: compact ? 3 : 6,
+                                        right: compact ? 6 : 8,
+                                      ),
+                                      child: Text(
+                                        displayTitle,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleLarge
+                                            ?.copyWith(height: 1.15),
+                                      ),
+                                    ),
                             ),
-                            const SizedBox(height: 12),
-                            if (note.labels.isNotEmpty) ...[
-                              _NoteLabelChips(labels: note.labels),
-                              const SizedBox(height: 12),
-                            ],
-                            note.checklist.isNotEmpty &&
-                                    note.body.trim().isEmpty
-                                ? _ChecklistPreview(items: note.checklist)
-                                : _FormattedPreview(
-                                    text: note.body,
-                                    delta: note.richTextDelta,
-                                  ),
-                            if (showFooter) ...[
-                              const SizedBox(height: 16),
-                              SizedBox(
-                                height: 36,
-                                child: Row(
-                                  children: [
-                                    if (note.checklist.isNotEmpty)
-                                      _MetaPill(
-                                        icon: AppIcons.squareCheck,
-                                        label:
-                                            '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
-                                      ),
-                                    if (note.conflicted)
-                                      _MetaPill(
-                                        icon: AppIcons.circleAlert,
-                                        label: l10n.t('conflict'),
-                                        color: scheme.error,
-                                      ),
-                                    if (note.dirty)
-                                      _MetaPill(
-                                        icon: AppIcons.cloudUpload,
-                                        label: l10n.t('synced'),
-                                        color: scheme.tertiary,
-                                      ),
-                                    if (note.reminderAt != null)
-                                      _MetaPill(
-                                        icon: AppIcons.bell,
-                                        label: _formatReminder(
-                                            note.reminderAt!, l10n),
-                                        color: scheme.primary,
-                                      ),
-                                    if (note.shared)
-                                      _MetaPill(
-                                        icon: AppIcons.users,
-                                        label: l10n.t('shared'),
-                                        color: scheme.primary,
-                                      ),
-                                    const Spacer(),
-                                    if (_hovered && showHoverActions)
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (note.state != 'active')
-                                            AppIconButton(
-                                              tooltip: l10n.t('restore'),
-                                              icon: AppIcons.rotateCcw,
-                                              onPressed: widget.onRestore,
-                                            ),
-                                          if (note.state == 'active')
-                                            AppIconButton(
-                                              tooltip: l10n.t('archiveAction'),
-                                              icon: AppIcons.archive,
-                                              onPressed: widget.onArchive,
-                                            ),
-                                          if (note.state == 'active' &&
-                                              note.reminderAt == null)
-                                            AppIconButton(
-                                              tooltip:
-                                                  l10n.t('collaboratorInvite'),
-                                              icon: note.shared
-                                                  ? AppIcons.users
-                                                  : AppIcons.userPlus,
-                                              onPressed: widget.onInvite,
-                                            ),
-                                          if (note.state != 'trashed')
-                                            AppIconButton(
-                                              tooltip: l10n.t('reminder'),
-                                              icon: AppIcons.bell,
-                                              onPressed: widget.onReminder,
-                                            ),
-                                          if (note.state != 'trashed')
-                                            AppIconButton(
-                                              tooltip: l10n.t('trash'),
-                                              icon: AppIcons.trash,
-                                              onPressed: widget.onTrash,
-                                            )
-                                          else
-                                            AppIconButton(
-                                              tooltip: l10n.t('deleteForever'),
-                                              icon: AppIcons.trash2,
-                                              onPressed: widget.onDeleteForever,
-                                            ),
-                                        ],
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            ],
+                            _NoteFavoriteButton(
+                              noteId: note.localId,
+                              tooltip:
+                                  note.pinned ? l10n.t('unpin') : l10n.t('pin'),
+                              icon: note.pinned
+                                  ? AppIcons.heartFill
+                                  : AppIcons.heart,
+                              selected: note.pinned,
+                              size: compact
+                                  ? AppSizes.favoriteButtonCompact
+                                  : AppSizes.favoriteButton,
+                              iconSize: compact ? 17 : 19,
+                              enableBlur: !compact,
+                              onPressed: widget.onTogglePin,
+                            ),
                           ],
                         ),
-                      ),
+                        SizedBox(height: compact ? 8 : 12),
+                        if (note.labels.isNotEmpty) ...[
+                          _NoteLabelChips(labels: note.labels),
+                          SizedBox(height: compact ? 8 : 12),
+                        ],
+                        note.checklist.isNotEmpty && note.body.trim().isEmpty
+                            ? _ChecklistPreview(items: note.checklist)
+                            : _FormattedPreview(
+                                text: note.body,
+                                delta: note.richTextDelta,
+                              ),
+                        if (showFooter) ...[
+                          SizedBox(height: compact ? 10 : 16),
+                          SizedBox(
+                            height: compact ? 30 : 36,
+                            child: Row(
+                              children: [
+                                if (note.checklist.isNotEmpty)
+                                  _MetaPill(
+                                    icon: AppIcons.squareCheck,
+                                    label:
+                                        '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
+                                  ),
+                                if (note.conflicted)
+                                  _MetaPill(
+                                    icon: AppIcons.circleAlert,
+                                    label: l10n.t('conflict'),
+                                    color: scheme.error,
+                                  ),
+                                if (note.dirty)
+                                  _MetaPill(
+                                    icon: AppIcons.cloudUpload,
+                                    label: l10n.t('synced'),
+                                    color: scheme.tertiary,
+                                  ),
+                                if (note.reminderAt != null)
+                                  _MetaPill(
+                                    icon: AppIcons.bell,
+                                    label:
+                                        _formatReminder(note.reminderAt!, l10n),
+                                    color: scheme.primary,
+                                  ),
+                                if (note.shared)
+                                  _MetaPill(
+                                    icon: AppIcons.users,
+                                    label: l10n.t('shared'),
+                                    color: scheme.primary,
+                                  ),
+                                const Spacer(),
+                                if (_hovered && showHoverActions)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (note.state != 'active')
+                                        AppIconButton(
+                                          tooltip: l10n.t('restore'),
+                                          icon: AppIcons.rotateCcw,
+                                          onPressed: widget.onRestore,
+                                        ),
+                                      if (note.state == 'active')
+                                        AppIconButton(
+                                          tooltip: l10n.t('archiveAction'),
+                                          icon: AppIcons.archive,
+                                          onPressed: widget.onArchive,
+                                        ),
+                                      if (note.state == 'active' &&
+                                          note.reminderAt == null)
+                                        AppIconButton(
+                                          tooltip: l10n.t('collaboratorInvite'),
+                                          icon: note.shared
+                                              ? AppIcons.users
+                                              : AppIcons.userPlus,
+                                          onPressed: widget.onInvite,
+                                        ),
+                                      if (note.state != 'trashed')
+                                        AppIconButton(
+                                          tooltip: l10n.t('reminder'),
+                                          icon: AppIcons.bell,
+                                          onPressed: widget.onReminder,
+                                        ),
+                                      if (note.state != 'trashed')
+                                        AppIconButton(
+                                          tooltip: l10n.t('trash'),
+                                          icon: AppIcons.trash,
+                                          onPressed: widget.onTrash,
+                                        )
+                                      else
+                                        AppIconButton(
+                                          tooltip: l10n.t('deleteForever'),
+                                          icon: AppIcons.trash2,
+                                          onPressed: widget.onDeleteForever,
+                                        ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -3466,6 +5370,68 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _NoteFavoriteButton extends StatelessWidget {
+  const _NoteFavoriteButton({
+    required this.noteId,
+    required this.tooltip,
+    required this.icon,
+    required this.selected,
+    required this.size,
+    required this.iconSize,
+    required this.enableBlur,
+    required this.onPressed,
+  });
+
+  final String noteId;
+  final String tooltip;
+  final IconData icon;
+  final bool selected;
+  final double size;
+  final double iconSize;
+  final bool enableBlur;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_usesIosNativeControls) {
+      final scheme = Theme.of(context).colorScheme;
+      return Tooltip(
+        message: tooltip,
+        child: SizedBox.square(
+          key: ValueKey('ios-note-favorite-$noteId'),
+          dimension: size,
+          child: CNButton.icon(
+            icon: CNSymbol(
+              selected ? 'heart.fill' : 'heart',
+              size: iconSize,
+            ),
+            onPressed: onPressed,
+            tint: selected ? brandLavender : scheme.onSurface,
+            config: CNButtonConfig(
+              style:
+                  selected ? CNButtonStyle.prominentGlass : CNButtonStyle.glass,
+              width: size,
+              minHeight: size,
+              padding: EdgeInsets.zero,
+              glassEffectId: 'note-favorite-$noteId',
+              glassEffectInteractive: true,
+            ),
+          ),
+        ),
+      );
+    }
+    return GlassCircleButton(
+      tooltip: tooltip,
+      icon: icon,
+      selected: selected,
+      size: size,
+      iconSize: iconSize,
+      enableBlur: enableBlur,
+      onPressed: onPressed,
     );
   }
 }
@@ -3497,6 +5463,7 @@ class _MeasuredNoteDraggable extends StatefulWidget {
 class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
   final _cardKey = GlobalKey();
   Size? _dragFeedbackSize;
+  Offset? _dragPointerPosition;
 
   Size? get _cardSize {
     final renderObject = _cardKey.currentContext?.findRenderObject();
@@ -3506,25 +5473,34 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
 
   @override
   Widget build(BuildContext context) {
-    return LongPressDraggable<PlainNote>(
-      data: widget.note,
-      delay: const Duration(milliseconds: 260),
-      feedback: _NoteDragFeedback(
-        key: ValueKey('note-drag-feedback-${widget.note.localId}'),
-        noteId: widget.note.localId,
-        trashHovering: widget.trashHovering,
-        sizeReader: () => _dragFeedbackSize ?? _cardSize,
-        child: widget.child,
-      ),
-      onDragStarted: _handleDragStarted,
-      onDragUpdate: (details) => widget.onDragUpdate(details.globalPosition),
-      onDraggableCanceled: (_, __) => _handleDragEnded(),
-      onDragEnd: (_) => _handleDragEnded(),
-      onDragCompleted: _handleDragEnded,
-      childWhenDragging: widget.childWhenDragging,
-      child: KeyedSubtree(
-        key: _cardKey,
-        child: widget.child,
+    return Listener(
+      onPointerDown: (event) => _dragPointerPosition = event.position,
+      child: LongPressDraggable<PlainNote>(
+        data: widget.note,
+        delay: const Duration(milliseconds: 260),
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedback: _NoteDragFeedback(
+          key: ValueKey('note-drag-feedback-${widget.note.localId}'),
+          noteId: widget.note.localId,
+          trashHovering: widget.trashHovering,
+          sizeReader: () => _dragFeedbackSize ?? _cardSize,
+          child: widget.child,
+        ),
+        onDragStarted: _handleDragStarted,
+        onDragUpdate: (details) {
+          final position =
+              (_dragPointerPosition ?? details.globalPosition) + details.delta;
+          _dragPointerPosition = position;
+          widget.onDragUpdate(position);
+        },
+        onDraggableCanceled: (_, __) => _handleDragEnded(),
+        onDragEnd: (_) => _handleDragEnded(),
+        onDragCompleted: _handleDragEnded,
+        childWhenDragging: widget.childWhenDragging,
+        child: KeyedSubtree(
+          key: _cardKey,
+          child: widget.child,
+        ),
       ),
     );
   }
@@ -3536,11 +5512,12 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
 
   void _handleDragEnded() {
     _dragFeedbackSize = null;
+    _dragPointerPosition = null;
     widget.onDragEnded();
   }
 }
 
-class _NoteDragFeedback extends StatelessWidget {
+class _NoteDragFeedback extends ConsumerWidget {
   const _NoteDragFeedback({
     super.key,
     required this.noteId,
@@ -3555,21 +5532,25 @@ class _NoteDragFeedback extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final size = sizeReader() ?? const Size(260, 170);
-    return Material(
-      type: MaterialType.transparency,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: trashHovering,
-        builder: (context, hovering, _) => AnimatedOpacity(
-          key: ValueKey('note-drag-trash-opacity-$noteId'),
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOutCubic,
-          opacity: hovering ? 0.52 : 1,
-          child: SizedBox(
-            width: size.width,
-            height: size.height,
-            child: child,
+    final navTrashHovering = ref.watch(_dragTrashHoverProvider);
+    return Transform.translate(
+      offset: Offset(-size.width / 2, -size.height / 2),
+      child: Material(
+        type: MaterialType.transparency,
+        child: ValueListenableBuilder<bool>(
+          valueListenable: trashHovering,
+          builder: (context, hovering, _) => AnimatedOpacity(
+            key: ValueKey('note-drag-trash-opacity-$noteId'),
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+            opacity: hovering || navTrashHovering ? 0.24 : 1,
+            child: SizedBox(
+              width: size.width,
+              height: size.height,
+              child: child,
+            ),
           ),
         ),
       ),
@@ -3632,7 +5613,8 @@ class _ChecklistPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visible = items.take(5).toList();
+    final compact = MediaQuery.sizeOf(context).width < 700;
+    final visible = items.take(compact ? 4 : 5).toList();
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Column(
@@ -3640,7 +5622,10 @@ class _ChecklistPreview extends StatelessWidget {
       children: [
         for (final item in visible)
           Padding(
-            padding: EdgeInsets.only(left: item.indent * 12.0, bottom: 8),
+            padding: EdgeInsets.only(
+              left: item.indent * 12.0,
+              bottom: compact ? 5 : 8,
+            ),
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: item.done
@@ -3653,12 +5638,17 @@ class _ChecklistPreview extends StatelessWidget {
                 borderRadius: BorderRadius.circular(AppRadii.pill),
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 7, 14, 7),
+                padding: EdgeInsets.fromLTRB(
+                  compact ? 7 : 8,
+                  compact ? 5 : 7,
+                  compact ? 10 : 14,
+                  compact ? 5 : 7,
+                ),
                 child: Row(
                   children: [
                     Container(
-                      width: 20,
-                      height: 20,
+                      width: compact ? 18 : 20,
+                      height: compact ? 18 : 20,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: item.done ? brandLavender : Colors.transparent,
@@ -3678,7 +5668,7 @@ class _ChecklistPreview extends StatelessWidget {
                             )
                           : null,
                     ),
-                    const SizedBox(width: 10),
+                    SizedBox(width: compact ? 8 : 10),
                     Expanded(
                       child: Text(
                         item.text,
@@ -3720,6 +5710,7 @@ class _FormattedPreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final maxLines = MediaQuery.sizeOf(context).width < 700 ? 5 : 7;
     final base = Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.35);
     if (delta != null && delta!.isNotEmpty) {
       return _buildDeltaPreview(context, base);
@@ -3733,7 +5724,7 @@ class _FormattedPreview extends StatelessWidget {
         continue;
       }
       visibleLines.add((line: line, code: inCodeBlock));
-      if (visibleLines.length == 7) break;
+      if (visibleLines.length == maxLines) break;
     }
     return Text.rich(
       TextSpan(
@@ -3752,18 +5743,19 @@ class _FormattedPreview extends StatelessWidget {
           ],
         ],
       ),
-      maxLines: 7,
+      maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
     );
   }
 
   Widget _buildDeltaPreview(BuildContext context, TextStyle? base) {
+    final maxLines = MediaQuery.sizeOf(context).width < 700 ? 5 : 7;
     final lines = <TextSpan>[];
     var current = <InlineSpan>[];
     var orderedIndex = 1;
 
     void finishLine(Map<String, dynamic> blockAttributes) {
-      if (lines.length >= 7) return;
+      if (lines.length >= maxLines) return;
       final list = blockAttributes['list'];
       final prefix = switch (list) {
         'bullet' => '\u2022 ',
@@ -3791,7 +5783,7 @@ class _FormattedPreview extends StatelessWidget {
     }
 
     for (final operation in delta!) {
-      if (lines.length >= 7) break;
+      if (lines.length >= maxLines) break;
       final insert = operation['insert'];
       if (insert is! String) continue;
       final attributes = operation['attributes'] is Map
@@ -3808,10 +5800,10 @@ class _FormattedPreview extends StatelessWidget {
           );
         }
         if (index != parts.length - 1) finishLine(attributes);
-        if (lines.length >= 7) break;
+        if (lines.length >= maxLines) break;
       }
     }
-    if (current.isNotEmpty && lines.length < 7) {
+    if (current.isNotEmpty && lines.length < maxLines) {
       finishLine(const <String, dynamic>{});
     }
     if (lines.isEmpty) lines.add(TextSpan(text: '', style: base));
@@ -3825,7 +5817,7 @@ class _FormattedPreview extends StatelessWidget {
           ],
         ],
       ),
-      maxLines: 7,
+      maxLines: maxLines,
       overflow: TextOverflow.ellipsis,
     );
   }
@@ -4122,47 +6114,82 @@ class _AccountButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
     final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: email.isEmpty ? l10n.t('profile') : email,
-      child: GestureDetector(
-        onTap: () => _showAccountSideSheet(context, ref, email),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 8),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutBack,
-            width: compact ? 52 : 34,
-            height: compact ? 52 : 34,
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest.withValues(
-                alpha: compact ? 0.42 : 1,
-              ),
-              shape: BoxShape.circle,
-              border: compact
-                  ? Border.all(
-                      color: scheme.outlineVariant.withValues(alpha: 0.24),
-                    )
-                  : null,
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final iosIconTint = dark ? const Color(0xfff8fbf9) : scheme.onSurface;
+    final tooltip = email.isEmpty ? l10n.t('profile') : email;
+    void openAccount() => _showAccountSideSheet(context, ref, email);
+    if (compact && _usesIosNativeControls) {
+      return Tooltip(
+        message: tooltip,
+        child: SizedBox.square(
+          dimension: _MobileBottomNavState._iosItemSize,
+          child: CNButton.icon(
+            icon: const CNSymbol(
+              'person',
+              size: AppSizes.iosCompactHeaderIcon,
+              mode: CNSymbolRenderingMode.monochrome,
             ),
-            alignment: Alignment.center,
-            child: Icon(
-              AppIcons.user,
-              size: compact ? 22 : 18,
-              color: scheme.onSurface,
+            onPressed: openAccount,
+            tint: iosIconTint,
+            config: const CNButtonConfig(
+              style: CNButtonStyle.glass,
+              width: _MobileBottomNavState._iosItemSize,
+              minHeight: _MobileBottomNavState._iosItemSize,
+              padding: EdgeInsets.all(18),
+              glassEffectId: 'notes-account-button',
+              glassEffectInteractive: true,
             ),
           ),
         ),
+      );
+    }
+    return Tooltip(
+      message: tooltip,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 8),
+        child: compact
+            ? _MobileHeaderGlassButtonSurface(
+                onTap: openAccount,
+                child: Icon(
+                  AppIcons.user,
+                  size: 20,
+                  color: scheme.onSurface,
+                ),
+              )
+            : GestureDetector(
+                onTap: openAccount,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutBack,
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    AppIcons.user,
+                    size: 18,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
       ),
     );
   }
 }
 
-void _openSettings(BuildContext context) {
-  Navigator.of(context).push(
+void _openSettings(BuildContext context, WidgetRef ref) {
+  final reset = ref.read(_noteOverviewResetProvider.notifier);
+  final route = Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => const SettingsScreen(),
     ),
   );
+  unawaited(route.whenComplete(() {
+    reset.state++;
+  }));
 }
 
 class _MobileMenuButton extends ConsumerWidget {
@@ -4315,6 +6342,21 @@ class _AccountSideSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
+    final session = ref.watch(authControllerProvider).valueOrNull;
+    final usageCredentials = session == null ||
+            session.accessToken.isEmpty ||
+            session.defaultTenant.isEmpty
+        ? null
+        : (
+            accessToken: session.accessToken,
+            tenant: session.defaultTenant,
+          );
+    final accountUsage = usageCredentials == null
+        ? null
+        : ref.watch(_accountUsageProvider(usageCredentials));
+    final localUsage = _localSubscriptionUsage(
+      ref.watch(notesControllerProvider).valueOrNull ?? const [],
+    );
     final initial = email.isEmpty ? '?' : email.substring(0, 1).toUpperCase();
     final scheme = Theme.of(context).colorScheme;
     final dark = scheme.brightness == Brightness.dark;
@@ -4438,47 +6480,68 @@ class _AccountSideSheet extends ConsumerWidget {
                         height: 1,
                         color: scheme.outlineVariant.withValues(alpha: 0.22),
                       ),
-                      const SizedBox(height: 12),
-                      _MobileMenuButton(
-                        bucket: 'active',
-                        icon: AppIcons.notebookText,
-                        label: l10n.t('notes'),
-                      ),
-                      const SizedBox(height: 4),
-                      _MobileMenuButton(
-                        bucket: 'reminders',
-                        icon: AppIcons.bell,
-                        label: l10n.t('reminders'),
-                      ),
-                      const SizedBox(height: 4),
-                      _MobileMenuButton(
-                        bucket: 'archived',
-                        icon: AppIcons.archive,
-                        label: l10n.t('archive'),
-                      ),
-                      const SizedBox(height: 4),
-                      _MobileMenuButton(
-                        bucket: 'trashed',
-                        icon: AppIcons.trash,
-                        label: l10n.t('trash'),
-                      ),
-                      const SizedBox(height: 14),
-                      Container(
-                        key: const ValueKey('mobile-sidebar-sync-status'),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest
-                              .withValues(alpha: 0.3),
-                          borderRadius: BorderRadius.circular(18),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(0, 12, 0, 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _MobileMenuButton(
+                                bucket: 'active',
+                                icon: AppIcons.notebookText,
+                                label: l10n.t('notes'),
+                              ),
+                              const SizedBox(height: 4),
+                              _MobileMenuButton(
+                                bucket: 'reminders',
+                                icon: AppIcons.bell,
+                                label: l10n.t('reminders'),
+                              ),
+                              const SizedBox(height: 4),
+                              _MobileMenuButton(
+                                bucket: 'archived',
+                                icon: AppIcons.archive,
+                                label: l10n.t('archive'),
+                              ),
+                              const SizedBox(height: 4),
+                              _MobileMenuButton(
+                                bucket: 'trashed',
+                                icon: AppIcons.trash,
+                                label: l10n.t('trash'),
+                              ),
+                              const SizedBox(height: 14),
+                              Container(
+                                key: const ValueKey(
+                                  'mobile-sidebar-sync-status',
+                                ),
+                                decoration: BoxDecoration(
+                                  color: scheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.3),
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                child: const _SyncIndicator(showLabel: true),
+                              ),
+                              if (accountUsage != null) ...[
+                                const SizedBox(height: 10),
+                                _AccountQuotaPanel(
+                                  usage: accountUsage,
+                                  localUsage: localUsage,
+                                  l10n: l10n,
+                                  onRetry: () => ref.invalidate(
+                                    _accountUsageProvider(usageCredentials!),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
                         ),
-                        child: const _SyncIndicator(showLabel: true),
                       ),
-                      const Spacer(),
                       _AccountActionTile(
                         icon: AppIcons.settings,
                         label: l10n.t('settings'),
                         onTap: () {
                           Navigator.of(context).pop();
-                          _openSettings(context);
+                          _openSettings(context, ref);
                         },
                       ),
                       const SizedBox(height: 4),
@@ -4501,6 +6564,354 @@ class _AccountSideSheet extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _AccountQuotaPanel extends StatelessWidget {
+  const _AccountQuotaPanel({
+    required this.usage,
+    required this.localUsage,
+    required this.l10n,
+    required this.onRetry,
+  });
+
+  final AsyncValue<SubscriptionUsage> usage;
+  final SubscriptionUsage localUsage;
+  final AppL10n l10n;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('mobile-sidebar-quota-card'),
+      constraints: const BoxConstraints(minHeight: 74),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: 0.18),
+        ),
+      ),
+      child: usage.when(
+        loading: () => Row(
+          children: [
+            Icon(AppIcons.hardDrive, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                l10n.t('accountUsage'),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+        error: (_, __) => _AccountQuotaContent(
+          usage: localUsage,
+          l10n: l10n,
+          localEstimate: true,
+          onRetry: onRetry,
+        ),
+        data: (value) => _AccountQuotaContent(
+          usage: _mergeSubscriptionUsage(value, localUsage),
+          l10n: l10n,
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountQuotaContent extends StatelessWidget {
+  const _AccountQuotaContent({
+    required this.usage,
+    required this.l10n,
+    this.localEstimate = false,
+    this.onRetry,
+  });
+
+  final SubscriptionUsage usage;
+  final AppL10n l10n;
+  final bool localEstimate;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final storageRatio = _quotaRatio(
+      usage.storageBytesUsed,
+      usage.storageBytesLimit,
+    );
+    final notesRatio = usage.maxNotes == null
+        ? null
+        : _quotaRatio(usage.notesCount, usage.maxNotes!);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(AppIcons.hardDrive, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                l10n.t('accountUsage'),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: scheme.surface.withValues(alpha: 0.48),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                _planLabel(usage.plan),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
+          ],
+        ),
+        if (localEstimate) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l10n.t('localUsageEstimate'),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+              SizedBox.square(
+                dimension: 28,
+                child: IconButton(
+                  tooltip: l10n.t('retry'),
+                  padding: EdgeInsets.zero,
+                  onPressed: onRetry,
+                  icon: const Icon(AppIcons.refreshCw, size: 15),
+                ),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 14),
+        _AccountQuotaMeter(
+          key: const ValueKey('mobile-sidebar-storage-meter'),
+          label: l10n.t('storage'),
+          detail: l10n.t(
+            'storageQuotaSummary',
+            params: {
+              'used': _formatBytes(usage.storageBytesUsed, l10n.languageCode),
+              'limit': _formatBytes(usage.storageBytesLimit, l10n.languageCode),
+            },
+          ),
+          value: storageRatio,
+        ),
+        const SizedBox(height: 12),
+        _AccountQuotaMeter(
+          key: const ValueKey('mobile-sidebar-notes-meter'),
+          label: l10n.t('notes'),
+          detail: usage.maxNotes == null
+              ? l10n.t(
+                  'unlimitedNotesQuota',
+                  params: {
+                    'used': _formatCount(
+                      usage.notesCount,
+                      l10n.languageCode,
+                    ),
+                  },
+                )
+              : l10n.t(
+                  'notesQuotaSummary',
+                  params: {
+                    'used': _formatCount(
+                      usage.notesCount,
+                      l10n.languageCode,
+                    ),
+                    'limit': _formatCount(
+                      usage.maxNotes!,
+                      l10n.languageCode,
+                    ),
+                  },
+                ),
+          value: notesRatio,
+        ),
+      ],
+    );
+  }
+}
+
+class _AccountQuotaMeter extends StatelessWidget {
+  const _AccountQuotaMeter({
+    super.key,
+    required this.label,
+    required this.detail,
+    required this.value,
+  });
+
+  final String label;
+  final String detail;
+  final double? value;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final progressColor = switch (value) {
+      final amount? when amount >= 0.9 => scheme.error,
+      final amount? when amount >= 0.75 => scheme.tertiary,
+      _ => scheme.primary,
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            const Spacer(),
+            Flexible(
+              child: Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ),
+          ],
+        ),
+        if (value != null) ...[
+          const SizedBox(height: 7),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              minHeight: 6,
+              value: value,
+              backgroundColor: scheme.onSurface.withValues(alpha: 0.08),
+              color: progressColor,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+double _quotaRatio(int used, int limit) {
+  if (limit <= 0) return 0;
+  return (used / limit).clamp(0.0, 1.0);
+}
+
+SubscriptionUsage _mergeSubscriptionUsage(
+  SubscriptionUsage remote,
+  SubscriptionUsage local,
+) {
+  if (remote.storageBytesUsed > 0 || local.storageBytesUsed == 0) return remote;
+  return SubscriptionUsage(
+    plan: remote.plan,
+    storageBytesUsed: local.storageBytesUsed,
+    storageBytesLimit: remote.storageBytesLimit > 0
+        ? remote.storageBytesLimit
+        : local.storageBytesLimit,
+    notesCount: remote.notesCount > 0 ? remote.notesCount : local.notesCount,
+    maxNotes: remote.maxNotes ?? local.maxNotes,
+    notesBytesUsed: local.notesBytesUsed,
+    attachmentsBytesUsed: remote.attachmentsBytesUsed,
+  );
+}
+
+SubscriptionUsage _localSubscriptionUsage(List<PlainNote> notes) {
+  final billable = notes.where((note) => note.state != 'deleted').toList();
+  final noteBytes = billable.fold<int>(
+    0,
+    (total, note) => total + _estimatedEncryptedNoteBytes(note),
+  );
+  return SubscriptionUsage(
+    plan: 'free',
+    storageBytesUsed: noteBytes,
+    storageBytesLimit: 500 * 1024 * 1024,
+    notesCount: billable.length,
+    maxNotes: 500,
+    notesBytesUsed: noteBytes,
+  );
+}
+
+int _estimatedEncryptedNoteBytes(PlainNote note) {
+  final plaintextBytes =
+      utf8.encode(jsonEncode(note.encryptedPayloadJson())).length;
+  final ciphertextLength = ((plaintextBytes + 16) * 4 + 2) ~/ 3;
+  final envelope = <String, dynamic>{
+    'version': 1,
+    'algorithm': 'AES_256_GCM',
+    'nonce': '0' * 16,
+    'ciphertext': '0' * ciphertextLength,
+    'key_id': '0' * 36,
+  };
+  return utf8.encode(jsonEncode(envelope)).length + 32;
+}
+
+String _planLabel(String plan) => switch (plan.toLowerCase()) {
+      'essential' => 'Essential',
+      'pro' => 'Pro',
+      'team' => 'Team',
+      'enterprise' => 'Enterprise',
+      _ => 'Free',
+    };
+
+String _formatBytes(int bytes, String languageCode) {
+  const mib = 1024 * 1024;
+  const gib = mib * 1024;
+  if (bytes <= 0) return '0 MB';
+  if (bytes >= gib) {
+    return '${_formatDecimal(bytes / gib, languageCode)} GB';
+  }
+  final megabytes = math.max(bytes / mib, 0.01);
+  return '${_formatDecimal(megabytes, languageCode)} MB';
+}
+
+String _formatDecimal(double value, String languageCode) {
+  final digits = value >= 10 || value == value.roundToDouble()
+      ? 0
+      : value < 1
+          ? 2
+          : 1;
+  final text = value.toStringAsFixed(digits);
+  return languageCode == 'de' ? text.replaceFirst('.', ',') : text;
+}
+
+String _formatCount(int value, String languageCode) {
+  final separator = languageCode == 'de' ? '.' : ',';
+  final digits = value.toString();
+  final buffer = StringBuffer();
+  for (var index = 0; index < digits.length; index++) {
+    if (index > 0 && (digits.length - index) % 3 == 0) buffer.write(separator);
+    buffer.write(digits[index]);
+  }
+  return buffer.toString();
 }
 
 class _AccountActionTile extends StatefulWidget {
@@ -5779,8 +8190,10 @@ void _createNoteForCurrentBucket(BuildContext context, WidgetRef ref) {
 
 void _openEditor(BuildContext context, WidgetRef ref, PlainNote note) {
   final wide = MediaQuery.sizeOf(context).width >= 760;
+  final reset = ref.read(_noteOverviewResetProvider.notifier);
+  late final Future<void> route;
   if (wide) {
-    showDialog<void>(
+    route = showDialog<void>(
       context: context,
       builder: (_) => Dialog(
         insetPadding: const EdgeInsets.all(32),
@@ -5792,10 +8205,15 @@ void _openEditor(BuildContext context, WidgetRef ref, PlainNote note) {
           child: NoteEditorPanel(note: note),
         ),
       ),
-    );
+    ).then((_) {});
   } else {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => NoteEditorScreen(note: note)),
-    );
+    route = Navigator.of(context)
+        .push(
+          MaterialPageRoute<void>(builder: (_) => NoteEditorScreen(note: note)),
+        )
+        .then((_) {});
   }
+  unawaited(route.whenComplete(() {
+    reset.state++;
+  }));
 }

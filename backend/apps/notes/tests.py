@@ -6,11 +6,13 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from django.core import mail
 from django.test import override_settings
+from rest_framework import serializers as drf_serializers
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from apps.attachments.serializers import AttachmentSerializer
 from apps.collaboration.consumers import valid_encrypted_event_payload
 from apps.collaboration.serializers import SyncEventSerializer
+from apps.core.storage import encrypted_note_storage_size
 from apps.notes.exceptions import VersionConflict
 from apps.notes.serializers import (
     ConflictResolutionSerializer,
@@ -19,7 +21,7 @@ from apps.notes.serializers import (
     ShareInvitationSerializer,
 )
 from apps.notes.sync import SyncBatchSerializer
-from apps.notes.views import ShareInvitationViewSet
+from apps.notes.views import NoteViewSet, ShareInvitationViewSet
 from apps.notifications.serializers import (
     EncryptedNotificationFanoutSerializer,
     NotificationSerializer,
@@ -193,6 +195,94 @@ def test_note_serializer_ignores_expected_version_on_create(tenant, owner_user):
 
     assert note.owner_user == owner_user
     assert note.version == 1
+
+
+def test_note_storage_size_tracks_encrypted_payload_updates(note):
+    expected_initial = encrypted_note_storage_size(
+        note.encrypted_payload,
+        note.payload_hash,
+    )
+    assert note.storage_bytes == expected_initial
+
+    note.encrypted_payload = {
+        **note.encrypted_payload,
+        "ciphertext": "a-much-longer-encrypted-payload",
+    }
+    note.payload_hash = b"updated-server-hash"
+    note.save(
+        update_fields=[
+            "encrypted_payload",
+            "payload_hash",
+            "updated_at",
+        ]
+    )
+    note.refresh_from_db()
+
+    assert note.storage_bytes == encrypted_note_storage_size(
+        note.encrypted_payload,
+        note.payload_hash,
+    )
+
+
+def test_empty_trash_permanently_deletes_only_trashed_notes(
+    db,
+    owner_user,
+    tenant,
+    note,
+    encrypted_payload,
+):
+    from apps.notes.models import Note
+
+    note.state = "trashed"
+    note.save(update_fields=["state", "updated_at"])
+    active_note = Note.objects.create(
+        tenant=tenant,
+        owner_user=owner_user,
+        encrypted_payload=encrypted_payload,
+        payload_hash=b"active-note",
+        client_updated_at="2026-09-08T00:00:00Z",
+    )
+    request = APIRequestFactory().post("/api/v1/notes/trash/empty/", {}, format="json")
+    force_authenticate(request, user=owner_user)
+
+    response = NoteViewSet.as_view({"post": "empty_trash"})(request)
+
+    assert response.status_code == 200
+    assert response.data == {"deleted_count": 1}
+    note.refresh_from_db()
+    active_note.refresh_from_db()
+    assert note.state == "deleted"
+    assert note.deleted_at is not None
+    assert active_note.state == "active"
+    assert active_note.deleted_at is None
+
+
+def test_note_create_rejects_workspace_storage_overflow(
+    monkeypatch,
+    tenant,
+    owner_user,
+):
+    monkeypatch.setattr(
+        "apps.notes.serializers.can_store_note_bytes",
+        lambda *args, **kwargs: False,
+    )
+    request = type("Request", (), {"user": owner_user})()
+    serializer = NoteSerializer(
+        data={
+            "tenant": str(tenant.id),
+            "encrypted_payload": encrypted_payload(),
+            "payload_hash": "client-hash",
+            "client_updated_at": "2026-06-10T00:00:00Z",
+        },
+        context={"request": request},
+    )
+
+    assert serializer.is_valid()
+    with pytest.raises(
+        drf_serializers.ValidationError,
+        match="Workspace storage quota exceeded",
+    ):
+        serializer.save()
 
 
 def test_sync_batch_requires_idempotency_key():

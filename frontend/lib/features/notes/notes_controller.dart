@@ -376,14 +376,21 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
   Future<void> changeState(PlainNote note, String nextState) async {
     final existing =
         state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
-    final updated =
-        note.copyWith(state: nextState, dirty: note.remoteId == null);
+    final current = existing.cast<PlainNote?>().firstWhere(
+              (item) => item?.localId == note.localId,
+              orElse: () => null,
+            ) ??
+        note;
+    final updated = current.copyWith(
+      state: nextState,
+      dirty: current.remoteId == null,
+    );
     final next = [
       updated,
       ...existing.where((item) => item.localId != note.localId),
     ]..sort(_sortNotes);
     await _persist(next);
-    if (note.remoteId == null) return;
+    if (current.remoteId == null) return;
 
     final session = ref.read(authControllerProvider).valueOrNull;
     if (session == null) return;
@@ -394,8 +401,8 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
         operations: [
           noteStateOperation(
             idempotencyKey:
-                '${note.localId}-state-$nextState-${DateTime.now().microsecondsSinceEpoch}',
-            remoteId: note.remoteId!,
+                '${current.localId}-state-$nextState-${DateTime.now().microsecondsSinceEpoch}',
+            remoteId: current.remoteId!,
             state: nextState,
           ),
         ],
@@ -407,6 +414,43 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
               ? SyncStatus.conflict
               : SyncStatus.offline;
     }
+  }
+
+  Future<int> emptyTrash() async {
+    await _saveQueue;
+    final existing =
+        state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
+    final trashed = existing.where((note) => note.state == 'trashed').toList();
+    if (trashed.isEmpty) return 0;
+
+    final session = ref.read(authControllerProvider).valueOrNull;
+    final hasRemoteNotes = trashed.any((note) => note.remoteId != null);
+    if (hasRemoteNotes && session == null) {
+      throw StateError(ref.read(l10nProvider).t('emptyTrashFailed'));
+    }
+
+    if (session != null) {
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
+      try {
+        await ref.read(apiClientProvider).emptyTrash(session.accessToken);
+      } catch (error) {
+        ref.read(syncStatusProvider.notifier).state = SyncStatus.offline;
+        rethrow;
+      }
+    }
+
+    final next = [
+      for (final note in existing)
+        if (note.state == 'trashed')
+          note.copyWith(state: 'deleted', dirty: false)
+        else
+          note,
+    ]..sort(_sortNotes);
+    await _persist(next);
+    if (session != null) {
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
+    }
+    return trashed.length;
   }
 
   Future<void> togglePinned(PlainNote note) {

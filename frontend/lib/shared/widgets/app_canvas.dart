@@ -12,43 +12,44 @@ class AppCanvas extends StatelessWidget {
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
     final mesh = ambientMeshColors(brightness);
-    final dark = brightness == Brightness.dark;
-    final intensity = dark ? 0.85 : 0.78;
+    final intensity = ambientMeshIntensity(brightness);
     return DecoratedBox(
       decoration: appCanvasDecoration(context),
       child: Stack(
         fit: StackFit.passthrough,
         children: [
           Positioned.fill(
-            child: IgnorePointer(
-              child: ClipRect(
-                child: Stack(
-                  children: [
-                    _Bloom(
-                      color: mesh[0],
-                      alignment: const Alignment(-0.85, -0.95),
-                      diameter: 1.15,
-                      opacity: intensity,
-                    ),
-                    _Bloom(
-                      color: mesh[1],
-                      alignment: const Alignment(1.0, -0.35),
-                      diameter: 0.95,
-                      opacity: intensity * 0.9,
-                    ),
-                    _Bloom(
-                      color: mesh[2],
-                      alignment: const Alignment(-0.6, 0.9),
-                      diameter: 1.05,
-                      opacity: intensity * 0.85,
-                    ),
-                    _Bloom(
-                      color: mesh[3],
-                      alignment: const Alignment(0.9, 1.0),
-                      diameter: 1.2,
-                      opacity: intensity * 0.8,
-                    ),
-                  ],
+            child: RepaintBoundary(
+              child: IgnorePointer(
+                child: ClipRect(
+                  child: Stack(
+                    children: [
+                      _Bloom(
+                        color: mesh[0],
+                        alignment: const Alignment(-0.85, -0.95),
+                        diameter: 1.15,
+                        opacity: intensity,
+                      ),
+                      _Bloom(
+                        color: mesh[1],
+                        alignment: const Alignment(1.0, -0.35),
+                        diameter: 0.95,
+                        opacity: intensity * 0.9,
+                      ),
+                      _Bloom(
+                        color: mesh[2],
+                        alignment: const Alignment(-0.6, 0.9),
+                        diameter: 1.05,
+                        opacity: intensity * 0.85,
+                      ),
+                      _Bloom(
+                        color: mesh[3],
+                        alignment: const Alignment(0.9, 1.0),
+                        diameter: 1.2,
+                        opacity: intensity * 0.8,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

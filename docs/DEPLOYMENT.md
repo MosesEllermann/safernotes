@@ -161,6 +161,9 @@ API_HOST
 API_USER
 API_SSH_KEY
 API_PROJECT_PATH
+
+ANDROID_KEYSTORE_BASE64
+ANDROID_KEY_PROPERTIES_BASE64
 ```
 
 Optionale Secrets:
@@ -185,6 +188,15 @@ ENABLE_PRODUCTION_DEPLOY=true
 
 Lasse `ENABLE_PRODUCTION_DEPLOY` weg oder setze es nicht auf `true`, solange DNS, Server und SSH-Secrets noch nicht fertig sind. Der Workflow testet und baut dann weiter, ueberspringt aber den echten Produktions-Deploy.
 
+Die beiden Android-Secrets enthalten die Base64-kodierten lokalen Signing-Dateien:
+
+```sh
+base64 < frontend/android/app/upload-keystore.jks | tr -d '\n' | gh secret set ANDROID_KEYSTORE_BASE64
+base64 < frontend/android/key.properties | tr -d '\n' | gh secret set ANDROID_KEY_PROPERTIES_BASE64
+```
+
+Die Dateien und ihre dekodierten Inhalte duerfen nie committed werden.
+
 ## 8. Automatisches Deployment
 
 Nach der Einrichtung reicht:
@@ -193,16 +205,18 @@ Nach der Einrichtung reicht:
 git push origin main
 ```
 
-GitHub Actions macht dann:
+GitHub Actions startet einen gemeinsamen `ci-and-deploy`-Run. Darin laufen die
+Pruefungen parallel; der Produktions-Deploy beginnt erst, wenn alle erforderlichen
+Jobs erfolgreich waren:
 
-1. Backend testen
-2. Flutter analysieren
-3. Flutter Web mit `https://api.safernotes.com` bauen
-4. Landingpage zu SPanel kopieren
-5. Flutter App zu SPanel kopieren
-6. Backend auf Ubuntu aktualisieren
-7. Migrationen ausführen
-8. API Healthcheck prüfen
+1. Backend testen und linten
+2. Python-Abhaengigkeiten und Quellcode pruefen
+3. Flutter analysieren, testen und Web bauen
+4. Signierte Android-APK bauen
+5. Landingpage, Flutter App und APK zu SPanel kopieren
+6. Backend auf den exakten Commit des Runs aktualisieren
+7. Migrationen ausfuehren
+8. API, SMTP und Downloads pruefen
 
 Die SPanel-Deploys schuetzen vorhandene `.htaccess`- und `.well-known/`-Dateien, damit SSL-Erneuerungen und Panel-Regeln nicht durch `rsync --delete` entfernt werden.
 

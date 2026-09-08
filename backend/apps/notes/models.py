@@ -27,16 +27,37 @@ class ShareInvitationStatus(models.TextChoices):
 
 
 class Note(TimeStampedUUIDModel):
-    tenant = models.ForeignKey("tenants.Organization", on_delete=models.CASCADE, related_name="notes")
-    owner_user = models.ForeignKey("users.User", on_delete=models.PROTECT, related_name="owned_notes")
+    tenant = models.ForeignKey(
+        "tenants.Organization", on_delete=models.CASCADE, related_name="notes"
+    )
+    owner_user = models.ForeignKey(
+        "users.User", on_delete=models.PROTECT, related_name="owned_notes"
+    )
     state = models.CharField(max_length=16, choices=NoteState.choices, default=NoteState.ACTIVE)
     pinned = models.BooleanField(default=False)
     version = models.PositiveBigIntegerField(default=1)
     schema_version = models.PositiveIntegerField(default=1)
     encrypted_payload = EncryptedJSONField()
     payload_hash = models.BinaryField()
+    storage_bytes = models.PositiveBigIntegerField(default=0, editable=False)
     client_updated_at = models.DateTimeField()
     deleted_at = models.DateTimeField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        from apps.core.storage import encrypted_note_storage_size
+
+        self.storage_bytes = encrypted_note_storage_size(
+            self.encrypted_payload,
+            self.payload_hash,
+        )
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and (
+            self._state.adding
+            or "encrypted_payload" in update_fields
+            or "payload_hash" in update_fields
+        ):
+            kwargs["update_fields"] = {*update_fields, "storage_bytes"}
+        return super().save(*args, **kwargs)
 
     class Meta:
         indexes = [
@@ -50,7 +71,9 @@ class NoteKeyGrant(TimeStampedUUIDModel):
     recipient_user = models.ForeignKey(
         "users.User", on_delete=models.CASCADE, related_name="received_note_grants"
     )
-    sender_user = models.ForeignKey("users.User", on_delete=models.PROTECT, related_name="sent_note_grants")
+    sender_user = models.ForeignKey(
+        "users.User", on_delete=models.PROTECT, related_name="sent_note_grants"
+    )
     role = models.CharField(max_length=16, choices=CollaboratorRole.choices)
     encrypted_note_key = EncryptedJSONField()
     grant_signature = models.BinaryField()
@@ -70,7 +93,9 @@ class NoteKeyGrant(TimeStampedUUIDModel):
 
 class ShareInvitation(TimeStampedUUIDModel):
     note = models.ForeignKey(Note, on_delete=models.CASCADE, related_name="share_invitations")
-    sender_user = models.ForeignKey("users.User", on_delete=models.PROTECT, related_name="sent_share_invitations")
+    sender_user = models.ForeignKey(
+        "users.User", on_delete=models.PROTECT, related_name="sent_share_invitations"
+    )
     recipient_user = models.ForeignKey(
         "users.User", on_delete=models.CASCADE, related_name="received_share_invitations"
     )
@@ -95,7 +120,9 @@ class ShareInvitation(TimeStampedUUIDModel):
 
 class NoteConflict(TimeStampedUUIDModel):
     note = models.ForeignKey(Note, on_delete=models.CASCADE, related_name="conflicts")
-    actor_user = models.ForeignKey("users.User", on_delete=models.PROTECT, related_name="note_conflicts")
+    actor_user = models.ForeignKey(
+        "users.User", on_delete=models.PROTECT, related_name="note_conflicts"
+    )
     base_version = models.PositiveBigIntegerField()
     server_version = models.PositiveBigIntegerField()
     encrypted_payload = EncryptedJSONField()
@@ -111,7 +138,9 @@ class NoteConflict(TimeStampedUUIDModel):
 
 
 class Label(TimeStampedUUIDModel):
-    tenant = models.ForeignKey("tenants.Organization", on_delete=models.CASCADE, related_name="labels")
+    tenant = models.ForeignKey(
+        "tenants.Organization", on_delete=models.CASCADE, related_name="labels"
+    )
     owner_user = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="labels")
     encrypted_payload = EncryptedJSONField()
 

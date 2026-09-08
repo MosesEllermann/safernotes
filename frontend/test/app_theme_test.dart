@@ -3,6 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
 
 void main() {
+  test('dark ambient mesh stays deliberately subdued', () {
+    expect(
+      ambientMeshIntensity(Brightness.dark),
+      lessThan(ambientMeshIntensity(Brightness.light)),
+    );
+    expect(ambientMeshIntensity(Brightness.dark), lessThan(0.5));
+    for (final color in ambientMeshColors(Brightness.dark)) {
+      expect(color.computeLuminance(), lessThan(0.04));
+    }
+  });
+
   for (final brightness in Brightness.values) {
     test('text contrast is readable in $brightness with custom device colors',
         () {

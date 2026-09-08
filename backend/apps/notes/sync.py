@@ -5,6 +5,7 @@ from django.utils import dateparse, timezone
 from rest_framework import serializers, views
 from rest_framework.response import Response
 
+from apps.attachments.quota import can_store_note_bytes, locked_usage_for_tenant
 from apps.core.abuse import increment_metadata_limit
 from apps.notes.models import Note
 from apps.notes.permissions import can_write_note
@@ -72,7 +73,9 @@ class SyncBatchView(views.APIView):
     def post(self, request):
         allowed, count = increment_metadata_limit("sync_batch", str(request.user.id))
         if not allowed:
-            raise serializers.ValidationError({"detail": "Sync batch rate limit exceeded.", "count": count})
+            raise serializers.ValidationError(
+                {"detail": "Sync batch rate limit exceeded.", "count": count}
+            )
         serializer = SyncBatchSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         device = request_device(request, serializer.validated_data.get("device_id"))
@@ -122,7 +125,12 @@ class SyncBatchView(views.APIView):
 
                 note_serializer.is_valid(raise_exception=True)
                 note = note_serializer.save()
-                result = {"index": index, "status": "ok", "note_id": str(note.id), "version": note.version}
+                result = {
+                    "index": index,
+                    "status": "ok",
+                    "note_id": str(note.id),
+                    "version": note.version,
+                }
                 results.append(result)
                 SyncOperationReceipt.objects.create(
                     user=request.user,
@@ -159,9 +167,26 @@ class SyncBatchView(views.APIView):
                         result=result,
                     )
                     continue
-                note.state = state_serializer.validated_data["state"]
-                note.save(update_fields=["state", "updated_at"])
-                result = {"index": index, "status": "ok", "note_id": str(note.id), "version": note.version}
+                next_state = state_serializer.validated_data["state"]
+                previous_bytes = 0 if note.state == "deleted" else note.storage_bytes
+                next_bytes = 0 if next_state == "deleted" else note.storage_bytes
+                usage = locked_usage_for_tenant(note.tenant)
+                if not can_store_note_bytes(
+                    note.tenant,
+                    previous_bytes=previous_bytes,
+                    next_bytes=next_bytes,
+                    attachment_usage=usage,
+                ):
+                    raise serializers.ValidationError("Workspace storage quota exceeded.")
+                note.state = next_state
+                note.deleted_at = timezone.now() if next_state == "deleted" else None
+                note.save(update_fields=["state", "deleted_at", "updated_at"])
+                result = {
+                    "index": index,
+                    "status": "ok",
+                    "note_id": str(note.id),
+                    "version": note.version,
+                }
                 results.append(result)
                 SyncOperationReceipt.objects.create(
                     user=request.user,
@@ -178,4 +203,6 @@ class SyncBatchView(views.APIView):
                 defaults={"cursor": timezone.now()},
             )
 
-        return Response({"checkpoint_device_id": str(device.id) if device else None, "results": results})
+        return Response(
+            {"checkpoint_device_id": str(device.id) if device else None, "results": results}
+        )

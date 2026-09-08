@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 PROJECT_DIR="${1:-/opt/safernotes/app}"
+DEPLOY_REF="${2:-origin/main}"
 ENV_FILE="${SAFERNOTES_ENV_FILE:-/opt/safernotes/.env.production}"
 COMPOSE_FILE="${SAFERNOTES_COMPOSE_FILE:-$PROJECT_DIR/deploy/docker-compose.prod.yml}"
 
@@ -28,8 +29,7 @@ read_env() {
 API_PORT="${SAFERNOTES_API_PORT:-$(read_env SAFERNOTES_API_PORT 8000)}"
 
 git fetch origin main
-git checkout main
-git pull --ff-only origin main
+git checkout --detach "$DEPLOY_REF"
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build api
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis

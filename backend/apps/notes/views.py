@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import decorators, exceptions, response, viewsets
 
+from apps.attachments.quota import can_store_note_bytes, locked_usage_for_tenant
 from apps.audit.events import record_audit_event
 from apps.core.abuse import increment_metadata_limit
 from apps.core.emails import send_share_invitation_email
@@ -53,6 +55,22 @@ class NoteViewSet(viewsets.ModelViewSet):
         instance.state = "deleted"
         instance.deleted_at = timezone.now()
         instance.save(update_fields=["state", "deleted_at", "updated_at"])
+
+    @decorators.action(detail=False, methods=["post"], url_path="trash/empty")
+    def empty_trash(self, request):
+        trashed_notes = list(self.get_queryset().filter(state="trashed"))
+        writable_ids = [note.id for note in trashed_notes if can_write_note(request.user, note)]
+        if not writable_ids:
+            return response.Response({"deleted_count": 0})
+
+        deleted_at = timezone.now()
+        with transaction.atomic():
+            deleted_count = Note.objects.filter(id__in=writable_ids, state="trashed").update(
+                state="deleted",
+                deleted_at=deleted_at,
+                updated_at=deleted_at,
+            )
+        return response.Response({"deleted_count": deleted_count})
 
     @decorators.action(detail=True, methods=["post"], url_path="sharing/key")
     def store_owner_key(self, request, pk=None):
@@ -120,10 +138,21 @@ class NoteViewSet(viewsets.ModelViewSet):
             raise exceptions.PermissionDenied("Viewer role cannot change note state.")
         serializer = NoteStateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        note.state = serializer.validated_data["state"]
-        if note.state == "deleted":
-            note.deleted_at = timezone.now()
-        note.save(update_fields=["state", "deleted_at", "updated_at"])
+        next_state = serializer.validated_data["state"]
+        previous_bytes = 0 if note.state == "deleted" else note.storage_bytes
+        next_bytes = 0 if next_state == "deleted" else note.storage_bytes
+        with transaction.atomic():
+            usage = locked_usage_for_tenant(note.tenant)
+            if not can_store_note_bytes(
+                note.tenant,
+                previous_bytes=previous_bytes,
+                next_bytes=next_bytes,
+                attachment_usage=usage,
+            ):
+                raise exceptions.ValidationError("Workspace storage quota exceeded.")
+            note.state = next_state
+            note.deleted_at = timezone.now() if note.state == "deleted" else None
+            note.save(update_fields=["state", "deleted_at", "updated_at"])
         return response.Response(NoteSerializer(note, context={"request": request}).data)
 
     @decorators.action(detail=True, methods=["get"])

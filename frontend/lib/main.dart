@@ -11,7 +11,8 @@ import 'package:safernotes_app/features/notes/notes_screen.dart';
 import 'package:safernotes_app/shared/app/app_preferences.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const ProviderScope(child: SafernotesApp()));
 }
 

@@ -107,13 +107,62 @@ void main() {
         const ValueKey('note-drag-trash-opacity-note-to-trash'),
       ),
     );
-    expect(feedbackOpacity.opacity, 0.52);
+    expect(feedbackOpacity.opacity, 0.24);
 
     await gesture.up();
     await tester.pump();
     expect(controller.changedNoteId, 'note-to-trash');
     expect(controller.changedState, 'trashed');
     expect(find.text('Note moved to trash.'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(controller.changedStates, ['trashed', 'active']);
+    expect(find.text('Note moved to trash.'), findsNothing);
+  });
+
+  testWidgets('trash confirmation closes automatically', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final note = _note(
+      localId: 'auto-close-trash',
+      title: 'Auto close',
+      body: 'The confirmation must not remain on screen.',
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([note]),
+          ),
+        ],
+        child: const MaterialApp(home: NotesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final card = find.byKey(
+      const ValueKey('compact-note-drag-auto-close-trash'),
+    );
+    final gesture = await tester.startGesture(tester.getCenter(card));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 200));
+    final target = find.byKey(const ValueKey('overview-trash-drop-target'));
+    await gesture.moveTo(tester.getCenter(target));
+    await tester.pump(const Duration(milliseconds: 220));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Note moved to trash.'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(find.text('Note moved to trash.'), findsNothing);
   });
 
   testWidgets('cards glide into their preview positions while reordering',
@@ -281,6 +330,7 @@ class _TestNotesController extends NotesController {
   final List<PlainNote> _notes;
   String? changedNoteId;
   String? changedState;
+  final changedStates = <String>[];
   String? reorderedNoteId;
   int? reorderedTargetIndex;
 
@@ -301,5 +351,6 @@ class _TestNotesController extends NotesController {
   Future<void> changeState(PlainNote note, String nextState) async {
     changedNoteId = note.localId;
     changedState = nextState;
+    changedStates.add(nextState);
   }
 }

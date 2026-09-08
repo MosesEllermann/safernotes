@@ -5,6 +5,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from apps.attachments.models import AttachmentUploadState, size_bucket_for
+from apps.attachments.quota import can_reserve_attachment_bytes
 from apps.attachments.serializers import AttachmentCompleteSerializer, AttachmentSerializer
 
 
@@ -65,3 +66,12 @@ def test_attachment_size_buckets():
     assert size_bucket_for(20 * 1024 * 1024) == "le_100mb"
     assert size_bucket_for(200 * 1024 * 1024) == "gt_100mb"
 
+
+def test_note_storage_counts_toward_attachment_quota(monkeypatch, tenant, note):
+    monkeypatch.setattr(
+        "apps.attachments.quota.quota_for_tenant",
+        lambda _: note.storage_bytes + 100,
+    )
+
+    assert can_reserve_attachment_bytes(tenant, 100)
+    assert not can_reserve_attachment_bytes(tenant, 101)

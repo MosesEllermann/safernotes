@@ -93,4 +93,68 @@ void main() {
     expect(captured.headers['Authorization'], 'Bearer access-token');
     expect(response['email_verified'], isTrue);
   });
+
+  test('subscription usage parses storage and note quotas', () async {
+    late http.Request captured;
+    final client = ApiClient(
+      baseUrl: 'http://example.test',
+      httpClient: MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({
+            'plan': 'free',
+            'usage': {
+              'storage_bytes_used': 12828672,
+              'ciphertext_bytes_used': 12828672,
+              'notes_bytes_used': 245760,
+              'attachments_bytes_used': 12582912,
+              'attachments_count': 3,
+              'notes_count': 42,
+            },
+            'limits': {
+              'storage_bytes': 524288000,
+              'max_notes': 500,
+            },
+          }),
+          200,
+        );
+      }),
+    );
+
+    final usage = await client.fetchSubscriptionUsage(
+      accessToken: 'access-token',
+      tenant: 'tenant-id',
+    );
+
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/api/v1/subscription/usage');
+    expect(captured.url.queryParameters['tenant'], 'tenant-id');
+    expect(captured.headers['Authorization'], 'Bearer access-token');
+    expect(usage.plan, 'free');
+    expect(usage.storageBytesUsed, 12828672);
+    expect(usage.storageBytesLimit, 524288000);
+    expect(usage.notesBytesUsed, 245760);
+    expect(usage.attachmentsBytesUsed, 12582912);
+    expect(usage.notesCount, 42);
+    expect(usage.maxNotes, 500);
+  });
+
+  test('empty trash uses the authenticated bulk endpoint', () async {
+    late http.Request captured;
+    final client = ApiClient(
+      baseUrl: 'http://example.test',
+      httpClient: MockClient((request) async {
+        captured = request;
+        return http.Response('{"deleted_count":3}', 200);
+      }),
+    );
+
+    final deletedCount = await client.emptyTrash('access-token');
+
+    expect(captured.method, 'POST');
+    expect(captured.url.path, '/api/v1/notes/trash/empty/');
+    expect(captured.headers['Authorization'], 'Bearer access-token');
+    expect(jsonDecode(captured.body), isEmpty);
+    expect(deletedCount, 3);
+  });
 }

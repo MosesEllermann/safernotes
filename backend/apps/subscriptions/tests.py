@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from apps.attachments.models import TenantStorageUsage
 from apps.subscriptions.plans import policy_for_plan
 from apps.subscriptions.usage import usage_report_for_tenant
 
@@ -26,9 +27,29 @@ def test_enterprise_policy_enables_enterprise_controls():
 
 
 def test_usage_report_exposes_counts_not_content(db, tenant, note):
+    TenantStorageUsage.objects.create(
+        tenant=tenant,
+        ciphertext_bytes_used=1024,
+        attachments_count=1,
+    )
     report = usage_report_for_tenant(tenant)
 
     assert report["tenant"] == str(tenant.id)
     assert report["usage"]["notes_count"] == 1
+    assert report["usage"]["notes_bytes_used"] == note.storage_bytes
+    assert report["usage"]["attachments_bytes_used"] == 1024
+    assert report["usage"]["storage_bytes_used"] == note.storage_bytes + 1024
+    assert report["usage"]["ciphertext_bytes_used"] == note.storage_bytes + 1024
     assert "encrypted_payload" not in str(report)
     assert "server-hash" not in str(report)
+
+
+def test_deleted_notes_do_not_consume_workspace_quota(db, tenant, note):
+    note.state = "deleted"
+    note.save(update_fields=["state", "updated_at"])
+
+    report = usage_report_for_tenant(tenant)
+
+    assert report["usage"]["notes_count"] == 0
+    assert report["usage"]["notes_bytes_used"] == 0
+    assert report["usage"]["storage_bytes_used"] == 0

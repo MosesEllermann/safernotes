@@ -5,7 +5,9 @@ from uuid import UUID
 from django.db import transaction
 from rest_framework import serializers
 
+from apps.attachments.quota import can_store_note_bytes, locked_usage_for_tenant
 from apps.core.serializers import BinaryTextField, EncryptedEnvelopeField, RejectPlaintextMixin
+from apps.core.storage import encrypted_note_storage_size
 from apps.notes.exceptions import VersionConflict
 from apps.notes.models import (
     Label,
@@ -17,6 +19,12 @@ from apps.notes.models import (
 )
 from apps.notes.permissions import can_share_note
 from apps.users.models import User
+
+
+def _billable_note_bytes(encrypted_payload, payload_hash, state: str) -> int:
+    if state == NoteState.DELETED:
+        return 0
+    return encrypted_note_storage_size(encrypted_payload, payload_hash)
 
 
 class NoteSerializer(RejectPlaintextMixin, serializers.ModelSerializer):
@@ -83,7 +91,24 @@ class NoteSerializer(RejectPlaintextMixin, serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop("expected_version", None)
         validated_data["owner_user"] = self.context["request"].user
-        return super().create(validated_data)
+        tenant = validated_data["tenant"]
+        next_bytes = _billable_note_bytes(
+            validated_data["encrypted_payload"],
+            validated_data["payload_hash"],
+            validated_data.get("state", NoteState.ACTIVE),
+        )
+        with transaction.atomic():
+            usage = locked_usage_for_tenant(tenant)
+            if not can_store_note_bytes(
+                tenant,
+                previous_bytes=0,
+                next_bytes=next_bytes,
+                attachment_usage=usage,
+            ):
+                raise serializers.ValidationError(
+                    {"encrypted_payload": "Workspace storage quota exceeded."}
+                )
+            return super().create(validated_data)
 
     def update(self, instance, validated_data):
         expected_version = validated_data.pop("expected_version", None)
@@ -109,7 +134,24 @@ class NoteSerializer(RejectPlaintextMixin, serializers.ModelSerializer):
                 }
             )
         validated_data["version"] = instance.version + 1
-        return super().update(instance, validated_data)
+        previous_bytes = 0 if instance.state == NoteState.DELETED else instance.storage_bytes
+        next_bytes = _billable_note_bytes(
+            validated_data.get("encrypted_payload", instance.encrypted_payload),
+            validated_data.get("payload_hash", instance.payload_hash),
+            validated_data.get("state", instance.state),
+        )
+        with transaction.atomic():
+            usage = locked_usage_for_tenant(instance.tenant)
+            if not can_store_note_bytes(
+                instance.tenant,
+                previous_bytes=previous_bytes,
+                next_bytes=next_bytes,
+                attachment_usage=usage,
+            ):
+                raise serializers.ValidationError(
+                    {"encrypted_payload": "Workspace storage quota exceeded."}
+                )
+            return super().update(instance, validated_data)
 
 
 class NoteStateSerializer(serializers.Serializer):

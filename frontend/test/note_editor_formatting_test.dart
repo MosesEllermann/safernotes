@@ -259,7 +259,7 @@ void main() {
     expect(find.byTooltip('Background'), findsOneWidget);
   });
 
-  testWidgets('mobile header uses larger actions and an overflow menu',
+  testWidgets('mobile header exposes all five actions directly',
       (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -281,15 +281,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(tester.getSize(find.byTooltip('Pin')), const Size(44, 44));
-    expect(find.byTooltip('Archive note'), findsNothing);
-    expect(find.byTooltip('Move to trash'), findsNothing);
-
-    await tester.tap(find.byTooltip('More actions'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Archive note'), findsOneWidget);
-    expect(find.text('Move to trash'), findsOneWidget);
+    expect(tester.getSize(find.byTooltip('Pin')), const Size(40, 40));
+    expect(find.byTooltip('Invite collaborator'), findsOneWidget);
+    expect(find.byTooltip('Reminder'), findsOneWidget);
+    expect(find.byTooltip('Archive note'), findsOneWidget);
+    expect(find.byTooltip('Move to trash'), findsOneWidget);
+    expect(find.byTooltip('More actions'), findsNothing);
   });
 
   testWidgets('mobile checklist uses swipe gestures instead of indent buttons',
