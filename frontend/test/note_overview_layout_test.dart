@@ -175,6 +175,15 @@ void main() {
       tester.getTopRight(title).dx,
       lessThan(tester.getTopLeft(actions).dx),
     );
+    final titleAlignment = tester.widget<Transform>(
+      find.byKey(const ValueKey('desktop-editor-title-alignment')),
+    );
+    expect(titleAlignment.transform.getTranslation().y, -4);
+    expect(
+      tester.getCenter(title).dy,
+      closeTo(tester.getCenter(actions).dy - 4, 0.01),
+    );
+    expect(tester.getSize(actions).width, 204);
     expect(tester.takeException(), isNull);
   });
 
@@ -204,6 +213,7 @@ void main() {
       find.descendant(of: actions, matching: find.byType(AppIconButton)),
       findsNWidgets(5),
     );
+    expect(tester.getSize(actions).width, 224);
     expect(tester.getTopLeft(title).dy,
         greaterThan(tester.getBottomLeft(actions).dy));
 
@@ -1032,6 +1042,42 @@ void main() {
       find.byKey(const ValueKey('mobile-sidebar-quota-card')),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('mobile-sidebar-navigation')),
+      findsOneWidget,
+    );
+    final inactiveReminder = find.byKey(
+      const ValueKey('mobile-sidebar-bucket-reminders'),
+    );
+    final inactiveSurface = tester.widget<AnimatedContainer>(
+      find
+          .descendant(
+            of: inactiveReminder,
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    expect(
+      (inactiveSurface.decoration! as BoxDecoration).color,
+      Colors.transparent,
+    );
+    final settingsAction = find.byKey(
+      const ValueKey('account-settings-action'),
+    );
+    final settingsSurface = tester.widget<AnimatedContainer>(
+      find
+          .descendant(
+            of: settingsAction,
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    final sideSheetScheme =
+        Theme.of(tester.element(settingsAction)).colorScheme;
+    expect(
+      (settingsSurface.decoration! as BoxDecoration).color,
+      sideSheetScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+    );
     expect(find.text('12 MB of 500 MB'), findsOneWidget);
     expect(find.text('42 of 500 notes'), findsOneWidget);
     expect(find.byType(BackdropFilter), findsWidgets);
@@ -1067,6 +1113,13 @@ void main() {
       (cardMaterial.shape! as RoundedSuperellipseBorder).borderRadius,
       BorderRadius.circular(AppRadii.noteCard),
     );
+    final desktopCardContent = tester.widget<Padding>(
+      find.byKey(const ValueKey('note-card-content-note-one')),
+    );
+    expect(
+      desktopCardContent.padding,
+      const EdgeInsets.fromLTRB(20, 18, 20, 20),
+    );
     expect(
       find.byKey(const ValueKey('desktop-note-backdrop-note-one')),
       findsOneWidget,
@@ -1098,6 +1151,25 @@ void main() {
       ),
     );
     expect(rail, findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('desktop-account-menu')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('mobile-account-side-sheet')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile-sidebar-navigation')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('account-settings-action')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('account-logout-action')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('mobile list preference renders a compact note list',
@@ -1173,6 +1245,15 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('desktop-inline-note-filters')),
+      findsOneWidget,
+    );
+    final allNotesFilter = find.byKey(const ValueKey('note-filter-all'));
+    expect(tester.getSize(allNotesFilter).height, lessThan(42));
+    final workspaceHeader = find.byKey(
+      const ValueKey('notes-workspace-header'),
+    );
+    expect(
+      find.descendant(of: workspaceHeader, matching: find.text('2')),
       findsOneWidget,
     );
     final split = find.byKey(const ValueKey('desktop-split-layout'));

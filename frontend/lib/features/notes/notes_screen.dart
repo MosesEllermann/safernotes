@@ -312,7 +312,10 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                       icon: AppIcons.settings,
                       onPressed: () => _openSettings(context, ref),
                     ),
-                    _AccountButton(email: session?.email ?? ''),
+                    _AccountButton(
+                      key: const ValueKey('desktop-account-menu'),
+                      email: session?.email ?? '',
+                    ),
                     const SizedBox(width: 8),
                   ],
                 )
@@ -1190,7 +1193,11 @@ class _WorkspaceHeader extends ConsumerWidget {
         ),
       ),
     );
-    final filters = _QuickFilterChips(noteCount: noteCount, labels: labels);
+    final filters = _QuickFilterChips(
+      noteCount: noteCount,
+      labels: labels,
+      dense: inlineFilters,
+    );
     final titleAndFilters = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1199,12 +1206,13 @@ class _WorkspaceHeader extends ConsumerWidget {
             key: const ValueKey('desktop-inline-note-filters'),
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              SizedBox(width: 230, child: titleBlock),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 230),
+                child: titleBlock,
+              ),
               if (trashButton != null) trashButton,
               const SizedBox(width: 24),
               Expanded(child: filters),
-              const SizedBox(width: 16),
-              count,
             ],
           )
         else ...[
@@ -1459,10 +1467,15 @@ class _HeaderDateLine extends ConsumerWidget {
 }
 
 class _QuickFilterChips extends ConsumerWidget {
-  const _QuickFilterChips({required this.noteCount, required this.labels});
+  const _QuickFilterChips({
+    required this.noteCount,
+    required this.labels,
+    this.dense = false,
+  });
 
   final int noteCount;
   final List<String> labels;
+  final bool dense;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1482,28 +1495,33 @@ class _QuickFilterChips extends ConsumerWidget {
       child: Row(
         children: [
           _FilterChip(
+            key: const ValueKey('note-filter-all'),
             label: l10n.t('filterAll'),
             count: noteCount,
+            dense: dense,
             selected: active == NoteQuickFilter.all,
             onTap: () => select(NoteQuickFilter.all),
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: dense ? 8 : 10),
           _FilterChip(
             label: l10n.t('filterFavorites'),
+            dense: dense,
             selected: active == NoteQuickFilter.favorites,
             onTap: () => select(NoteQuickFilter.favorites),
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: dense ? 8 : 10),
           _FilterChip(
             label: l10n.t('filterTodo'),
+            dense: dense,
             selected: active == NoteQuickFilter.todo,
             onTap: () => select(NoteQuickFilter.todo),
           ),
           for (final label in labels) ...[
-            const SizedBox(width: 10),
+            SizedBox(width: dense ? 8 : 10),
             _FilterChip(
               label: label,
               accent: true,
+              dense: dense,
               selected: active == NoteQuickFilter.label && activeLabel == label,
               onTap: () => select(NoteQuickFilter.label, label),
             ),
@@ -1516,11 +1534,13 @@ class _QuickFilterChips extends ConsumerWidget {
 
 class _FilterChip extends StatelessWidget {
   const _FilterChip({
+    super.key,
     required this.label,
     required this.selected,
     required this.onTap,
     this.count,
     this.accent = false,
+    this.dense = false,
   });
 
   final String label;
@@ -1528,6 +1548,7 @@ class _FilterChip extends StatelessWidget {
   final VoidCallback onTap;
   final int? count;
   final bool accent;
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -1556,7 +1577,8 @@ class _FilterChip extends StatelessWidget {
             : const Color(0xffd9d4da);
     final countTextColor =
         dark && selected ? const Color(0xfff8f4fa) : const Color(0xff27302e);
-    final verticalPadding = compact ? 8.0 : 11.0;
+    final verticalPadding = dense ? 7.0 : (compact ? 8.0 : 11.0);
+    final horizontalPadding = dense ? 14.0 : (compact ? 16.0 : 20.0);
     final content = Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1565,9 +1587,9 @@ class _FilterChip extends StatelessWidget {
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,
           padding: EdgeInsets.fromLTRB(
-            count != null ? 7 : (compact ? 16 : 20),
+            count != null ? (dense ? 6 : 7) : horizontalPadding,
             verticalPadding,
-            compact ? 16 : 20,
+            horizontalPadding,
             verticalPadding,
           ),
           decoration: BoxDecoration(
@@ -1581,8 +1603,8 @@ class _FilterChip extends StatelessWidget {
               if (count != null) ...[
                 Container(
                   key: const ValueKey('note-filter-count-badge'),
-                  width: compact ? 24 : 26,
-                  height: compact ? 24 : 26,
+                  width: dense ? 22 : (compact ? 24 : 26),
+                  height: dense ? 22 : (compact ? 24 : 26),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
@@ -1591,17 +1613,18 @@ class _FilterChip extends StatelessWidget {
                   child: Text(
                     '$count',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontSize: 13,
+                          fontSize: dense ? 12 : 13,
                           fontWeight: FontWeight.w700,
                           color: countTextColor,
                         ),
                   ),
                 ),
-                SizedBox(width: compact ? 8 : 10),
+                SizedBox(width: dense ? 7 : (compact ? 8 : 10)),
               ],
               Text(
                 label,
                 style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontSize: dense ? 14 : null,
                       color: textColor,
                       fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     ),
@@ -5208,9 +5231,9 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                     child: Padding(
                       key: ValueKey('note-card-content-${note.localId}'),
                       padding: EdgeInsets.fromLTRB(
-                        compact ? 14 : 24,
+                        compact ? 14 : 20,
                         compact ? 12 : 18,
-                        compact ? 14 : 18,
+                        compact ? 14 : 20,
                         compact ? 14 : 20,
                       ),
                       child: Column(
@@ -6232,6 +6255,7 @@ class _MobileMenuButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(noteBucketProvider) == bucket;
     return _MenuActionRow(
+      key: ValueKey('mobile-sidebar-bucket-$bucket'),
       icon: icon,
       label: label,
       selected: selected,
@@ -6245,6 +6269,7 @@ class _MobileMenuButton extends ConsumerWidget {
 
 class _MenuActionRow extends StatefulWidget {
   const _MenuActionRow({
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,
@@ -6285,11 +6310,15 @@ class _MenuActionRowState extends State<_MenuActionRow> {
                 ? scheme.surfaceContainerHighest.withValues(alpha: 0.4)
                 : _hovered
                     ? scheme.surfaceContainerHighest.withValues(alpha: 0.22)
-                    : scheme.surfaceContainerHighest.withValues(alpha: 0.08),
+                    : Colors.transparent,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: scheme.outlineVariant.withValues(
-                alpha: widget.selected ? 0.18 : 0.08,
+                alpha: widget.selected
+                    ? 0.18
+                    : _hovered
+                        ? 0.1
+                        : 0,
               ),
             ),
           ),
@@ -6385,6 +6414,7 @@ class _AccountSideSheet extends ConsumerWidget {
     final initial = email.isEmpty ? '?' : email.substring(0, 1).toUpperCase();
     final scheme = Theme.of(context).colorScheme;
     final dark = scheme.brightness == Brightness.dark;
+    final mobile = MediaQuery.sizeOf(context).width < 900;
     const radius = BorderRadius.only(
       topLeft: Radius.circular(30),
       bottomLeft: Radius.circular(30),
@@ -6511,30 +6541,41 @@ class _AccountSideSheet extends ConsumerWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              _MobileMenuButton(
-                                bucket: 'active',
-                                icon: AppIcons.notebookText,
-                                label: l10n.t('notes'),
-                              ),
-                              const SizedBox(height: 4),
-                              _MobileMenuButton(
-                                bucket: 'reminders',
-                                icon: AppIcons.bell,
-                                label: l10n.t('reminders'),
-                              ),
-                              const SizedBox(height: 4),
-                              _MobileMenuButton(
-                                bucket: 'archived',
-                                icon: AppIcons.archive,
-                                label: l10n.t('archive'),
-                              ),
-                              const SizedBox(height: 4),
-                              _MobileMenuButton(
-                                bucket: 'trashed',
-                                icon: AppIcons.trash,
-                                label: l10n.t('trash'),
-                              ),
-                              const SizedBox(height: 14),
+                              if (mobile) ...[
+                                Column(
+                                  key: const ValueKey(
+                                    'mobile-sidebar-navigation',
+                                  ),
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _MobileMenuButton(
+                                      bucket: 'active',
+                                      icon: AppIcons.notebookText,
+                                      label: l10n.t('notes'),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    _MobileMenuButton(
+                                      bucket: 'reminders',
+                                      icon: AppIcons.bell,
+                                      label: l10n.t('reminders'),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    _MobileMenuButton(
+                                      bucket: 'archived',
+                                      icon: AppIcons.archive,
+                                      label: l10n.t('archive'),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    _MobileMenuButton(
+                                      bucket: 'trashed',
+                                      icon: AppIcons.trash,
+                                      label: l10n.t('trash'),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
+                              ],
                               Container(
                                 key: const ValueKey(
                                   'mobile-sidebar-sync-status',
@@ -6562,6 +6603,7 @@ class _AccountSideSheet extends ConsumerWidget {
                         ),
                       ),
                       _AccountActionTile(
+                        key: const ValueKey('account-settings-action'),
                         icon: AppIcons.settings,
                         label: l10n.t('settings'),
                         onTap: () {
@@ -6571,6 +6613,7 @@ class _AccountSideSheet extends ConsumerWidget {
                       ),
                       const SizedBox(height: 4),
                       _AccountActionTile(
+                        key: const ValueKey('account-logout-action'),
                         icon: AppIcons.logOut,
                         label: l10n.t('logout'),
                         destructive: true,
@@ -6941,6 +6984,7 @@ String _formatCount(int value, String languageCode) {
 
 class _AccountActionTile extends StatefulWidget {
   const _AccountActionTile({
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,
@@ -6979,11 +7023,11 @@ class _AccountActionTileState extends State<_AccountActionTile> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
           decoration: BoxDecoration(
             color: _hovered
-                ? scheme.surfaceContainerHighest.withValues(alpha: 0.24)
-                : scheme.surfaceContainerHighest.withValues(alpha: 0.08),
+                ? scheme.surfaceContainerHighest.withValues(alpha: 0.52)
+                : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: scheme.outlineVariant.withValues(alpha: 0.08),
+              color: scheme.outlineVariant.withValues(alpha: 0.18),
             ),
           ),
           child: Row(

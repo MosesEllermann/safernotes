@@ -297,7 +297,15 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                                   ),
                                   const SizedBox(width: 14),
                                 ],
-                                Expanded(child: titleField),
+                                Expanded(
+                                  child: Transform.translate(
+                                    key: const ValueKey(
+                                      'desktop-editor-title-alignment',
+                                    ),
+                                    offset: const Offset(0, -4),
+                                    child: titleField,
+                                  ),
+                                ),
                                 const SizedBox(width: 14),
                                 _PresenceDots(presence: presence),
                                 headerActions,
@@ -2099,12 +2107,14 @@ class _EditorHeaderActions extends StatelessWidget {
           selected: pinned,
           onPressed: onPin,
         ),
+        const SizedBox(width: 6),
         AppIconButton(
           tooltip: l10n.t('collaboratorInvite'),
           icon: shared ? AppIcons.users : AppIcons.userPlus,
           size: size,
           onPressed: canShare ? onShare : null,
         ),
+        const SizedBox(width: 6),
         AppIconButton(
           tooltip: l10n.t('reminder'),
           icon: reminderActive ? AppIcons.bellRing : AppIcons.bell,
@@ -2112,12 +2122,14 @@ class _EditorHeaderActions extends StatelessWidget {
           selected: reminderActive,
           onPressed: onReminder,
         ),
+        const SizedBox(width: 6),
         AppIconButton(
           tooltip: l10n.t('archiveNote'),
           icon: AppIcons.archive,
           size: size,
           onPressed: onArchive,
         ),
+        const SizedBox(width: 6),
         AppIconButton(
           tooltip: l10n.t('moveToTrash'),
           icon: AppIcons.trash,
