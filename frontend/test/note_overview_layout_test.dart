@@ -794,6 +794,11 @@ void main() {
       find.descendant(of: nativeActions, matching: find.byType(CNButton)),
       findsNWidgets(3),
     );
+    for (final button in tester.widgetList<CNButton>(
+      find.descendant(of: nativeActions, matching: find.byType(CNButton)),
+    )) {
+      expect(button.config.imagePlacement, CNImagePlacement.top);
+    }
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 

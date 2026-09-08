@@ -4036,7 +4036,7 @@ class _IosNativeCreateActions extends StatelessWidget {
                                       borderRadius: _MobileBottomNavState
                                           ._createActionRadius,
                                       imagePadding: 4,
-                                      imagePlacement: CNImagePlacement.leading,
+                                      imagePlacement: CNImagePlacement.top,
                                       style: CNButtonStyle.plain,
                                       maxLines: 1,
                                       labelFontSize: 11.5,
