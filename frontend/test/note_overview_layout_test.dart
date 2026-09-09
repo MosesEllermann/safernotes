@@ -425,10 +425,10 @@ void main() {
     );
     expect(find.byKey(const ValueKey('mobile-nav-search')), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
-    final navBackdrop = tester.widget<BackdropFilter>(
+    expect(
       find.byKey(const ValueKey('mobile-bottom-nav-backdrop')),
+      findsNothing,
     );
-    expect(navBackdrop.enabled, isTrue);
     final navFill = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('mobile-nav-drawer-fill')),
     );
@@ -647,6 +647,9 @@ void main() {
     final gesture = await tester.startGesture(tester.getCenter(card));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 220));
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
 
     expect(
         find.byKey(const ValueKey('mobile-create-note-action')), findsNothing);
@@ -737,6 +740,14 @@ void main() {
     final guard = find.byKey(const ValueKey('android-system-gesture-guard'));
     expect(guard, findsOneWidget);
     expect(tester.getSize(guard).height, 32);
+    expect(
+      find.byKey(const ValueKey('mobile-bottom-nav-backdrop')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile-header-button-backdrop')),
+      findsNothing,
+    );
     final gesture = await tester.startGesture(const Offset(4, 845));
     await gesture.moveBy(const Offset(0, -220));
     await gesture.up();
@@ -1346,7 +1357,11 @@ void main() {
     final second = find.byKey(const ValueKey('note-list-item-note-two'));
     final gesture = await tester.startGesture(tester.getCenter(first));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
     await gesture.moveTo(tester.getCenter(second) + const Offset(0, 18));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, 1));
     await tester.pump(const Duration(milliseconds: 220));
     await gesture.up();
     await tester.pump();
@@ -1355,7 +1370,106 @@ void main() {
     expect(controller.reorderedTargetIndex, greaterThan(0));
   });
 
-  testWidgets('long pressing a list note exposes the trash drop target',
+  testWidgets('stationary long press selects notes and bulk delete applies all',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(430, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = _TestNotesController([
+      _note('note-one', 'First note', 'A short first preview.'),
+      _note('note-two', 'Second note', 'A short second preview.'),
+    ]);
+    await _pumpNotesWithController(tester, controller);
+
+    final first = find.byKey(const ValueKey('compact-note-drag-note-one'));
+    final gesture = await tester.startGesture(tester.getCenter(first));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(controller.reorderedNoteId, isNull);
+    expect(
+        find.byKey(const ValueKey('multi-selection-toolbar')), findsOneWidget);
+    expect(find.text('1 selected'), findsOneWidget);
+    expect(find.byKey(const ValueKey('mobile-nav-trash-drop-target')),
+        findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey('compact-note-drag-note-two')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey('delete-selected-notes')),
+    );
+    await tester.pumpAndSettle();
+    expect(controller.changedNoteIds, ['note-one', 'note-two']);
+    expect(find.byKey(const ValueKey('multi-selection-toolbar')), findsNothing);
+    expect(
+        find.byKey(const ValueKey('mobile-bottom-nav-pill')), findsOneWidget);
+  });
+
+  testWidgets('desktop hover controls select without changing card height',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpNotes(tester);
+
+    final first = find.byKey(const ValueKey('compact-note-drag-note-one'));
+    final firstControl =
+        find.byKey(const ValueKey('note-selection-control-note-one'));
+    final heightBefore = tester.getSize(first).height;
+    expect(tester.widget<AnimatedOpacity>(firstControl).opacity, 0);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(1, 1));
+    await mouse.moveTo(tester.getCenter(first));
+    await tester.pumpAndSettle();
+    expect(tester.widget<AnimatedOpacity>(firstControl).opacity, 1);
+    expect(tester.getSize(first).height, heightBefore);
+
+    await tester.tap(firstControl);
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+    final secondControl =
+        find.byKey(const ValueKey('note-selection-control-note-two'));
+    expect(tester.widget<AnimatedOpacity>(secondControl).opacity, 1);
+
+    await tester.tap(
+      find.byKey(const ValueKey('compact-note-drag-note-two')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+    expect(find.byType(Dialog), findsNothing);
+    expect(tester.getSize(first).height, heightBefore);
+    await mouse.removePointer();
+  });
+
+  testWidgets('mobile note cards omit the normal synced status',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(430, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpNotesWithController(
+      tester,
+      _TestNotesController([
+        _note('dirty-note', 'Dirty note', 'Pending content')
+            .copyWith(dirty: true),
+      ]),
+    );
+
+    expect(find.text('synced'), findsNothing);
+  });
+
+  testWidgets('moving after a long press exposes the trash drop target',
       (tester) async {
     SharedPreferences.setMockInitialValues({
       'zk.pref.note_overview_layout': 'list',
@@ -1373,6 +1487,9 @@ void main() {
     final first = find.byKey(const ValueKey('note-list-item-note-one'));
     final gesture = await tester.startGesture(tester.getCenter(first));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 200));
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
     final trash = find.byKey(const ValueKey('mobile-nav-trash-drop-target'));
     expect(trash, findsOneWidget);
@@ -1393,11 +1510,17 @@ void main() {
     );
     expect(openingSurface.height, greaterThan(62));
     expect(openingSurface.height, lessThan(88));
-    final selectionMorph = tester.widget<Positioned>(
+    final selectionMorph = tester.widget<Transform>(
       find.byKey(const ValueKey('mobile-nav-selection-morph')),
     );
-    expect(selectionMorph.left, greaterThan(80));
-    expect(selectionMorph.width, lessThan(30));
+    expect(selectionMorph.transform.getTranslation().x, greaterThan(80));
+    final selectionScale = tester.widget<Transform>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile-nav-selection-morph')),
+        matching: find.byType(Transform),
+      ),
+    );
+    expect(selectionScale.transform.entry(0, 0) * 50, lessThan(30));
 
     final lift = tester.widget<Transform>(
       find.byKey(const ValueKey('mobile-nav-trash-lift')),
@@ -1594,6 +1717,7 @@ class _TestNotesController extends NotesController {
   int? reorderedTargetIndex;
   String? changedNoteId;
   String? changedState;
+  final changedNoteIds = <String>[];
   int emptyTrashCalls = 0;
 
   @override
@@ -1613,6 +1737,7 @@ class _TestNotesController extends NotesController {
   Future<void> changeState(PlainNote note, String nextState) async {
     changedNoteId = note.localId;
     changedState = nextState;
+    changedNoteIds.add(note.localId);
   }
 
   @override

@@ -14,13 +14,19 @@ void main() {
       );
 
       final image = tester.widget<Image>(find.byType(Image));
-      final asset = image.image as AssetImage;
+      final resized = image.image as ResizeImage;
+      final asset = resized.imageProvider as AssetImage;
       expect(
         asset.assetName,
         brightness == Brightness.dark
             ? 'assets/safernotes-logo-white.png'
             : 'assets/safernotes-logo-black.png',
       );
+      expect(
+        resized.width,
+        (40 * tester.view.devicePixelRatio).ceil(),
+      );
+      expect(resized.height, isNull);
       expect(image.fit, BoxFit.contain);
     });
   }

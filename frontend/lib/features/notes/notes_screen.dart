@@ -24,7 +24,9 @@ import 'package:safernotes_app/shared/notifications/reminder_notifications.dart'
 import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
 import 'package:safernotes_app/shared/widgets/app_canvas.dart';
+import 'package:safernotes_app/shared/widgets/app_info_bar.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
+import 'package:safernotes_app/shared/widgets/app_motion.dart';
 import 'package:safernotes_app/shared/widgets/glass_surface.dart';
 import 'package:safernotes_app/shared/widgets/safernotes_logo.dart';
 
@@ -41,6 +43,8 @@ final noteLabelFilterProvider = StateProvider<String?>((ref) => null);
 final _draggedNoteProvider = StateProvider<PlainNote?>((ref) => null);
 final _dragTrashHoverProvider = StateProvider<bool>((ref) => false);
 final _noteOverviewResetProvider = StateProvider<int>((ref) => 0);
+final _selectedNoteIdsProvider =
+    StateProvider.autoDispose<Set<String>>((ref) => const {});
 final _accountUsageProvider = FutureProvider.autoDispose
     .family<SubscriptionUsage, ({String accessToken, String tenant})>(
         (ref, credentials) async {
@@ -168,9 +172,11 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   }
 
   void _showInvitationMessage(String message) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-    messenger.showSnackBar(SnackBar(content: Text(message)));
+    showAppInfoBar(
+      context,
+      message: message,
+      avoidMobileNavigation: true,
+    );
   }
 
   Future<Map<String, dynamic>> _loadInvitation({
@@ -230,6 +236,8 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
     final notes = ref.watch(notesControllerProvider);
+    final selectedNoteIds = ref.watch(_selectedNoteIdsProvider);
+    final selectionActive = selectedNoteIds.isNotEmpty;
     final session = ref.watch(authControllerProvider).valueOrNull;
     final width = MediaQuery.sizeOf(context).width;
     final desktop = width >= 900;
@@ -287,37 +295,42 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                       ],
                     ),
                   ),
-                  actions: [
-                    const _SyncIndicator(),
-                    AppIconButton(
-                      key: const ValueKey('note-overview-layout-toggle'),
-                      tooltip: l10n.t(
-                        noteOverviewLayout == NoteOverviewLayout.cards
-                            ? 'switchToListView'
-                            : 'switchToCardsView',
-                      ),
-                      icon: noteOverviewLayout == NoteOverviewLayout.cards
-                          ? AppIcons.columns2
-                          : AppIcons.grid2X2,
-                      onPressed: () => ref
-                          .read(appPreferencesProvider.notifier)
-                          .setNoteOverviewLayout(
-                            noteOverviewLayout == NoteOverviewLayout.cards
-                                ? NoteOverviewLayout.list
-                                : NoteOverviewLayout.cards,
+                  actions: selectionActive
+                      ? const [
+                          _MultiSelectionToolbar(),
+                          SizedBox(width: 8),
+                        ]
+                      : [
+                          const _SyncIndicator(),
+                          AppIconButton(
+                            key: const ValueKey('note-overview-layout-toggle'),
+                            tooltip: l10n.t(
+                              noteOverviewLayout == NoteOverviewLayout.cards
+                                  ? 'switchToListView'
+                                  : 'switchToCardsView',
+                            ),
+                            icon: noteOverviewLayout == NoteOverviewLayout.cards
+                                ? AppIcons.columns2
+                                : AppIcons.grid2X2,
+                            onPressed: () => ref
+                                .read(appPreferencesProvider.notifier)
+                                .setNoteOverviewLayout(
+                                  noteOverviewLayout == NoteOverviewLayout.cards
+                                      ? NoteOverviewLayout.list
+                                      : NoteOverviewLayout.cards,
+                                ),
                           ),
-                    ),
-                    AppIconButton(
-                      tooltip: l10n.t('settings'),
-                      icon: AppIcons.settings,
-                      onPressed: () => _openSettings(context, ref),
-                    ),
-                    _AccountButton(
-                      key: const ValueKey('desktop-account-menu'),
-                      email: session?.email ?? '',
-                    ),
-                    const SizedBox(width: 8),
-                  ],
+                          AppIconButton(
+                            tooltip: l10n.t('settings'),
+                            icon: AppIcons.settings,
+                            onPressed: () => _openSettings(context, ref),
+                          ),
+                          _AccountButton(
+                            key: const ValueKey('desktop-account-menu'),
+                            email: session?.email ?? '',
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                 )
               : null,
           body: Stack(
@@ -360,11 +373,13 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                   ),
                 ),
               if (!desktop)
-                const Positioned(
+                Positioned(
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  child: _MobileBottomNav(),
+                  child: selectionActive
+                      ? const _MultiSelectionToolbar(compact: true)
+                      : const _MobileBottomNav(),
                 ),
             ],
           ),
@@ -397,21 +412,17 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           body: _reminderBody(note),
         );
         if (!shown && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                note.title.trim().isEmpty
-                    ? l10n.t('reminder')
-                    : l10n.t(
-                        'reminderNotificationTitle',
-                        params: {'title': note.title},
-                      ),
-              ),
-              action: SnackBarAction(
-                label: l10n.t('open'),
-                onPressed: () => _openEditor(context, ref, note),
-              ),
-            ),
+          showAppInfoBar(
+            context,
+            message: note.title.trim().isEmpty
+                ? l10n.t('reminder')
+                : l10n.t(
+                    'reminderNotificationTitle',
+                    params: {'title': note.title},
+                  ),
+            actionLabel: l10n.t('open'),
+            onAction: () => _openEditor(context, ref, note),
+            avoidMobileNavigation: true,
           );
         }
         await ref
@@ -518,6 +529,7 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
       noteBucketProvider,
       (_, __) {
         _clearDragPreview();
+        _clearSelection();
         _resetOverviewScroll();
       },
     );
@@ -531,6 +543,15 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
   void didUpdateWidget(covariant _KeepWorkspace oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.layout != widget.layout) _resetOverviewScroll();
+    final liveIds = widget.notes.map((note) => note.localId).toSet();
+    final selectedIds = ref.read(_selectedNoteIdsProvider);
+    if (!liveIds.containsAll(selectedIds)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(_selectedNoteIdsProvider.notifier).state =
+            selectedIds.intersection(liveIds);
+      });
+    }
   }
 
   @override
@@ -711,6 +732,8 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
     double topPadding = 0,
     ScrollController? controller,
   }) {
+    final selectedNoteIds = ref.watch(_selectedNoteIdsProvider);
+    final selectionActive = selectedNoteIds.isNotEmpty;
     final noteColumnCount = compact ? 2 : _noteColumnCount(screenWidth, wide);
     return CustomScrollView(
       key: const ValueKey('cards-note-overview'),
@@ -746,6 +769,10 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
                 onDragStarted: _startDrag,
                 onDragEnded: _clearDragPreview,
                 trashHovering: _trashHovering,
+                selectedNoteIds: selectedNoteIds,
+                selectionActive: selectionActive,
+                onToggleSelection: _toggleSelection,
+                onLongPressSelect: _selectFromLongPress,
               ),
             ),
           ),
@@ -776,7 +803,11 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
           _commitReorder(draggedId, targetIndex, bucket),
       onDragStarted: _startDrag,
       onDragEnded: _clearDragPreview,
-      onSelected: (note) => _openEditor(context, ref, note),
+      selectedNoteIds: ref.watch(_selectedNoteIdsProvider),
+      selectionActive: ref.watch(_selectedNoteIdsProvider).isNotEmpty,
+      onToggleSelection: _toggleSelection,
+      onLongPressSelect: _selectFromLongPress,
+      onSelected: _openOrToggleSelection,
     );
   }
 
@@ -834,7 +865,15 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
                 _commitReorder(draggedId, targetIndex, bucket),
             onDragStarted: _startDrag,
             onDragEnded: _clearDragPreview,
+            selectedNoteIds: ref.watch(_selectedNoteIdsProvider),
+            selectionActive: ref.watch(_selectedNoteIdsProvider).isNotEmpty,
+            onToggleSelection: _toggleSelection,
+            onLongPressSelect: _selectFromLongPress,
             onSelected: (note) {
+              if (ref.read(_selectedNoteIdsProvider).isNotEmpty) {
+                _toggleSelection(note);
+                return;
+              }
               if (_selectedNoteId == note.localId) return;
               setState(() => _selectedNoteId = note.localId);
             },
@@ -897,13 +936,43 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
     _clearDragPreview();
   }
 
+  void _openOrToggleSelection(PlainNote note) {
+    if (ref.read(_selectedNoteIdsProvider).isNotEmpty) {
+      _toggleSelection(note);
+      return;
+    }
+    _openEditor(context, ref, note);
+  }
+
+  void _selectFromLongPress(PlainNote note) {
+    if (!mounted) return;
+    final selected = ref.read(_selectedNoteIdsProvider);
+    if (selected.contains(note.localId)) return;
+    ref.read(_selectedNoteIdsProvider.notifier).state = {
+      ...selected,
+      note.localId,
+    };
+  }
+
+  void _toggleSelection(PlainNote note) {
+    if (!mounted) return;
+    final next = {...ref.read(_selectedNoteIdsProvider)};
+    if (!next.add(note.localId)) next.remove(note.localId);
+    ref.read(_selectedNoteIdsProvider.notifier).state = next;
+  }
+
+  void _clearSelection() {
+    if (ref.read(_selectedNoteIdsProvider).isEmpty) return;
+    ref.read(_selectedNoteIdsProvider.notifier).state = const {};
+  }
+
   void _setDropIndex(int? value) {
     if (!mounted || _dropIndex == value) return;
     setState(() => _dropIndex = value);
   }
 
   void _startDrag(PlainNote note) {
-    if (!mounted) return;
+    if (!mounted || ref.read(_selectedNoteIdsProvider).isNotEmpty) return;
     _trashHovering.value = false;
     ref.read(_dragTrashHoverProvider.notifier).state = false;
     // Seed the drop index with the note's own position so the placeholder
@@ -980,45 +1049,22 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
     if (confirmed != true || !mounted) return;
 
     setState(() => _emptyingTrash = true);
-    final messenger = ScaffoldMessenger.of(context);
     try {
       final deletedCount =
           await ref.read(notesControllerProvider.notifier).emptyTrash();
       if (!mounted) return;
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            persist: false,
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.fromLTRB(
-              16,
-              0,
-              16,
-              MediaQuery.sizeOf(context).width < 700 ? 96 : 16,
-            ),
-            content: Text(
-              l10n.t('trashEmptied', params: {'count': deletedCount}),
-            ),
-          ),
-        );
+      showAppInfoBar(
+        context,
+        message: l10n.t('trashEmptied', params: {'count': deletedCount}),
+        avoidMobileNavigation: true,
+      );
     } catch (_) {
       if (!mounted) return;
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            persist: false,
-            behavior: SnackBarBehavior.floating,
-            margin: EdgeInsets.fromLTRB(
-              16,
-              0,
-              16,
-              MediaQuery.sizeOf(context).width < 700 ? 96 : 16,
-            ),
-            content: Text(l10n.t('emptyTrashFailed')),
-          ),
-        );
+      showAppInfoBar(
+        context,
+        message: l10n.t('emptyTrashFailed'),
+        avoidMobileNavigation: true,
+      );
     } finally {
       if (mounted) setState(() => _emptyingTrash = false);
     }
@@ -1074,8 +1120,6 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
   }
 }
 
-const _noteStateFeedbackDuration = Duration(seconds: 4);
-
 void _changeNoteStateWithFeedback({
   required BuildContext context,
   required WidgetRef ref,
@@ -1092,24 +1136,15 @@ void _changeNoteStateWithFeedback({
     'deleted' => 'noteDeletedPermanently',
     _ => 'noteMovedToTrash',
   };
-  final messenger = ScaffoldMessenger.of(context);
-  final mobile = MediaQuery.sizeOf(context).width < 700;
-  messenger.clearSnackBars();
-  messenger.showSnackBar(
-    SnackBar(
-      duration: _noteStateFeedbackDuration,
-      persist: false,
-      behavior: SnackBarBehavior.floating,
-      margin: EdgeInsets.fromLTRB(16, 0, 16, mobile ? 96 : 16),
-      content: Text(l10n.t(messageKey)),
-      action: SnackBarAction(
-        label: l10n.t('undo'),
-        onPressed: () => unawaited(() async {
-          await transition;
-          await notesController.changeState(note, previousState);
-        }()),
-      ),
-    ),
+  showAppInfoBar(
+    context,
+    message: l10n.t(messageKey),
+    actionLabel: l10n.t('undo'),
+    avoidMobileNavigation: true,
+    onAction: () => unawaited(() async {
+      await transition;
+      await notesController.changeState(note, previousState);
+    }()),
   );
 }
 
@@ -1759,6 +1794,15 @@ class _MobileHeaderGlassButtonSurface extends StatelessWidget {
         Center(child: child),
       ],
     );
+    final interactiveSurface = Material(
+      color: Colors.transparent,
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: surface,
+      ),
+    );
     return SizedBox.square(
       dimension: _MobileBottomNavState._itemSize,
       child: RepaintBoundary(
@@ -1776,19 +1820,13 @@ class _MobileHeaderGlassButtonSurface extends StatelessWidget {
           ),
           child: ClipPath(
             clipper: ShapeBorderClipper(shape: shape),
-            child: BackdropFilter(
-              key: const ValueKey('mobile-header-button-backdrop'),
-              filter: _NotesChromeGlass.filter(brightness),
-              child: Material(
-                color: Colors.transparent,
-                shape: shape,
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: onTap,
-                  child: surface,
-                ),
-              ),
-            ),
+            child: _usesAndroidRasterBudget
+                ? interactiveSurface
+                : BackdropFilter(
+                    key: const ValueKey('mobile-header-button-backdrop'),
+                    filter: _NotesChromeGlass.filter(brightness),
+                    child: interactiveSurface,
+                  ),
           ),
         ),
       ),
@@ -1952,6 +1990,10 @@ class _NoteListPane extends ConsumerWidget {
     required this.onDragStarted,
     required this.onDragEnded,
     required this.trashHovering,
+    required this.selectedNoteIds,
+    required this.selectionActive,
+    required this.onToggleSelection,
+    required this.onLongPressSelect,
     required this.dragPointer,
     this.draggedId,
     this.selectedNoteId,
@@ -1969,6 +2011,10 @@ class _NoteListPane extends ConsumerWidget {
   final ValueChanged<PlainNote> onDragStarted;
   final VoidCallback onDragEnded;
   final ValueListenable<bool> trashHovering;
+  final Set<String> selectedNoteIds;
+  final bool selectionActive;
+  final ValueChanged<PlainNote> onToggleSelection;
+  final ValueChanged<PlainNote> onLongPressSelect;
   final ValueListenable<Offset?> dragPointer;
   final String? draggedId;
   final String? selectedNoteId;
@@ -2016,7 +2062,12 @@ class _NoteListPane extends ConsumerWidget {
         final item = _NoteListItem(
           note: note,
           l10n: l10n,
-          selected: note.localId == selectedNoteId,
+          selected: selectionActive
+              ? selectedNoteIds.contains(note.localId)
+              : note.localId == selectedNoteId,
+          multiSelected: selectedNoteIds.contains(note.localId),
+          selectionActive: selectionActive,
+          onToggleSelection: () => onToggleSelection(note),
           onTap: () => onSelected(note),
         );
         return Column(
@@ -2039,7 +2090,17 @@ class _NoteListPane extends ConsumerWidget {
               onDropIndexChanged: onDropIndexChanged,
               onCommitReorder: onCommitReorder,
               onDragStarted: () => onDragStarted(note),
-              onDragEnded: onDragEnded,
+              onDragEnded: () {
+                final stillPendingHere =
+                    ref.read(_draggedNoteProvider)?.localId == note.localId;
+                if (stillPendingHere && dropIndex != null) {
+                  onCommitReorder(note.localId, dropIndex!);
+                } else {
+                  onDragEnded();
+                }
+              },
+              dragEnabled: !selectionActive,
+              onLongPressSelect: () => onLongPressSelect(note),
               child: item,
             ),
           ],
@@ -2095,8 +2156,10 @@ class _NoteListDropEdge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DragTarget<PlainNote>(
-      onWillAcceptWithDetails: (_) => true,
-      onMove: (_) => onDropIndexChanged(index),
+      onWillAcceptWithDetails: (_) => dragging,
+      onMove: (_) {
+        if (dragging) onDropIndexChanged(index);
+      },
       onLeave: (_) {
         if (dragging) onDropIndexChanged(null);
       },
@@ -2127,6 +2190,8 @@ class _DraggableNoteListEntry extends StatefulWidget {
     required this.onCommitReorder,
     required this.onDragStarted,
     required this.onDragEnded,
+    required this.dragEnabled,
+    required this.onLongPressSelect,
     required this.child,
   });
 
@@ -2143,6 +2208,8 @@ class _DraggableNoteListEntry extends StatefulWidget {
   final void Function(String draggedId, int targetIndex) onCommitReorder;
   final VoidCallback onDragStarted;
   final VoidCallback onDragEnded;
+  final bool dragEnabled;
+  final VoidCallback onLongPressSelect;
   final Widget child;
 
   @override
@@ -2163,7 +2230,7 @@ class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
   Widget build(BuildContext context) {
     return DragTarget<PlainNote>(
       key: ValueKey('note-list-drop-${widget.note.localId}'),
-      onWillAcceptWithDetails: (_) => true,
+      onWillAcceptWithDetails: (_) => widget.dragging,
       onMove: (details) {
         final box = _entryKey.currentContext?.findRenderObject() as RenderBox?;
         if (box == null || !box.hasSize) return;
@@ -2200,6 +2267,8 @@ class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
           onDragStarted: widget.onDragStarted,
           onDragUpdate: (position) => _reportPointer(position),
           onDragEnded: widget.onDragEnded,
+          dragEnabled: widget.dragEnabled,
+          onLongPressSelect: widget.onLongPressSelect,
           childWhenDragging: const SizedBox.shrink(),
           child: widget.child,
         ),
@@ -2208,21 +2277,36 @@ class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
   }
 }
 
-class _NoteListItem extends StatelessWidget {
+class _NoteListItem extends StatefulWidget {
   const _NoteListItem({
     required this.note,
     required this.l10n,
     required this.selected,
+    required this.multiSelected,
+    required this.selectionActive,
+    required this.onToggleSelection,
     required this.onTap,
   });
 
   final PlainNote note;
   final AppL10n l10n;
   final bool selected;
+  final bool multiSelected;
+  final bool selectionActive;
+  final VoidCallback onToggleSelection;
   final VoidCallback onTap;
 
   @override
+  State<_NoteListItem> createState() => _NoteListItemState();
+}
+
+class _NoteListItemState extends State<_NoteListItem> {
+  var _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final note = widget.note;
+    final l10n = widget.l10n;
     final scheme = Theme.of(context).colorScheme;
     final title = _noteListTitle(note, l10n);
     final preview = _noteListPreview(note);
@@ -2230,97 +2314,122 @@ class _NoteListItem extends StatelessWidget {
     final noteColor = note.color == 0xffffffff
         ? scheme.outlineVariant
         : brandNoteSurfaceColor(context, note.color);
-    return Material(
-      color: selected ? scheme.surfaceContainerHighest : Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          key: ValueKey('note-list-content-${note.localId}'),
-          padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 4,
-                height: 38,
-                margin: const EdgeInsets.only(top: 2),
-                decoration: BoxDecoration(
-                  color: noteColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        if (note.pinned)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: Icon(
-                              AppIcons.heartFill,
-                              size: 15,
-                              color: brandLavender,
-                            ),
-                          ),
-                      ],
+    final desktop = MediaQuery.sizeOf(context).width >= 700;
+    final showSelectionControl =
+        desktop && (_hovered || widget.selectionActive);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Material(
+        color: widget.selected
+            ? scheme.surfaceContainerHighest
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: widget.onTap,
+          child: Padding(
+            key: ValueKey('note-list-content-${note.localId}'),
+            padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (desktop) ...[
+                  SizedBox(
+                    width: 28,
+                    height: 38,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: _NoteSelectionControl(
+                        noteId: note.localId,
+                        visible: showSelectionControl,
+                        selected: widget.multiSelected,
+                        onPressed: widget.onToggleSelection,
+                      ),
                     ),
-                    const SizedBox(height: 5),
-                    Row(
-                      children: [
-                        Text(
-                          _noteListDate(note.updatedAt, l10n),
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: scheme.onSurfaceVariant),
-                        ),
-                        if (showPreview) ...[
-                          const SizedBox(width: 8),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                Container(
+                  width: 4,
+                  height: 38,
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    color: noteColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
                           Expanded(
                             child: Text(
-                              preview,
+                              title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: Theme.of(context)
                                   .textTheme
-                                  .bodySmall
-                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                                  .titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.w700),
                             ),
                           ),
-                        ] else
-                          const Spacer(),
-                        if (note.checklist.isNotEmpty)
-                          _NoteListMetaIcon(
-                            icon: AppIcons.squareCheck,
-                            label:
-                                '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
+                          if (note.pinned)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Icon(
+                                AppIcons.heartFill,
+                                size: 15,
+                                color: brandLavender,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          Text(
+                            _noteListDate(note.updatedAt, l10n),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: scheme.onSurfaceVariant),
                           ),
-                        if (note.shared)
-                          const _NoteListMetaIcon(icon: AppIcons.users),
-                        if (note.reminderAt != null)
-                          const _NoteListMetaIcon(icon: AppIcons.bell),
-                      ],
-                    ),
-                  ],
+                          if (showPreview) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                preview,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                              ),
+                            ),
+                          ] else
+                            const Spacer(),
+                          if (note.checklist.isNotEmpty)
+                            _NoteListMetaIcon(
+                              icon: AppIcons.squareCheck,
+                              label:
+                                  '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
+                            ),
+                          if (note.shared)
+                            const _NoteListMetaIcon(icon: AppIcons.users),
+                          if (note.reminderAt != null)
+                            const _NoteListMetaIcon(icon: AppIcons.bell),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -2431,6 +2540,10 @@ class _AnimatedCardGrid extends ConsumerStatefulWidget {
     required this.onDragStarted,
     required this.onDragEnded,
     required this.trashHovering,
+    required this.selectedNoteIds,
+    required this.selectionActive,
+    required this.onToggleSelection,
+    required this.onLongPressSelect,
   });
 
   final List<PlainNote> sourceNotes;
@@ -2442,6 +2555,10 @@ class _AnimatedCardGrid extends ConsumerStatefulWidget {
   final ValueChanged<PlainNote> onDragStarted;
   final VoidCallback onDragEnded;
   final ValueListenable<bool> trashHovering;
+  final Set<String> selectedNoteIds;
+  final bool selectionActive;
+  final ValueChanged<PlainNote> onToggleSelection;
+  final ValueChanged<PlainNote> onLongPressSelect;
 
   @override
   ConsumerState<_AnimatedCardGrid> createState() => _AnimatedCardGridState();
@@ -2460,6 +2577,16 @@ class _AnimatedCardGridState extends ConsumerState<_AnimatedCardGrid> {
   int? _activeDropIndex;
   var _animatePositions = false;
   var _heightUpdateScheduled = false;
+  Offset? _lastEvaluatedDragPosition;
+
+  @override
+  void didUpdateWidget(covariant _AnimatedCardGrid oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (identical(oldWidget.notes, widget.notes)) return;
+    final liveIds = widget.notes.map((note) => note.localId).toSet();
+    _heights.removeWhere((noteId, _) => !liveIds.contains(noteId));
+    _pendingHeights.removeWhere((noteId, _) => !liveIds.contains(noteId));
+  }
 
   void _reportHeight(String noteId, Size size) {
     final previous = _pendingHeights[noteId] ?? _heights[noteId];
@@ -2539,6 +2666,12 @@ class _AnimatedCardGridState extends ConsumerState<_AnimatedCardGrid> {
       }
 
       void updateDropIndex(PlainNote dragged, Offset globalPosition) {
+        final previousPosition = _lastEvaluatedDragPosition;
+        if (previousPosition != null &&
+            (globalPosition - previousPosition).distanceSquared < 16) {
+          return;
+        }
+        _lastEvaluatedDragPosition = globalPosition;
         final nextIndex = nearestDropIndex(dragged, globalPosition);
         _activeDraggedId = dragged.localId;
         _activeDropIndex = nextIndex;
@@ -2548,6 +2681,7 @@ class _AnimatedCardGridState extends ConsumerState<_AnimatedCardGrid> {
       }
 
       void startDrag(PlainNote note) {
+        _lastEvaluatedDragPosition = null;
         _activeDraggedId = note.localId;
         _activeDropIndex = widget.sourceNotes
             .indexWhere((candidate) => candidate.localId == note.localId);
@@ -2555,15 +2689,25 @@ class _AnimatedCardGridState extends ConsumerState<_AnimatedCardGrid> {
       }
 
       void endDrag() {
+        final draggedId = _activeDraggedId;
+        final targetIndex = _activeDropIndex;
+        final stillPendingHere = draggedId != null &&
+            ref.read(_draggedNoteProvider)?.localId == draggedId;
+        _lastEvaluatedDragPosition = null;
         _activeDraggedId = null;
         _activeDropIndex = null;
-        widget.onDragEnded();
+        if (stillPendingHere && targetIndex != null) {
+          widget.onCommitReorder(draggedId, targetIndex);
+        } else {
+          widget.onDragEnded();
+        }
       }
 
       return DragTarget<PlainNote>(
         key: const ValueKey('card-grid-drop-surface'),
         hitTestBehavior: HitTestBehavior.translucent,
-        onWillAcceptWithDetails: (_) => true,
+        onWillAcceptWithDetails: (details) =>
+            _activeDraggedId == details.data.localId,
         onAcceptWithDetails: (details) {
           final sourceIndex = widget.sourceNotes.indexWhere(
             (note) => note.localId == details.data.localId,
@@ -2579,7 +2723,7 @@ class _AnimatedCardGridState extends ConsumerState<_AnimatedCardGrid> {
         builder: (context, _, __) => KeyedSubtree(
           key: _gridKey,
           child: AnimatedSize(
-            duration: _motionDuration,
+            duration: AppMotion.duration(context, _motionDuration),
             curve: _motionCurve,
             alignment: Alignment.topCenter,
             child: SizedBox(
@@ -2588,24 +2732,43 @@ class _AnimatedCardGridState extends ConsumerState<_AnimatedCardGrid> {
                 clipBehavior: Clip.none,
                 children: [
                   for (final placement in placements)
-                    AnimatedPositioned(
+                    Positioned(
                       key: ValueKey(
-                          'animated-note-placement-${placement.note.localId}'),
-                      duration:
-                          _animatePositions ? _motionDuration : Duration.zero,
-                      curve: _motionCurve,
-                      left: placement.left,
-                      top: placement.top,
+                        'animated-note-placement-${placement.note.localId}',
+                      ),
+                      left: 0,
+                      top: 0,
                       width: cardWidth,
-                      child: _MeasureSize(
-                        onChange: (size) =>
-                            _reportHeight(placement.note.localId, size),
-                        child: _CardDropPlacement(
-                          note: placement.note,
-                          onDragStarted: startDrag,
-                          onDragUpdate: updateDropIndex,
-                          onDragEnded: endDrag,
-                          trashHovering: widget.trashHovering,
+                      child: TweenAnimationBuilder<Offset>(
+                        key: ValueKey(
+                          'animated-note-motion-${placement.note.localId}',
+                        ),
+                        tween:
+                            Tween(end: Offset(placement.left, placement.top)),
+                        duration: _animatePositions
+                            ? AppMotion.duration(context, _motionDuration)
+                            : Duration.zero,
+                        curve: _motionCurve,
+                        builder: (context, offset, child) =>
+                            Transform.translate(
+                          offset: offset,
+                          child: child,
+                        ),
+                        child: _MeasureSize(
+                          onChange: (size) =>
+                              _reportHeight(placement.note.localId, size),
+                          child: _CardDropPlacement(
+                            note: placement.note,
+                            selected: widget.selectedNoteIds
+                                .contains(placement.note.localId),
+                            selectionActive: widget.selectionActive,
+                            onToggleSelection: widget.onToggleSelection,
+                            onLongPressSelect: widget.onLongPressSelect,
+                            onDragStarted: startDrag,
+                            onDragUpdate: updateDropIndex,
+                            onDragEnded: endDrag,
+                            trashHovering: widget.trashHovering,
+                          ),
                         ),
                       ),
                     ),
@@ -2622,6 +2785,10 @@ class _AnimatedCardGridState extends ConsumerState<_AnimatedCardGrid> {
 class _CardDropPlacement extends ConsumerStatefulWidget {
   const _CardDropPlacement({
     required this.note,
+    required this.selected,
+    required this.selectionActive,
+    required this.onToggleSelection,
+    required this.onLongPressSelect,
     required this.onDragStarted,
     required this.onDragUpdate,
     required this.onDragEnded,
@@ -2629,6 +2796,10 @@ class _CardDropPlacement extends ConsumerStatefulWidget {
   });
 
   final PlainNote note;
+  final bool selected;
+  final bool selectionActive;
+  final ValueChanged<PlainNote> onToggleSelection;
+  final ValueChanged<PlainNote> onLongPressSelect;
   final ValueChanged<PlainNote> onDragStarted;
   final void Function(PlainNote note, Offset globalPosition) onDragUpdate;
   final VoidCallback onDragEnded;
@@ -2645,7 +2816,12 @@ class _CardDropPlacementState extends ConsumerState<_CardDropPlacement> {
     final card = RepaintBoundary(
       child: _KeepNoteCard(
         note: note,
-        onTap: () => _openEditor(context, ref, note),
+        selected: widget.selected,
+        selectionActive: widget.selectionActive,
+        onToggleSelection: () => widget.onToggleSelection(note),
+        onTap: () => widget.selectionActive
+            ? widget.onToggleSelection(note)
+            : _openEditor(context, ref, note),
         onTogglePin: () =>
             ref.read(notesControllerProvider.notifier).togglePinned(note),
         onInvite: () => _showInviteSheet(context, ref, note),
@@ -2683,6 +2859,8 @@ class _CardDropPlacementState extends ConsumerState<_CardDropPlacement> {
       onDragStarted: () => widget.onDragStarted(note),
       onDragUpdate: (position) => widget.onDragUpdate(note, position),
       onDragEnded: widget.onDragEnded,
+      dragEnabled: !widget.selectionActive,
+      onLongPressSelect: () => widget.onLongPressSelect(note),
       childWhenDragging: Opacity(opacity: 0.28, child: card),
       child: card,
     );
@@ -2906,6 +3084,268 @@ class _RailButton extends ConsumerWidget {
   }
 }
 
+class _MultiSelectionToolbar extends ConsumerStatefulWidget {
+  const _MultiSelectionToolbar({this.compact = false});
+
+  final bool compact;
+
+  @override
+  ConsumerState<_MultiSelectionToolbar> createState() =>
+      _MultiSelectionToolbarState();
+}
+
+class _MultiSelectionToolbarState
+    extends ConsumerState<_MultiSelectionToolbar> {
+  var _busy = false;
+
+  List<PlainNote> get _selectedNotes {
+    final ids = ref.read(_selectedNoteIdsProvider);
+    final notes = ref.read(notesControllerProvider).valueOrNull ?? const [];
+    return notes.where((note) => ids.contains(note.localId)).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ids = ref.watch(_selectedNoteIdsProvider);
+    final notes = ref.watch(notesControllerProvider).valueOrNull ?? const [];
+    final selected = notes.where((note) => ids.contains(note.localId)).toList();
+    final l10n = ref.watch(l10nProvider);
+    final allPinned =
+        selected.isNotEmpty && selected.every((note) => note.pinned);
+    final scheme = Theme.of(context).colorScheme;
+    final actions = Row(
+      key: const ValueKey('multi-selection-toolbar'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AppIconButton(
+          key: const ValueKey('clear-note-selection'),
+          tooltip: l10n.t('clearSelection'),
+          icon: AppIcons.x,
+          onPressed: _busy ? null : _clearSelection,
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text(
+            l10n.t('selectedNotes', params: {'count': selected.length}),
+            key: const ValueKey('selected-note-count'),
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ),
+        AppIconButton(
+          key: const ValueKey('delete-selected-notes'),
+          tooltip: l10n.t('deleteSelection'),
+          icon: AppIcons.trash2,
+          onPressed: _busy || selected.isEmpty ? null : _deleteSelected,
+        ),
+        AppIconButton(
+          key: const ValueKey('archive-selected-notes'),
+          tooltip: l10n.t('archiveSelection'),
+          icon: AppIcons.archive,
+          onPressed: _busy || selected.isEmpty ? null : _archiveSelected,
+        ),
+        AppIconButton(
+          key: const ValueKey('background-selected-notes'),
+          tooltip: l10n.t('backgroundSelection'),
+          icon: AppIcons.palette,
+          onPressed: _busy || selected.isEmpty ? null : _changeBackground,
+        ),
+        AppIconButton(
+          key: const ValueKey('pin-selected-notes'),
+          tooltip: l10n.t(allPinned ? 'unpin' : 'pin'),
+          icon: allPinned ? AppIcons.pinOff : AppIcons.pin,
+          onPressed:
+              _busy || selected.isEmpty ? null : () => _setPinned(!allPinned),
+        ),
+      ],
+    );
+
+    if (!widget.compact) return actions;
+    return SafeArea(
+      top: false,
+      minimum: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+      child: Center(
+        child: Material(
+          color: scheme.surface.withValues(alpha: 0.96),
+          elevation: 8,
+          shadowColor: Colors.black.withValues(alpha: 0.18),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: FittedBox(fit: BoxFit.scaleDown, child: actions),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _clearSelection() {
+    ref.read(_selectedNoteIdsProvider.notifier).state = const {};
+  }
+
+  Future<void> _run(Future<void> Function(List<PlainNote>) action) async {
+    if (_busy) return;
+    final notes = _selectedNotes;
+    if (notes.isEmpty) {
+      _clearSelection();
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await action(notes);
+      _clearSelection();
+    } catch (error) {
+      if (mounted) {
+        showAppInfoBar(
+          context,
+          message: error.toString(),
+          avoidMobileNavigation: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _deleteSelected() => _run((notes) async {
+        final permanently = notes.every((note) => note.state == 'trashed');
+        final nextState = permanently ? 'deleted' : 'trashed';
+        final controller = ref.read(notesControllerProvider.notifier);
+        for (final note in notes) {
+          await controller.changeState(note, nextState);
+        }
+      });
+
+  Future<void> _archiveSelected() => _run((notes) async {
+        final controller = ref.read(notesControllerProvider.notifier);
+        for (final note in notes) {
+          await controller.changeState(note, 'archived');
+        }
+      });
+
+  Future<void> _setPinned(bool pinned) => _run((notes) async {
+        final controller = ref.read(notesControllerProvider.notifier);
+        for (final note in notes) {
+          if (note.pinned == pinned) continue;
+          await controller.saveDraft(
+            draft: note.copyWith(pinned: pinned),
+            syncImmediately: true,
+          );
+        }
+      });
+
+  Future<void> _changeBackground() async {
+    final notes = _selectedNotes;
+    if (notes.isEmpty) return;
+    final commonColor = notes.every(
+      (note) =>
+          normalizeBrandNoteColor(note.color) ==
+          normalizeBrandNoteColor(notes.first.color),
+    )
+        ? normalizeBrandNoteColor(notes.first.color)
+        : brandNoteColors.first;
+    final color = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _MultiSelectionBackgroundSheet(
+        selectedColor: commonColor,
+      ),
+    );
+    if (color == null || !mounted) return;
+    await _run((currentNotes) async {
+      final controller = ref.read(notesControllerProvider.notifier);
+      for (final note in currentNotes) {
+        await controller.saveDraft(
+          draft: note.copyWith(color: color),
+          syncImmediately: true,
+        );
+      }
+    });
+  }
+}
+
+class _MultiSelectionBackgroundSheet extends StatelessWidget {
+  const _MultiSelectionBackgroundSheet({required this.selectedColor});
+
+  final int selectedColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppL10n(Localizations.localeOf(context).languageCode);
+    final scheme = Theme.of(context).colorScheme;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Material(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          borderRadius: BorderRadius.circular(AppRadii.hero),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(AppIcons.palette, color: scheme.onSurface),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        l10n.t('background'),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                      ),
+                    ),
+                    AppIconButton(
+                      tooltip: l10n.t('close'),
+                      icon: AppIcons.x,
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final color in brandNoteColors)
+                      InkWell(
+                        key: ValueKey('selection-background-$color'),
+                        borderRadius: BorderRadius.circular(AppRadii.xl),
+                        onTap: () => Navigator.of(context).pop(color),
+                        child: Container(
+                          width: 64,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: brandNoteSurfaceColor(context, color),
+                            gradient: brandNoteGradient(context, color),
+                            borderRadius: BorderRadius.circular(AppRadii.xl),
+                            border: color == selectedColor
+                                ? Border.all(color: scheme.primary, width: 2)
+                                : null,
+                          ),
+                          child: color == selectedColor
+                              ? Icon(AppIcons.check,
+                                  size: 18, color: scheme.onSurface)
+                              : null,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MobileBottomNav extends ConsumerStatefulWidget {
   const _MobileBottomNav();
 
@@ -2935,10 +3375,14 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
       _expandedDrawerTopRadius - _createMenuInset;
   static const Color _lightSelectionOverlay = Color(0x12000000);
   static const Color _darkSelectionOverlay = Color(0x24ffffff);
+  static const Duration _createDuration = Duration(milliseconds: 230);
+  static const Duration _createReverseDuration = Duration(milliseconds: 180);
+  static const Duration _trashDuration = Duration(milliseconds: 400);
+  static const Duration _trashReverseDuration = Duration(milliseconds: 320);
 
   var _expanded = false;
   var _searching = false;
-  static const double? _pressedAnchorX = null;
+  var _reduceMotion = false;
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   late final AnimationController _createMenuController;
@@ -2954,15 +3398,15 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
     super.initState();
     _createMenuController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 230),
-      reverseDuration: const Duration(milliseconds: 180),
+      duration: _createDuration,
+      reverseDuration: _createReverseDuration,
     );
     final draggedNote = ref.read(_draggedNoteProvider);
     _morphingDraggedNote = draggedNote;
     _trashMorphController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 400),
-      reverseDuration: const Duration(milliseconds: 320),
+      duration: _trashDuration,
+      reverseDuration: _trashReverseDuration,
       value: draggedNote != null && draggedNote.state != 'trashed' ? 1 : 0,
     );
     ref.listenManual<PlainNote?>(_draggedNoteProvider, (previous, next) {
@@ -2978,6 +3422,28 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
         unawaited(_reverseTrashMorph());
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reduceMotion == reduceMotion) return;
+    _reduceMotion = reduceMotion;
+    _createMenuController.duration =
+        reduceMotion ? Duration.zero : _createDuration;
+    _createMenuController.reverseDuration =
+        reduceMotion ? Duration.zero : _createReverseDuration;
+    _trashMorphController.duration =
+        reduceMotion ? Duration.zero : _trashDuration;
+    _trashMorphController.reverseDuration =
+        reduceMotion ? Duration.zero : _trashReverseDuration;
+    if (reduceMotion) {
+      _createMenuController.value = _expanded ? 1 : 0;
+      final draggedNote = ref.read(_draggedNoteProvider);
+      _trashMorphController.value =
+          draggedNote != null && draggedNote.state != 'trashed' ? 1 : 0;
+    }
   }
 
   Future<void> _reverseTrashMorph() async {
@@ -3009,11 +3475,6 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
 
   void _toggleCreate() {
     _setCreateMenuExpanded(!_expanded);
-  }
-
-  void _setPressedAnchor(double? _) {
-    // Individual buttons handle their own press feedback. Keeping the full
-    // navigation surface static avoids recompositing it for every pointer tap.
   }
 
   void _collapse() {
@@ -3123,255 +3584,241 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
             offset: Offset(0, -12 * trashMorph),
             child: Center(
               heightFactor: 1,
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(end: _pressedAnchorX == null ? 0 : 1),
-                duration: const Duration(milliseconds: 160),
+              child: AnimatedContainer(
+                duration: AppMotion.duration(context, _trashDuration),
                 curve: Curves.easeOutCubic,
-                builder: (context, press, child) => Transform.scale(
-                  alignment: Alignment(_pressedAnchorX ?? 0, 1),
-                  scaleX: 1 + press * 0.018,
-                  scaleY: 1 - press * 0.012,
-                  child: child,
-                ),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 400),
-                  curve: Curves.easeOutCubic,
-                  height: popoutHeight,
-                  width: draggingToTrash
-                      ? _trashDropSize
-                      : _searching
-                          ? searchNavWidth
-                          : _usesIosNativeControls
-                              ? iosNavWidth
-                              : compactNavWidth,
-                  child: KeyedSubtree(
-                    key: const ValueKey('mobile-create-popout-layout'),
-                    child: RepaintBoundary(
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          if (!_usesIosNativeControls ||
-                              _expanded ||
-                              draggingToTrash ||
-                              trashMorph > 0)
-                            _MobileNavDrawerSurface(
-                              animation: _createMenuController,
-                              morphProgress: trashMorph,
-                              collapsedHeight: collapsedNavSurfaceHeight,
-                              expandedHeight: expandedNavSurfaceHeight,
-                              trashHeight: _trashDropSize,
-                              collapsedRadius: targetRadius,
-                              trashRadius: _trashDropSize / 2,
-                            ),
-                          if (!draggingToTrash)
-                            Positioned(
-                              top: 0,
-                              left: _createMenuInset,
-                              right: _createMenuInset,
-                              height: _createMenuContentHeight,
-                              child: ClipRect(
-                                key: const ValueKey(
-                                  'mobile-create-actions-clip',
-                                ),
-                                child: IgnorePointer(
-                                  ignoring: !_expanded,
-                                  child: _usesIosNativeControls
-                                      ? _IosNativeCreateActions(
-                                          animation: _createMenuController,
-                                          noteLabel: l10n.t('newNote'),
-                                          reminderLabel: l10n.t('reminder'),
-                                          listLabel: l10n.t('newChecklist'),
-                                          onNote: () => unawaited(
-                                            _runCreateAction(
-                                                _MobileCreateAction.note),
-                                          ),
-                                          onReminder: () => unawaited(
-                                            _runCreateAction(
-                                              _MobileCreateAction.reminder,
-                                            ),
-                                          ),
-                                          onList: () => unawaited(
-                                            _runCreateAction(
-                                                _MobileCreateAction.list),
-                                          ),
-                                        )
-                                      : Padding(
-                                          padding: const EdgeInsets.only(
-                                            top: _createMenuInset,
-                                          ),
-                                          child: _CreateActionsReveal(
-                                            animation: _createMenuController,
-                                            children: [
-                                              _MobileCreateDrawerAction(
-                                                key: const ValueKey(
-                                                  'mobile-create-note-action',
-                                                ),
-                                                icon: AppIcons.filePlus2,
-                                                label: l10n.t('newNote'),
-                                                semanticLabel:
-                                                    l10n.t('newNote'),
-                                                onTap: () => unawaited(
-                                                  _runCreateAction(
-                                                    _MobileCreateAction.note,
-                                                  ),
-                                                ),
-                                              ),
-                                              _MobileCreateDrawerAction(
-                                                key: const ValueKey(
-                                                  'mobile-create-reminder-action',
-                                                ),
-                                                icon: AppIcons.bellPlus,
-                                                label: l10n.t('reminder'),
-                                                semanticLabel:
-                                                    l10n.t('setReminder'),
-                                                onTap: () => unawaited(
-                                                  _runCreateAction(
-                                                    _MobileCreateAction
-                                                        .reminder,
-                                                  ),
-                                                ),
-                                              ),
-                                              _MobileCreateDrawerAction(
-                                                key: const ValueKey(
-                                                  'mobile-create-list-action',
-                                                ),
-                                                icon: AppIcons.listChecks,
-                                                label: l10n.t('newChecklist'),
-                                                semanticLabel:
-                                                    l10n.t('newChecklist'),
-                                                onTap: () => unawaited(
-                                                  _runCreateAction(
-                                                    _MobileCreateAction.list,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ),
+                height: popoutHeight,
+                width: draggingToTrash
+                    ? _trashDropSize
+                    : _searching
+                        ? searchNavWidth
+                        : _usesIosNativeControls
+                            ? iosNavWidth
+                            : compactNavWidth,
+                child: KeyedSubtree(
+                  key: const ValueKey('mobile-create-popout-layout'),
+                  child: RepaintBoundary(
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        if (!_usesIosNativeControls ||
+                            _expanded ||
+                            draggingToTrash ||
+                            trashMorph > 0)
+                          _MobileNavDrawerSurface(
+                            animation: _createMenuController,
+                            morphProgress: trashMorph,
+                            collapsedHeight: collapsedNavSurfaceHeight,
+                            expandedHeight: expandedNavSurfaceHeight,
+                            trashHeight: _trashDropSize,
+                            collapsedRadius: targetRadius,
+                            trashRadius: _trashDropSize / 2,
+                          ),
+                        if (!draggingToTrash)
                           Positioned(
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            child: _MobileNavGlassSurface(
-                              child: SizedBox(
-                                key: const ValueKey(
-                                  'mobile-nav-morphing-viewport',
-                                ),
-                                height: navViewportHeight,
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 220),
-                                  reverseDuration:
-                                      const Duration(milliseconds: 240),
-                                  switchInCurve: Curves.easeOutCubic,
-                                  switchOutCurve: Curves.easeInCubic,
-                                  transitionBuilder: (child, animation) =>
-                                      FadeTransition(
-                                    opacity: animation,
-                                    child: ScaleTransition(
-                                      scale: Tween<double>(begin: 0.96, end: 1)
-                                          .animate(animation),
-                                      child: child,
-                                    ),
-                                  ),
-                                  child: _searching && !draggingToTrash
-                                      ? KeyedSubtree(
-                                          key: const ValueKey(
-                                            'mobile-nav-search-mode',
-                                          ),
-                                          child: _MobileNavSearchField(
-                                            controller: _searchController,
-                                            focusNode: _searchFocusNode,
-                                            hintText: l10n.t('searchNotes'),
-                                            onChanged: (value) => ref
-                                                .read(
-                                                    noteSearchProvider.notifier)
-                                                .state = value,
-                                            onClose: _closeSearch,
-                                          ),
-                                        )
-                                      : KeyedSubtree(
-                                          key: const ValueKey(
-                                            'mobile-nav-icons-mode',
-                                          ),
-                                          child: _usesIosNativeControls &&
-                                                  !draggingToTrash &&
-                                                  trashMorph == 0
-                                              ? _expanded
-                                                  ? _IosNativeNavButtonGroup(
-                                                      bucket: bucket,
-                                                      expanded: _expanded,
-                                                      foreground:
-                                                          scheme.onSurface,
-                                                      indicatorFrom:
-                                                          _indicatorFrom,
-                                                      indicatorTarget:
-                                                          _indicatorTarget,
-                                                      onNotes: () =>
-                                                          _selectBucket(
-                                                              'active'),
-                                                      onReminders: () =>
-                                                          _selectBucket(
-                                                              'reminders'),
-                                                      onTrash: () =>
-                                                          _selectBucket(
-                                                              'trashed'),
-                                                      onSearch: _openSearch,
-                                                      onCreate: _toggleCreate,
-                                                    )
-                                                  : _IosNativeTabBar(
-                                                      bucket: bucket,
-                                                      foreground:
-                                                          scheme.onSurface,
-                                                      onNotes: () =>
-                                                          _selectBucket(
-                                                              'active'),
-                                                      onReminders: () =>
-                                                          _selectBucket(
-                                                              'reminders'),
-                                                      onTrash: () =>
-                                                          _selectBucket(
-                                                              'trashed'),
-                                                      onSearch: _openSearch,
-                                                      onCreate: _toggleCreate,
-                                                    )
-                                              : _MobileNavMorphingIconGroup(
-                                                  bucket: bucket,
-                                                  draggedNote: draggedNote ??
-                                                      _morphingDraggedNote,
-                                                  morphProgress: trashMorph,
-                                                  dark: dark,
-                                                  indicatorFrom: _indicatorFrom,
-                                                  indicatorTarget:
-                                                      _indicatorTarget,
-                                                  notesTooltip: l10n.t('notes'),
-                                                  remindersTooltip:
-                                                      l10n.t('reminders'),
-                                                  trashTooltip: l10n.t('trash'),
-                                                  searchTooltip:
-                                                      l10n.t('searchNotes'),
-                                                  createExpanded: _expanded,
-                                                  onNotes: () =>
-                                                      _selectBucket('active'),
-                                                  onReminders: () =>
-                                                      _selectBucket(
-                                                          'reminders'),
-                                                  onTrash: () =>
-                                                      _selectBucket('trashed'),
-                                                  onSearch: _openSearch,
-                                                  onCreate: _toggleCreate,
-                                                  onPressChanged:
-                                                      _setPressedAnchor,
-                                                ),
+                            top: 0,
+                            left: _createMenuInset,
+                            right: _createMenuInset,
+                            height: _createMenuContentHeight,
+                            child: ClipRect(
+                              key: const ValueKey(
+                                'mobile-create-actions-clip',
+                              ),
+                              child: IgnorePointer(
+                                ignoring: !_expanded,
+                                child: _usesIosNativeControls
+                                    ? _IosNativeCreateActions(
+                                        animation: _createMenuController,
+                                        noteLabel: l10n.t('newNote'),
+                                        reminderLabel: l10n.t('reminder'),
+                                        listLabel: l10n.t('newChecklist'),
+                                        onNote: () => unawaited(
+                                          _runCreateAction(
+                                              _MobileCreateAction.note),
                                         ),
-                                ),
+                                        onReminder: () => unawaited(
+                                          _runCreateAction(
+                                            _MobileCreateAction.reminder,
+                                          ),
+                                        ),
+                                        onList: () => unawaited(
+                                          _runCreateAction(
+                                              _MobileCreateAction.list),
+                                        ),
+                                      )
+                                    : Padding(
+                                        padding: const EdgeInsets.only(
+                                          top: _createMenuInset,
+                                        ),
+                                        child: _CreateActionsReveal(
+                                          animation: _createMenuController,
+                                          children: [
+                                            _MobileCreateDrawerAction(
+                                              key: const ValueKey(
+                                                'mobile-create-note-action',
+                                              ),
+                                              icon: AppIcons.filePlus2,
+                                              label: l10n.t('newNote'),
+                                              semanticLabel: l10n.t('newNote'),
+                                              onTap: () => unawaited(
+                                                _runCreateAction(
+                                                  _MobileCreateAction.note,
+                                                ),
+                                              ),
+                                            ),
+                                            _MobileCreateDrawerAction(
+                                              key: const ValueKey(
+                                                'mobile-create-reminder-action',
+                                              ),
+                                              icon: AppIcons.bellPlus,
+                                              label: l10n.t('reminder'),
+                                              semanticLabel:
+                                                  l10n.t('setReminder'),
+                                              onTap: () => unawaited(
+                                                _runCreateAction(
+                                                  _MobileCreateAction.reminder,
+                                                ),
+                                              ),
+                                            ),
+                                            _MobileCreateDrawerAction(
+                                              key: const ValueKey(
+                                                'mobile-create-list-action',
+                                              ),
+                                              icon: AppIcons.listChecks,
+                                              label: l10n.t('newChecklist'),
+                                              semanticLabel:
+                                                  l10n.t('newChecklist'),
+                                              onTap: () => unawaited(
+                                                _runCreateAction(
+                                                  _MobileCreateAction.list,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                               ),
                             ),
                           ),
-                        ],
-                      ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: _MobileNavGlassSurface(
+                            child: SizedBox(
+                              key: const ValueKey(
+                                'mobile-nav-morphing-viewport',
+                              ),
+                              height: navViewportHeight,
+                              child: AnimatedSwitcher(
+                                duration: AppMotion.duration(
+                                  context,
+                                  const Duration(milliseconds: 220),
+                                ),
+                                reverseDuration: AppMotion.duration(
+                                  context,
+                                  const Duration(milliseconds: 240),
+                                ),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                transitionBuilder: (child, animation) =>
+                                    FadeTransition(
+                                  opacity: animation,
+                                  child: ScaleTransition(
+                                    scale: Tween<double>(begin: 0.96, end: 1)
+                                        .animate(animation),
+                                    child: child,
+                                  ),
+                                ),
+                                child: _searching && !draggingToTrash
+                                    ? KeyedSubtree(
+                                        key: const ValueKey(
+                                          'mobile-nav-search-mode',
+                                        ),
+                                        child: _MobileNavSearchField(
+                                          controller: _searchController,
+                                          focusNode: _searchFocusNode,
+                                          hintText: l10n.t('searchNotes'),
+                                          onChanged: (value) => ref
+                                              .read(noteSearchProvider.notifier)
+                                              .state = value,
+                                          onClose: _closeSearch,
+                                        ),
+                                      )
+                                    : KeyedSubtree(
+                                        key: const ValueKey(
+                                          'mobile-nav-icons-mode',
+                                        ),
+                                        child: _usesIosNativeControls &&
+                                                !draggingToTrash &&
+                                                trashMorph == 0
+                                            ? _expanded
+                                                ? _IosNativeNavButtonGroup(
+                                                    bucket: bucket,
+                                                    expanded: _expanded,
+                                                    foreground:
+                                                        scheme.onSurface,
+                                                    indicatorFrom:
+                                                        _indicatorFrom,
+                                                    indicatorTarget:
+                                                        _indicatorTarget,
+                                                    onNotes: () =>
+                                                        _selectBucket('active'),
+                                                    onReminders: () =>
+                                                        _selectBucket(
+                                                            'reminders'),
+                                                    onTrash: () =>
+                                                        _selectBucket(
+                                                            'trashed'),
+                                                    onSearch: _openSearch,
+                                                    onCreate: _toggleCreate,
+                                                  )
+                                                : _IosNativeTabBar(
+                                                    bucket: bucket,
+                                                    foreground:
+                                                        scheme.onSurface,
+                                                    onNotes: () =>
+                                                        _selectBucket('active'),
+                                                    onReminders: () =>
+                                                        _selectBucket(
+                                                            'reminders'),
+                                                    onTrash: () =>
+                                                        _selectBucket(
+                                                            'trashed'),
+                                                    onSearch: _openSearch,
+                                                    onCreate: _toggleCreate,
+                                                  )
+                                            : _MobileNavMorphingIconGroup(
+                                                bucket: bucket,
+                                                draggedNote: draggedNote ??
+                                                    _morphingDraggedNote,
+                                                morphProgress: trashMorph,
+                                                dark: dark,
+                                                indicatorFrom: _indicatorFrom,
+                                                indicatorTarget:
+                                                    _indicatorTarget,
+                                                notesTooltip: l10n.t('notes'),
+                                                remindersTooltip:
+                                                    l10n.t('reminders'),
+                                                trashTooltip: l10n.t('trash'),
+                                                searchTooltip:
+                                                    l10n.t('searchNotes'),
+                                                createExpanded: _expanded,
+                                                onNotes: () =>
+                                                    _selectBucket('active'),
+                                                onReminders: () =>
+                                                    _selectBucket('reminders'),
+                                                onTrash: () =>
+                                                    _selectBucket('trashed'),
+                                                onSearch: _openSearch,
+                                                onCreate: _toggleCreate,
+                                              ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -3402,7 +3849,6 @@ class _MobileNavMorphingIconGroup extends StatelessWidget {
     required this.onTrash,
     required this.onSearch,
     required this.onCreate,
-    required this.onPressChanged,
   });
 
   final String bucket;
@@ -3421,7 +3867,6 @@ class _MobileNavMorphingIconGroup extends StatelessWidget {
   final VoidCallback onTrash;
   final VoidCallback onSearch;
   final VoidCallback onCreate;
-  final ValueChanged<double?> onPressChanged;
 
   static const _slots = [-2.0, -1.0, 0.0, 1.0, 2.0];
 
@@ -3480,8 +3925,6 @@ class _MobileNavMorphingIconGroup extends StatelessWidget {
                 tooltip: notesTooltip,
                 size: _MobileBottomNavState._itemSize,
                 selected: bucket == 'active' || bucket == 'archived',
-                onPressChanged: (pressed) =>
-                    onPressChanged(pressed ? -0.72 : null),
                 onPressed: onNotes,
               ),
             ),
@@ -3498,8 +3941,6 @@ class _MobileNavMorphingIconGroup extends StatelessWidget {
                 tooltip: remindersTooltip,
                 size: _MobileBottomNavState._itemSize,
                 selected: bucket == 'reminders',
-                onPressChanged: (pressed) =>
-                    onPressChanged(pressed ? -0.24 : null),
                 onPressed: onReminders,
               ),
             ),
@@ -3516,7 +3957,6 @@ class _MobileNavMorphingIconGroup extends StatelessWidget {
                 tooltip: searchTooltip,
                 size: _MobileBottomNavState._itemSize,
                 selected: false,
-                onPressChanged: (_) {},
                 onPressed: onSearch,
               ),
             ),
@@ -3531,8 +3971,6 @@ class _MobileNavMorphingIconGroup extends StatelessWidget {
                 expanded: createExpanded,
                 dark: dark,
                 size: _MobileBottomNavState._itemSize,
-                onPressChanged: (pressed) =>
-                    onPressChanged(pressed ? 0.72 : null),
                 onPressed: onCreate,
               ),
             ),
@@ -3547,8 +3985,6 @@ class _MobileNavMorphingIconGroup extends StatelessWidget {
                       tooltip: trashTooltip,
                       size: _MobileBottomNavState._itemSize,
                       selected: bucket == 'trashed',
-                      onPressChanged: (pressed) =>
-                          onPressChanged(pressed ? 0.24 : null),
                       onPressed: onTrash,
                     )
                   : _MobileNavTrashDropButton(
@@ -3591,9 +4027,16 @@ class _MorphingNavSlot extends StatelessWidget {
     final easedOpacity = opacity.clamp(0.0, 1.0);
     return Transform.translate(
       offset: Offset(x, y),
-      child: Opacity(
-        opacity: easedOpacity,
-        child: Transform.scale(key: scaleKey, scale: scale, child: child),
+      child: IgnorePointer(
+        ignoring: easedOpacity < 0.01,
+        child: Opacity(
+          opacity: easedOpacity,
+          child: Transform.scale(
+            key: scaleKey,
+            scale: scale,
+            child: RepaintBoundary(child: child),
+          ),
+        ),
       ),
     );
   }
@@ -3620,7 +4063,10 @@ class _NavSelectionIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
       tween: Tween(end: indicatorTarget.toDouble()),
-      duration: const Duration(milliseconds: 480),
+      duration: AppMotion.duration(
+        context,
+        const Duration(milliseconds: 480),
+      ),
       curve: Curves.easeOutCubic,
       builder: (context, value, child) {
         final span = (indicatorTarget - indicatorFrom).abs();
@@ -3643,20 +4089,33 @@ class _NavSelectionIndicator extends StatelessWidget {
         final centerY = _MobileBottomNavState._itemSize / 2 +
             10 * morph * distanceFromCenter;
         return Positioned(
-          key: const ValueKey('mobile-nav-selection-morph'),
-          left: centerX - width / 2,
-          top: centerY - height / 2,
-          width: width,
-          height: height,
-          child: Opacity(
-            opacity: opacity.clamp(0.0, 1.0),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: dark
-                    ? _MobileBottomNavState._darkSelectionOverlay
-                    : _MobileBottomNavState._lightSelectionOverlay,
-                borderRadius:
-                    BorderRadius.circular(_MobileBottomNavState._itemSize / 2),
+          left: 0,
+          top: 0,
+          width: _MobileBottomNavState._itemSize,
+          height: _MobileBottomNavState._itemSize,
+          child: Transform.translate(
+            key: const ValueKey('mobile-nav-selection-morph'),
+            offset: Offset(
+              centerX - _MobileBottomNavState._itemSize / 2,
+              centerY - _MobileBottomNavState._itemSize / 2,
+            ),
+            child: Transform.scale(
+              scaleX: width / _MobileBottomNavState._itemSize,
+              scaleY: height / _MobileBottomNavState._itemSize,
+              child: Opacity(
+                opacity: opacity.clamp(0.0, 1.0),
+                child: RepaintBoundary(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: dark
+                          ? _MobileBottomNavState._darkSelectionOverlay
+                          : _MobileBottomNavState._lightSelectionOverlay,
+                      borderRadius: BorderRadius.circular(
+                        _MobileBottomNavState._itemSize / 2,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -3995,7 +4454,10 @@ class _MobileNavTrashDropButtonState
             label: l10n.t('moveToTrash'),
             child: TweenAnimationBuilder<double>(
               tween: Tween<double>(end: active ? 1 : 0),
-              duration: const Duration(milliseconds: 240),
+              duration: AppMotion.duration(
+                context,
+                const Duration(milliseconds: 240),
+              ),
               curve: Curves.easeOutCubic,
               builder: (context, value, child) {
                 final glow = Curves.easeOutCubic.transform(value);
@@ -4355,11 +4817,13 @@ class _MobileNavDrawerSurface extends StatelessWidget {
                         ),
                         child: surface,
                       )
-                    : BackdropFilter(
-                        key: const ValueKey('mobile-bottom-nav-backdrop'),
-                        filter: _NotesChromeGlass.filter(brightness),
-                        child: surface,
-                      ),
+                    : constrainedRaster
+                        ? surface
+                        : BackdropFilter(
+                            key: const ValueKey('mobile-bottom-nav-backdrop'),
+                            filter: _NotesChromeGlass.filter(brightness),
+                            child: surface,
+                          ),
               ),
             ),
           ),
@@ -4563,7 +5027,10 @@ class _MobileCreateDrawerActionState extends State<_MobileCreateDrawerAction> {
             onTap: widget.onTap,
             child: AnimatedScale(
               scale: _pressed ? 0.94 : 1,
-              duration: const Duration(milliseconds: 130),
+              duration: AppMotion.duration(
+                context,
+                const Duration(milliseconds: 130),
+              ),
               curve: Curves.easeOutCubic,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
@@ -4685,7 +5152,6 @@ class _MobileCreateToggleButton extends StatefulWidget {
   const _MobileCreateToggleButton({
     required this.expanded,
     required this.dark,
-    required this.onPressChanged,
     required this.onPressed,
     this.size = 52,
   });
@@ -4693,7 +5159,6 @@ class _MobileCreateToggleButton extends StatefulWidget {
   final bool expanded;
   final bool dark;
   final double size;
-  final ValueChanged<bool> onPressChanged;
   final VoidCallback onPressed;
 
   @override
@@ -4723,44 +5188,49 @@ class _MobileCreateToggleButtonState extends State<_MobileCreateToggleButton> {
           behavior: HitTestBehavior.opaque,
           onTapDown: (_) {
             setState(() => _pressed = true);
-            widget.onPressChanged(true);
           },
           onTapCancel: () {
             _release();
-            widget.onPressChanged(false);
           },
           onTapUp: (_) {
             _release();
-            widget.onPressChanged(false);
             widget.onPressed();
           },
           child: TweenAnimationBuilder<double>(
             tween: Tween(end: _pressed ? 1 : 0),
-            duration: const Duration(milliseconds: 150),
+            duration: AppMotion.duration(
+              context,
+              const Duration(milliseconds: 150),
+            ),
             curve: Curves.easeOutCubic,
             builder: (context, value, child) => Transform.scale(
               scaleX: 1 + value * 0.08,
               scaleY: 1 - value * 0.07,
               child: child,
             ),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 260),
-              curve: Curves.easeOutQuart,
+            child: SizedBox(
               width: widget.size,
               height: widget.size,
-              decoration: BoxDecoration(
-                color: widget.dark ? Colors.white : const Color(0xff17201f),
-                shape: BoxShape.circle,
-              ),
-              alignment: Alignment.center,
-              child: AnimatedRotation(
-                turns: widget.expanded ? 0.125 : 0,
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutBack,
-                child: Icon(
-                  AppIcons.plus,
-                  size: 21,
-                  color: widget.dark ? const Color(0xff111514) : Colors.white,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: widget.dark ? Colors.white : const Color(0xff17201f),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: AnimatedRotation(
+                    turns: widget.expanded ? 0.125 : 0,
+                    duration: AppMotion.duration(
+                      context,
+                      const Duration(milliseconds: 260),
+                    ),
+                    curve: Curves.easeOutBack,
+                    child: Icon(
+                      AppIcons.plus,
+                      size: 21,
+                      color:
+                          widget.dark ? const Color(0xff111514) : Colors.white,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -4778,7 +5248,6 @@ class _MobileNavIcon extends StatefulWidget {
     required this.icon,
     required this.tooltip,
     required this.selected,
-    required this.onPressChanged,
     required this.onPressed,
   });
 
@@ -4786,7 +5255,6 @@ class _MobileNavIcon extends StatefulWidget {
   final IconData icon;
   final String tooltip;
   final bool selected;
-  final ValueChanged<bool> onPressChanged;
   final VoidCallback onPressed;
 
   @override
@@ -4818,40 +5286,41 @@ class _MobileNavIconState extends State<_MobileNavIcon> {
           behavior: HitTestBehavior.opaque,
           onTapDown: (_) {
             setState(() => _pressed = true);
-            widget.onPressChanged(true);
           },
           onTapCancel: () {
             _release();
-            widget.onPressChanged(false);
           },
           onTapUp: (_) {
             _release();
-            widget.onPressChanged(false);
             widget.onPressed();
           },
           child: TweenAnimationBuilder<double>(
             tween: Tween(end: _pressed ? 1 : 0),
-            duration: const Duration(milliseconds: 150),
+            duration: AppMotion.duration(
+              context,
+              const Duration(milliseconds: 150),
+            ),
             curve: Curves.easeOutCubic,
             builder: (context, value, child) => Transform.scale(
               scaleX: 1 + value * 0.07,
               scaleY: 1 - value * 0.06,
               child: child,
             ),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutQuart,
+            child: SizedBox(
               width: widget.size,
               height: widget.size,
-              decoration: const BoxDecoration(
-                color: background,
-                shape: BoxShape.circle,
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                widget.icon,
-                size: 20,
-                color: foreground,
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  color: background,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Icon(
+                    widget.icon,
+                    size: 20,
+                    color: foreground,
+                  ),
+                ),
               ),
             ),
           ),
@@ -5246,6 +5715,9 @@ enum _MobileCreateAction { note, reminder, list }
 class _KeepNoteCard extends StatefulWidget {
   const _KeepNoteCard({
     required this.note,
+    required this.selected,
+    required this.selectionActive,
+    required this.onToggleSelection,
     required this.onTap,
     required this.onTogglePin,
     required this.onInvite,
@@ -5257,6 +5729,9 @@ class _KeepNoteCard extends StatefulWidget {
   });
 
   final PlainNote note;
+  final bool selected;
+  final bool selectionActive;
+  final VoidCallback onToggleSelection;
   final VoidCallback onTap;
   final VoidCallback onTogglePin;
   final VoidCallback onInvite;
@@ -5292,12 +5767,13 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
     final showHoverActions = !compact;
     final displayTitle =
         note.title.trim() == 'Untitled note' ? '' : note.title.trim();
+    final showSyncedStatus = note.dirty && !compact;
     final hasMetadata = note.checklist.isNotEmpty ||
         note.conflicted ||
-        note.dirty ||
+        showSyncedStatus ||
         note.reminderAt != null ||
         note.shared;
-    final showFooter = hasMetadata || (_hovered && showHoverActions);
+    final showFooter = hasMetadata || showHoverActions;
     return MouseRegion(
       onEnter: (_) {
         if (mounted) setState(() => _hovered = true);
@@ -5313,6 +5789,12 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
           decoration: ShapeDecoration(
             shape: cardShape,
             shadows: [
+              if (widget.selected)
+                BoxShadow(
+                  color: scheme.primary.withValues(alpha: 0.34),
+                  blurRadius: 0,
+                  spreadRadius: 2,
+                ),
               BoxShadow(
                 color: design.glassShadow,
                 blurRadius: _hovered
@@ -5369,6 +5851,23 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              if (showHoverActions) ...[
+                                SizedBox(
+                                  width: 30,
+                                  height: AppSizes.favoriteButton,
+                                  child: Align(
+                                    alignment: Alignment.topLeft,
+                                    child: _NoteSelectionControl(
+                                      noteId: note.localId,
+                                      visible:
+                                          _hovered || widget.selectionActive,
+                                      selected: widget.selected,
+                                      onPressed: widget.onToggleSelection,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
                               Expanded(
                                 child: displayTitle.isEmpty
                                     ? const SizedBox.shrink()
@@ -5388,21 +5887,24 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                                         ),
                                       ),
                               ),
-                              _NoteFavoriteButton(
-                                noteId: note.localId,
-                                tooltip: note.pinned
-                                    ? l10n.t('unpin')
-                                    : l10n.t('pin'),
-                                icon: note.pinned
-                                    ? AppIcons.heartFill
-                                    : AppIcons.heart,
-                                selected: note.pinned,
-                                size: compact
-                                    ? AppSizes.favoriteButtonCompact
-                                    : AppSizes.favoriteButton,
-                                iconSize: compact ? 17 : 19,
-                                enableBlur: !compact,
-                                onPressed: widget.onTogglePin,
+                              IgnorePointer(
+                                ignoring: widget.selectionActive,
+                                child: _NoteFavoriteButton(
+                                  noteId: note.localId,
+                                  tooltip: note.pinned
+                                      ? l10n.t('unpin')
+                                      : l10n.t('pin'),
+                                  icon: note.pinned
+                                      ? AppIcons.heartFill
+                                      : AppIcons.heart,
+                                  selected: note.pinned,
+                                  size: compact
+                                      ? AppSizes.favoriteButtonCompact
+                                      : AppSizes.favoriteButton,
+                                  iconSize: compact ? 17 : 19,
+                                  enableBlur: !compact,
+                                  onPressed: widget.onTogglePin,
+                                ),
                               ),
                             ],
                           ),
@@ -5435,7 +5937,7 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                                       label: l10n.t('conflict'),
                                       color: scheme.error,
                                     ),
-                                  if (note.dirty)
+                                  if (showSyncedStatus)
                                     _MetaPill(
                                       icon: AppIcons.cloudUpload,
                                       label: l10n.t('synced'),
@@ -5455,51 +5957,58 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                                       color: scheme.primary,
                                     ),
                                   const Spacer(),
-                                  if (_hovered && showHoverActions)
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (note.state != 'active')
-                                          AppIconButton(
-                                            tooltip: l10n.t('restore'),
-                                            icon: AppIcons.rotateCcw,
-                                            onPressed: widget.onRestore,
-                                          ),
-                                        if (note.state == 'active')
-                                          AppIconButton(
-                                            tooltip: l10n.t('archiveAction'),
-                                            icon: AppIcons.archive,
-                                            onPressed: widget.onArchive,
-                                          ),
-                                        if (note.state == 'active' &&
-                                            note.reminderAt == null)
-                                          AppIconButton(
-                                            tooltip:
-                                                l10n.t('collaboratorInvite'),
-                                            icon: note.shared
-                                                ? AppIcons.users
-                                                : AppIcons.userPlus,
-                                            onPressed: widget.onInvite,
-                                          ),
-                                        if (note.state != 'trashed')
-                                          AppIconButton(
-                                            tooltip: l10n.t('reminder'),
-                                            icon: AppIcons.bell,
-                                            onPressed: widget.onReminder,
-                                          ),
-                                        if (note.state != 'trashed')
-                                          AppIconButton(
-                                            tooltip: l10n.t('trash'),
-                                            icon: AppIcons.trash,
-                                            onPressed: widget.onTrash,
-                                          )
-                                        else
-                                          AppIconButton(
-                                            tooltip: l10n.t('deleteForever'),
-                                            icon: AppIcons.trash2,
-                                            onPressed: widget.onDeleteForever,
-                                          ),
-                                      ],
+                                  if (showHoverActions)
+                                    Visibility(
+                                      visible:
+                                          _hovered && !widget.selectionActive,
+                                      maintainAnimation: true,
+                                      maintainState: true,
+                                      maintainSize: true,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (note.state != 'active')
+                                            AppIconButton(
+                                              tooltip: l10n.t('restore'),
+                                              icon: AppIcons.rotateCcw,
+                                              onPressed: widget.onRestore,
+                                            ),
+                                          if (note.state == 'active')
+                                            AppIconButton(
+                                              tooltip: l10n.t('archiveAction'),
+                                              icon: AppIcons.archive,
+                                              onPressed: widget.onArchive,
+                                            ),
+                                          if (note.state == 'active' &&
+                                              note.reminderAt == null)
+                                            AppIconButton(
+                                              tooltip:
+                                                  l10n.t('collaboratorInvite'),
+                                              icon: note.shared
+                                                  ? AppIcons.users
+                                                  : AppIcons.userPlus,
+                                              onPressed: widget.onInvite,
+                                            ),
+                                          if (note.state != 'trashed')
+                                            AppIconButton(
+                                              tooltip: l10n.t('reminder'),
+                                              icon: AppIcons.bell,
+                                              onPressed: widget.onReminder,
+                                            ),
+                                          if (note.state != 'trashed')
+                                            AppIconButton(
+                                              tooltip: l10n.t('trash'),
+                                              icon: AppIcons.trash,
+                                              onPressed: widget.onTrash,
+                                            )
+                                          else
+                                            AppIconButton(
+                                              tooltip: l10n.t('deleteForever'),
+                                              icon: AppIcons.trash2,
+                                              onPressed: widget.onDeleteForever,
+                                            ),
+                                        ],
+                                      ),
                                     ),
                                 ],
                               ),
@@ -5544,6 +6053,63 @@ class _DesktopNoteBackdrop extends StatelessWidget {
         key: ValueKey('desktop-note-backdrop-$noteId'),
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: child,
+      ),
+    );
+  }
+}
+
+class _NoteSelectionControl extends StatelessWidget {
+  const _NoteSelectionControl({
+    required this.noteId,
+    required this.visible,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String noteId;
+  final bool visible;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        key: ValueKey('note-selection-control-$noteId'),
+        opacity: visible ? 1 : 0,
+        duration: AppMotion.duration(
+          context,
+          const Duration(milliseconds: 120),
+        ),
+        child: Tooltip(
+          message: selected
+              ? AppL10n(Localizations.localeOf(context).languageCode)
+                  .t('clearSelection')
+              : AppL10n(Localizations.localeOf(context).languageCode)
+                  .t('selectNote'),
+          child: Material(
+            color: selected
+                ? scheme.primary
+                : scheme.surface.withValues(alpha: 0.88),
+            shape: CircleBorder(
+              side: BorderSide(
+                color: selected ? scheme.primary : scheme.outlineVariant,
+              ),
+            ),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: onPressed,
+              child: SizedBox.square(
+                dimension: 26,
+                child: selected
+                    ? Icon(AppIcons.check, size: 16, color: scheme.onPrimary)
+                    : const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -5619,6 +6185,8 @@ class _MeasuredNoteDraggable extends StatefulWidget {
     required this.onDragStarted,
     required this.onDragUpdate,
     required this.onDragEnded,
+    required this.dragEnabled,
+    required this.onLongPressSelect,
     required this.childWhenDragging,
     required this.child,
   });
@@ -5628,6 +6196,8 @@ class _MeasuredNoteDraggable extends StatefulWidget {
   final VoidCallback onDragStarted;
   final ValueChanged<Offset> onDragUpdate;
   final VoidCallback onDragEnded;
+  final bool dragEnabled;
+  final VoidCallback onLongPressSelect;
   final Widget childWhenDragging;
   final Widget child;
 
@@ -5636,9 +6206,15 @@ class _MeasuredNoteDraggable extends StatefulWidget {
 }
 
 class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
+  static const _dragActivationDistance = 10.0;
+
   final _cardKey = GlobalKey();
+  final _dragActive = ValueNotifier(false);
   Size? _dragFeedbackSize;
   Offset? _dragPointerPosition;
+  Offset? _longPressOrigin;
+  bool _pendingLongPress = false;
+  bool _dragStarted = false;
 
   Size? get _cardSize {
     final renderObject = _cardKey.currentContext?.findRenderObject();
@@ -5647,17 +6223,25 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
   }
 
   @override
+  void dispose() {
+    _dragActive.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Listener(
       onPointerDown: (event) => _dragPointerPosition = event.position,
       child: LongPressDraggable<PlainNote>(
         data: widget.note,
+        maxSimultaneousDrags: widget.dragEnabled ? 1 : 0,
         delay: const Duration(milliseconds: 260),
         dragAnchorStrategy: pointerDragAnchorStrategy,
         feedback: _NoteDragFeedback(
           key: ValueKey('note-drag-feedback-${widget.note.localId}'),
           noteId: widget.note.localId,
           trashHovering: widget.trashHovering,
+          dragActive: _dragActive,
           sizeReader: () => _dragFeedbackSize ?? _cardSize,
           child: widget.child,
         ),
@@ -5666,12 +6250,21 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
           final position =
               (_dragPointerPosition ?? details.globalPosition) + details.delta;
           _dragPointerPosition = position;
+          final distance = (position - (_longPressOrigin ?? position)).distance;
+          if (!_dragStarted && distance >= _dragActivationDistance) {
+            _dragStarted = true;
+            _dragActive.value = true;
+            if (mounted) setState(() {});
+            widget.onDragStarted();
+          }
+          if (!_dragStarted) return;
           widget.onDragUpdate(position);
         },
         onDraggableCanceled: (_, __) => _handleDragEnded(),
         onDragEnd: (_) => _handleDragEnded(),
         onDragCompleted: _handleDragEnded,
-        childWhenDragging: widget.childWhenDragging,
+        childWhenDragging:
+            _dragStarted ? widget.childWhenDragging : widget.child,
         child: KeyedSubtree(
           key: _cardKey,
           child: widget.child,
@@ -5682,13 +6275,23 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
 
   void _handleDragStarted() {
     _dragFeedbackSize = _cardSize;
-    widget.onDragStarted();
+    _longPressOrigin = _dragPointerPosition;
+    _dragActive.value = false;
+    _pendingLongPress = true;
+    _dragStarted = false;
   }
 
   void _handleDragEnded() {
+    final select = _pendingLongPress && !_dragStarted;
+    final endDrag = _dragStarted;
     _dragFeedbackSize = null;
     _dragPointerPosition = null;
-    widget.onDragEnded();
+    _longPressOrigin = null;
+    _dragActive.value = false;
+    _pendingLongPress = false;
+    _dragStarted = false;
+    if (endDrag) widget.onDragEnded();
+    if (select) widget.onLongPressSelect();
   }
 }
 
@@ -5697,12 +6300,14 @@ class _NoteDragFeedback extends ConsumerWidget {
     super.key,
     required this.noteId,
     required this.trashHovering,
+    required this.dragActive,
     required this.sizeReader,
     required this.child,
   });
 
   final String noteId;
   final ValueListenable<bool> trashHovering;
+  final ValueListenable<bool> dragActive;
   final Size? Function() sizeReader;
   final Widget child;
 
@@ -5710,21 +6315,27 @@ class _NoteDragFeedback extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final size = sizeReader() ?? const Size(260, 170);
     final navTrashHovering = ref.watch(_dragTrashHoverProvider);
-    return Transform.translate(
-      offset: Offset(-size.width / 2, -size.height / 2),
-      child: Material(
-        type: MaterialType.transparency,
-        child: ValueListenableBuilder<bool>(
-          valueListenable: trashHovering,
-          builder: (context, hovering, _) => AnimatedOpacity(
-            key: ValueKey('note-drag-trash-opacity-$noteId'),
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOutCubic,
-            opacity: hovering || navTrashHovering ? 0.24 : 1,
-            child: SizedBox(
-              width: size.width,
-              height: size.height,
-              child: child,
+    return ValueListenableBuilder<bool>(
+      valueListenable: dragActive,
+      builder: (context, active, _) => Opacity(
+        opacity: active ? 1 : 0,
+        child: Transform.translate(
+          offset: Offset(-size.width / 2, -size.height / 2),
+          child: Material(
+            type: MaterialType.transparency,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: trashHovering,
+              builder: (context, hovering, _) => AnimatedOpacity(
+                key: ValueKey('note-drag-trash-opacity-$noteId'),
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOutCubic,
+                opacity: hovering || navTrashHovering ? 0.24 : 1,
+                child: SizedBox(
+                  width: size.width,
+                  height: size.height,
+                  child: child,
+                ),
+              ),
             ),
           ),
         ),

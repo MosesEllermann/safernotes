@@ -60,7 +60,7 @@ void main() {
     expect(_containsBoldSpan(richText.text), isTrue);
   });
 
-  testWidgets('cards without metadata do not reserve footer space',
+  testWidgets('desktop cards reserve footer space before hover',
       (tester) async {
     SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = const Size(1200, 850);
@@ -89,7 +89,7 @@ void main() {
     final sharedHeight = tester
         .getSize(find.byKey(const ValueKey('compact-note-drag-shared-card')))
         .height;
-    expect(sharedHeight, greaterThan(plainHeight));
+    expect(sharedHeight, plainHeight);
   });
 }
 

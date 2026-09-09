@@ -1,7 +1,12 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
+import 'package:safernotes_app/shared/widgets/app_motion.dart';
+
+bool get _supportsEfficientBackdropBlur =>
+    kIsWeb || defaultTargetPlatform != TargetPlatform.android;
 
 /// Frosted panel used for every raised surface in the app.
 class GlassSurface extends StatelessWidget {
@@ -69,7 +74,7 @@ class GlassSurface extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: radius,
-          child: enabled
+          child: enabled && _supportsEfficientBackdropBlur
               ? BackdropFilter(
                   filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
                   child: surface,
@@ -126,7 +131,10 @@ class _GlassCircleButtonState extends State<GlassCircleButton> {
                 ? Colors.white.withValues(alpha: 0.92)
                 : scheme.onSurface.withValues(alpha: 0.82);
     final control = AnimatedContainer(
-      duration: const Duration(milliseconds: 160),
+      duration: AppMotion.duration(
+        context,
+        const Duration(milliseconds: 160),
+      ),
       curve: Curves.easeOutCubic,
       width: widget.size,
       height: widget.size,
@@ -169,10 +177,13 @@ class _GlassCircleButtonState extends State<GlassCircleButton> {
                 },
           child: AnimatedScale(
             scale: _pressed ? 0.92 : (_hovered ? 1.05 : 1),
-            duration: const Duration(milliseconds: 160),
+            duration: AppMotion.duration(
+              context,
+              const Duration(milliseconds: 160),
+            ),
             curve: Curves.easeOutCubic,
             child: ClipOval(
-              child: widget.enableBlur
+              child: widget.enableBlur && _supportsEfficientBackdropBlur
                   ? BackdropFilter(
                       filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                       child: control,

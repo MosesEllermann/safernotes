@@ -95,6 +95,8 @@ void main() {
     final gesture = await tester.startGesture(tester.getCenter(card));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 200));
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
 
     final target = find.byKey(const ValueKey('overview-trash-drop-target'));
     expect(target, findsOneWidget);
@@ -153,6 +155,8 @@ void main() {
     final gesture = await tester.startGesture(tester.getCenter(card));
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 200));
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
     final target = find.byKey(const ValueKey('overview-trash-drop-target'));
     await gesture.moveTo(tester.getCenter(target));
     await tester.pump(const Duration(milliseconds: 220));
@@ -195,12 +199,13 @@ void main() {
 
     final first = find.byKey(const ValueKey('compact-note-drag-note-1'));
     final fourth = find.byKey(const ValueKey('compact-note-drag-note-4'));
-    final secondPlacement =
-        find.byKey(const ValueKey('animated-note-placement-note-2'));
+    final secondMotion =
+        find.byKey(const ValueKey('animated-note-motion-note-2'));
+    final secondCard = find.byKey(const ValueKey('compact-note-drag-note-2'));
     final firstStart = tester.getTopLeft(first);
     final fourthCenter = tester.getCenter(fourth);
-    final secondStart = tester.getTopLeft(secondPlacement);
-    final motion = tester.widget<AnimatedPositioned>(secondPlacement);
+    final secondStart = tester.getTopLeft(secondCard);
+    final motion = tester.widget<TweenAnimationBuilder<Offset>>(secondMotion);
     expect(motion.duration, const Duration(milliseconds: 190));
     expect(motion.curve, Curves.easeOutCubic);
     final draggable = tester.widget<LongPressDraggable<PlainNote>>(
@@ -219,19 +224,26 @@ void main() {
 
     final gesture = await tester.startGesture(tester.getCenter(first));
     await tester.pump(const Duration(milliseconds: 360));
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
     await gesture.moveTo(fourthCenter);
     await tester.pump();
-    expect(tester.getTopLeft(secondPlacement).dx, closeTo(secondStart.dx, 0.5));
+    await gesture.moveBy(const Offset(0, 1));
+    await tester.pump();
+    expect(tester.getTopLeft(secondCard).dx, closeTo(secondStart.dx, 0.5));
 
     await tester.pump(const Duration(milliseconds: 80));
-    final secondMidway = tester.getTopLeft(secondPlacement);
+    final secondMidway = tester.getTopLeft(secondCard);
     expect(secondMidway.dx, lessThan(secondStart.dx));
     expect(secondMidway.dx, greaterThan(firstStart.dx));
 
     await tester.pump(const Duration(milliseconds: 160));
-    expect(tester.getTopLeft(secondPlacement).dx, closeTo(firstStart.dx, 0.5));
+    expect(tester.getTopLeft(secondCard).dx, closeTo(firstStart.dx, 0.5));
+    final droppedPreviewPosition = tester.getTopLeft(first);
 
     await gesture.up();
+    await tester.pump();
+    expect(tester.getTopLeft(first), droppedPreviewPosition);
     await tester.pumpAndSettle();
     expect(controller.reorderedNoteId, 'note-1');
     expect(controller.reorderedTargetIndex, 3);
@@ -267,21 +279,32 @@ void main() {
 
     final dragged = find.byKey(const ValueKey('compact-note-drag-note-6'));
     final target = find.byKey(const ValueKey('compact-note-drag-note-2'));
-    final secondPlacement =
-        find.byKey(const ValueKey('animated-note-placement-note-2'));
-    final secondStart = tester.getTopLeft(secondPlacement);
-    final secondStartDestination =
-        tester.widget<AnimatedPositioned>(secondPlacement).left!;
+    final secondMotion =
+        find.byKey(const ValueKey('animated-note-motion-note-2'));
+    final secondCard = find.byKey(const ValueKey('compact-note-drag-note-2'));
+    final secondStart = tester.getTopLeft(secondCard);
+    final secondStartDestination = tester
+        .widget<TweenAnimationBuilder<Offset>>(secondMotion)
+        .tween
+        .end!
+        .dx;
     final targetCenter = tester.getCenter(target);
 
     final gesture = await tester.startGesture(tester.getCenter(dragged));
     await tester.pump(const Duration(milliseconds: 360));
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
     await gesture.moveTo(targetCenter);
     await tester.pump();
+    await gesture.moveBy(const Offset(0, 1));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 240));
-    final secondPreview = tester.getTopLeft(secondPlacement);
-    final secondDestination =
-        tester.widget<AnimatedPositioned>(secondPlacement).left!;
+    final secondPreview = tester.getTopLeft(secondCard);
+    final secondDestination = tester
+        .widget<TweenAnimationBuilder<Offset>>(secondMotion)
+        .tween
+        .end!
+        .dx;
 
     await gesture.up();
     await tester.pumpAndSettle();
@@ -345,6 +368,12 @@ class _TestNotesController extends NotesController {
   }) async {
     reorderedNoteId = draggedId;
     reorderedTargetIndex = targetIndex;
+    final current = [...state.requireValue];
+    final oldIndex = current.indexWhere((note) => note.localId == draggedId);
+    if (oldIndex < 0) return;
+    final moved = current.removeAt(oldIndex);
+    current.insert(targetIndex.clamp(0, current.length), moved);
+    state = AsyncData(current);
   }
 
   @override

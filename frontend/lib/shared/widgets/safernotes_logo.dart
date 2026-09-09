@@ -8,15 +8,20 @@ class SafernotesLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Image.asset(
-      dark
-          ? 'assets/safernotes-logo-white.png'
-          : 'assets/safernotes-logo-black.png',
-      width: size,
-      height: size,
-      fit: BoxFit.contain,
-      excludeFromSemantics: true,
-      filterQuality: FilterQuality.high,
+    final decodeSize = (size * MediaQuery.devicePixelRatioOf(context)).ceil();
+    return RepaintBoundary(
+      child: Image.asset(
+        dark
+            ? 'assets/safernotes-logo-white.png'
+            : 'assets/safernotes-logo-black.png',
+        width: size,
+        height: size,
+        cacheWidth: decodeSize,
+        fit: BoxFit.contain,
+        excludeFromSemantics: true,
+        filterQuality: FilterQuality.medium,
+        gaplessPlayback: true,
+      ),
     );
   }
 }

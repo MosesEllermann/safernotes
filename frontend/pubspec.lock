@@ -265,11 +265,10 @@ packages:
   flutter_local_notifications:
     dependency: "direct main"
     description:
-      name: flutter_local_notifications
-      sha256: a0d7141f14cabcee42967470a858dfc99dd6cfb70d3cab404bacfcafa9e84e70
-      url: "https://pub.dev"
-    source: hosted
-    version: "22.0.1"
+      path: "third_party/flutter_local_notifications"
+      relative: true
+    source: path
+    version: "22.3.0"
   flutter_local_notifications_linux:
     dependency: transitive
     description:
@@ -282,10 +281,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_local_notifications_platform_interface
-      sha256: ff0013eae795e8dc8fad4a8992a209e64d3ba2fbd8bf5e43c36bf448f95bd814
+      sha256: "43c3761d916c9bd3d5c7ebbc44d82f4990329840c0c5d62ad5260cc1b5d399bd"
       url: "https://pub.dev"
     source: hosted
-    version: "12.0.0"
+    version: "12.2.0"
   flutter_local_notifications_web:
     dependency: transitive
     description:
@@ -678,12 +677,11 @@ packages:
     source: hosted
     version: "11.1.0"
   quill_native_bridge_android:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: quill_native_bridge_android
-      sha256: "763f2066d252a10c04cc66add7b7fa967bae8d25aefcd180d5ac808f5af4d143"
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/quill_native_bridge_android"
+      relative: true
+    source: path
     version: "0.0.2"
   quill_native_bridge_ios:
     dependency: transitive

@@ -537,7 +537,16 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     final next = [
       for (final note in existing) reordered[note.localId] ?? note,
     ]..sort(_sortNotes);
-    await _persist(next);
+    // The drag preview already shows this exact order. Publish it before the
+    // disk write so releasing the pointer settles in place instead of briefly
+    // rebuilding the old order and then animating to the committed one.
+    state = AsyncData(next);
+    try {
+      await ref.read(offlineStoreProvider).saveNotes(next);
+    } catch (_) {
+      state = AsyncData(existing);
+      rethrow;
+    }
     ref.read(syncStatusProvider.notifier).state = SyncStatus.saving;
     if (_syncFuture != null) {
       _syncRequested = true;

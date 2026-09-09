@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safernotes_app/shared/widgets/app_motion.dart';
 
 class AppIconButton extends StatefulWidget {
   const AppIconButton({
@@ -51,31 +52,39 @@ class _AppIconButtonState extends State<AppIconButton> {
                 },
           child: AnimatedScale(
             scale: _pressed ? 0.94 : (_hovered ? 1.04 : 1),
-            duration: const Duration(milliseconds: 140),
+            duration: AppMotion.duration(
+              context,
+              const Duration(milliseconds: 140),
+            ),
             curve: Curves.easeOutCubic,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 140),
-              curve: Curves.easeOutCubic,
-              width: widget.size,
-              height: widget.size,
-              decoration: BoxDecoration(
-                color: active
-                    ? (Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white.withValues(
-                            alpha: widget.selected ? 0.16 : 0.10)
-                        : Colors.black.withValues(
-                            alpha: widget.selected ? 0.10 : 0.06))
-                    : Colors.transparent,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                widget.icon,
-                size: widget.iconSize,
-                color: widget.onPressed == null
-                    ? scheme.onSurface.withValues(alpha: 0.38)
-                    : widget.selected
-                        ? scheme.primary
-                        : scheme.onSurface.withValues(alpha: 0.88),
+            child: RepaintBoundary(
+              child: AnimatedContainer(
+                duration: AppMotion.duration(
+                  context,
+                  const Duration(milliseconds: 140),
+                ),
+                curve: Curves.easeOutCubic,
+                width: widget.size,
+                height: widget.size,
+                decoration: BoxDecoration(
+                  color: active
+                      ? (Theme.of(context).brightness == Brightness.dark
+                          ? Colors.white
+                              .withValues(alpha: widget.selected ? 0.16 : 0.10)
+                          : Colors.black
+                              .withValues(alpha: widget.selected ? 0.10 : 0.06))
+                      : Colors.transparent,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  widget.icon,
+                  size: widget.iconSize,
+                  color: widget.onPressed == null
+                      ? scheme.onSurface.withValues(alpha: 0.38)
+                      : widget.selected
+                          ? scheme.primary
+                          : scheme.onSurface.withValues(alpha: 0.88),
+                ),
               ),
             ),
           ),
