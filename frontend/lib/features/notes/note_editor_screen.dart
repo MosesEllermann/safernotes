@@ -20,6 +20,7 @@ import 'package:safernotes_app/shared/notifications/reminder_notifications.dart'
 import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
 import 'package:safernotes_app/shared/widgets/app_canvas.dart';
+import 'package:safernotes_app/shared/widgets/app_info_bar.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 bool get _usesIosNativeEditorControls =>
@@ -772,19 +773,14 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
 
   void _showReminderFeedback(bool added, {bool duplicated = false}) {
     final l10n = ref.read(l10nProvider);
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          l10n.t(
-            added
-                ? duplicated
-                    ? 'reminderDuplicateAdded'
-                    : 'reminderAdded'
-                : 'reminderRemoved',
-          ),
-        ),
+    showAppInfoBar(
+      context,
+      message: l10n.t(
+        added
+            ? duplicated
+                ? 'reminderDuplicateAdded'
+                : 'reminderAdded'
+            : 'reminderRemoved',
       ),
     );
   }

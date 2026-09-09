@@ -407,6 +407,14 @@ void main() {
       tester.getSize(find.byKey(const ValueKey('mobile-nav-create'))),
       const Size.square(50),
     );
+    final selectionScale = tester.widget<Transform>(
+      find.descendant(
+        of: find.byKey(const ValueKey('mobile-nav-selection-morph')),
+        matching: find.byType(Transform),
+      ),
+    );
+    expect(selectionScale.transform.entry(0, 0) * 50, closeTo(50, 0.01));
+    expect(selectionScale.transform.entry(1, 1) * 50, closeTo(50, 0.01));
     expect(
       tester
           .widget<Icon>(
@@ -427,7 +435,7 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile-bottom-nav-backdrop')),
-      findsNothing,
+      findsOneWidget,
     );
     final navFill = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('mobile-nav-drawer-fill')),
@@ -645,8 +653,7 @@ void main() {
 
     final card = find.byKey(const ValueKey('compact-note-drag-note-one'));
     final gesture = await tester.startGesture(tester.getCenter(card));
-    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
-    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await gesture.moveBy(const Offset(12, 0));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 220));
@@ -742,7 +749,7 @@ void main() {
     expect(tester.getSize(guard).height, 32);
     expect(
       find.byKey(const ValueKey('mobile-bottom-nav-backdrop')),
-      findsNothing,
+      findsOneWidget,
     );
     expect(
       find.byKey(const ValueKey('mobile-header-button-backdrop')),
@@ -1356,7 +1363,7 @@ void main() {
     final first = find.byKey(const ValueKey('note-list-item-note-one'));
     final second = find.byKey(const ValueKey('note-list-item-note-two'));
     final gesture = await tester.startGesture(tester.getCenter(first));
-    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await gesture.moveBy(const Offset(12, 0));
     await tester.pump();
     await gesture.moveTo(tester.getCenter(second) + const Offset(0, 18));
@@ -1385,7 +1392,24 @@ void main() {
 
     final first = find.byKey(const ValueKey('compact-note-drag-note-one'));
     final gesture = await tester.startGesture(tester.getCenter(first));
-    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 170));
+    expect(
+      find.byKey(const ValueKey('multi-selection-toolbar')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widgetList<DecoratedBox>(
+            find.byKey(const ValueKey('note-card-selection-note-one')),
+          )
+          .map((widget) => widget.decoration as ShapeDecoration)
+          .any(
+            (decoration) =>
+                decoration.shadows?.any((shadow) => shadow.spreadRadius == 2) ??
+                false,
+          ),
+      isTrue,
+    );
     await gesture.up();
     await tester.pumpAndSettle();
 
@@ -1393,6 +1417,31 @@ void main() {
     expect(
         find.byKey(const ValueKey('multi-selection-toolbar')), findsOneWidget);
     expect(find.text('1 selected'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile-selection-toolbar-backdrop')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('mobile-selection-toolbar-glass')),
+          )
+          .height,
+      greaterThanOrEqualTo(64),
+    );
+    expect(
+      tester
+          .widget<Icon>(
+            find
+                .descendant(
+                  of: find.byKey(const ValueKey('pin-selected-notes')),
+                  matching: find.byType(Icon),
+                )
+                .first,
+          )
+          .icon,
+      AppIcons.heart,
+    );
     expect(find.byKey(const ValueKey('mobile-nav-trash-drop-target')),
         findsNothing);
 
@@ -1410,6 +1459,59 @@ void main() {
     expect(find.byKey(const ValueKey('multi-selection-toolbar')), findsNothing);
     expect(
         find.byKey(const ValueKey('mobile-bottom-nav-pill')), findsOneWidget);
+  });
+
+  testWidgets('tapping outside note cards clears the selected state',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(430, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpNotes(tester);
+
+    final card = find.byKey(const ValueKey('compact-note-drag-note-one'));
+    final gesture = await tester.startGesture(tester.getCenter(card));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 170));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('notes-header-date')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 selected'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile-standard-navigation')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a selected long press can still become a drag before release',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(430, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpNotes(tester);
+
+    final card = find.byKey(const ValueKey('compact-note-drag-note-one'));
+    final gesture = await tester.startGesture(tester.getCenter(card));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 170));
+    expect(find.text('1 selected'), findsOneWidget);
+
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 360));
+    expect(find.text('1 selected'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('mobile-nav-trash-drop-target')),
+      findsOneWidget,
+    );
+
+    await gesture.up();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('desktop hover controls select without changing card height',
@@ -1486,8 +1588,7 @@ void main() {
 
     final first = find.byKey(const ValueKey('note-list-item-note-one'));
     final gesture = await tester.startGesture(tester.getCenter(first));
-    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await gesture.moveBy(const Offset(12, 0));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));

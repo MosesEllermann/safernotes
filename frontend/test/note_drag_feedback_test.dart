@@ -1,4 +1,4 @@
-import 'package:flutter/gestures.dart';
+import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,7 +54,8 @@ void main() {
     expect(longCardSize.height, greaterThan(shortCardSize.height));
 
     final gesture = await tester.startGesture(tester.getCenter(longCardFinder));
-    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+    await gesture.moveBy(const Offset(12, 0));
     await tester.pump();
 
     final feedbackFinder =
@@ -93,8 +94,7 @@ void main() {
 
     final card = find.byKey(const ValueKey('compact-note-drag-note-to-trash'));
     final gesture = await tester.startGesture(tester.getCenter(card));
-    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await gesture.moveBy(const Offset(12, 0));
     await tester.pump();
 
@@ -117,7 +117,7 @@ void main() {
     expect(controller.changedState, 'trashed');
     expect(find.text('Note moved to trash.'), findsOneWidget);
 
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
     expect(controller.changedStates, ['trashed', 'active']);
@@ -153,8 +153,7 @@ void main() {
       const ValueKey('compact-note-drag-auto-close-trash'),
     );
     final gesture = await tester.startGesture(tester.getCenter(card));
-    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 100));
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await gesture.moveBy(const Offset(12, 0));
     await tester.pump();
     final target = find.byKey(const ValueKey('overview-trash-drop-target'));
@@ -218,12 +217,12 @@ void main() {
           )
           .first,
     );
-    expect(draggable.delay, const Duration(milliseconds: 260));
+    expect(draggable.delay, kLongPressTimeout);
     expect(
         find.byKey(const ValueKey('card-grid-drop-surface')), findsOneWidget);
 
     final gesture = await tester.startGesture(tester.getCenter(first));
-    await tester.pump(const Duration(milliseconds: 360));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await gesture.moveBy(const Offset(12, 0));
     await tester.pump();
     await gesture.moveTo(fourthCenter);
@@ -291,7 +290,7 @@ void main() {
     final targetCenter = tester.getCenter(target);
 
     final gesture = await tester.startGesture(tester.getCenter(dragged));
-    await tester.pump(const Duration(milliseconds: 360));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await gesture.moveBy(const Offset(12, 0));
     await tester.pump();
     await gesture.moveTo(targetCenter);

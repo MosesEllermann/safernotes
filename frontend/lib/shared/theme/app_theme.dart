@@ -59,15 +59,15 @@ abstract final class AppChromeGlass {
   static const double lightConstrainedBlur = 12;
   static const double darkConstrainedBlur = 14;
 
-  // Keep the light chrome translucent; elevation comes from its edge and
-  // shadow so the blurred note colours remain visible through the surface.
-  static const Color lightTint = Color(0x4dffffff);
+  // Light chrome stays translucent, but uses a distinctly brighter white
+  // veil so navigation and header controls remain crisp over colourful notes.
+  static const Color lightTint = Color(0xb8ffffff);
   static const Color lightHeaderTint = Color(0x26ffffff);
   static const Color darkTint = Color(0x33000000);
   static const Color darkOuterStroke = Color(0x24ffffff);
-  static const Color lightOuterStroke = Color(0x18000000);
-  static const Color lightInnerStroke = Color(0xb5ffffff);
-  static const Color lightShadow = Color(0x33000000);
+  static const Color lightOuterStroke = Color(0x10000000);
+  static const Color lightInnerStroke = Color(0xe0ffffff);
+  static const Color lightShadow = Color(0x16000000);
   static const Color darkShadow = Color(0x30000000);
 
   static Color tint(Brightness brightness) =>
