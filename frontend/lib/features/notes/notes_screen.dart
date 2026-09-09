@@ -271,7 +271,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
           appBar: desktop
               ? AppBar(
                   toolbarHeight: 96,
-                  titleSpacing: 12,
+                  titleSpacing: 24,
                   actionsPadding: const EdgeInsets.only(bottom: 16),
                   surfaceTintColor: Colors.transparent,
                   backgroundColor: Colors.transparent,
@@ -1863,13 +1863,11 @@ class _MobileHeaderGlassButtonSurface extends StatelessWidget {
           ),
           child: ClipPath(
             clipper: ShapeBorderClipper(shape: shape),
-            child: _usesAndroidRasterBudget
-                ? interactiveSurface
-                : BackdropFilter(
-                    key: const ValueKey('mobile-header-button-backdrop'),
-                    filter: _NotesChromeGlass.filter(brightness),
-                    child: interactiveSurface,
-                  ),
+            child: BackdropFilter(
+              key: const ValueKey('mobile-header-button-backdrop'),
+              filter: _NotesChromeGlass.filter(brightness),
+              child: interactiveSurface,
+            ),
           ),
         ),
       ),
@@ -2358,8 +2356,7 @@ class _NoteListItemState extends State<_NoteListItem> {
         ? scheme.outlineVariant
         : brandNoteSurfaceColor(context, note.color);
     final desktop = MediaQuery.sizeOf(context).width >= 700;
-    final showSelectionControl =
-        desktop && (_hovered || widget.selectionActive);
+    final showSelectionControl = desktop && (_hovered || widget.multiSelected);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -2387,6 +2384,7 @@ class _NoteListItemState extends State<_NoteListItem> {
                         noteId: note.localId,
                         visible: showSelectionControl,
                         selected: widget.multiSelected,
+                        showCheck: _hovered,
                         onPressed: widget.onToggleSelection,
                       ),
                     ),
@@ -5877,244 +5875,250 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
         scale: _hovered ? 1.008 : 1,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
-        child: DecoratedBox(
-          key: ValueKey('note-card-selection-${note.localId}'),
-          decoration: ShapeDecoration(
-            shape: cardShape,
-            shadows: [
-              if (widget.selected)
-                BoxShadow(
-                  color: scheme.primary.withValues(alpha: 0.34),
-                  blurRadius: 0,
-                  spreadRadius: 2,
-                ),
-              BoxShadow(
-                color: design.glassShadow,
-                blurRadius: _hovered
-                    ? 30
-                    : constrainedRaster
-                        ? 8
-                        : compact
-                            ? 14
-                            : 22,
-                offset: Offset(
-                  0,
-                  _hovered
-                      ? 14
-                      : constrainedRaster
-                          ? 4
-                          : compact
-                              ? 7
-                              : 11,
-                ),
-              ),
-            ],
-          ),
-          child: _DesktopNoteBackdrop(
-            noteId: note.localId,
-            enabled: desktop,
-            shape: cardShape,
-            child: Material(
-              color: bg,
-              elevation: 0,
-              shape: cardShape,
-              clipBehavior: Clip.antiAlias,
-              child: Ink(
-                decoration: ShapeDecoration(
-                  gradient: brandNoteGradient(context, note.color),
-                  shape: cardShape,
-                ),
-                child: InkWell(
-                  onTap: widget.onTap,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: compact ? 136 : 168,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            DecoratedBox(
+              key: ValueKey('note-card-selection-${note.localId}'),
+              decoration: ShapeDecoration(
+                shape: cardShape,
+                shadows: [
+                  if (widget.selected)
+                    BoxShadow(
+                      color: scheme.primary.withValues(alpha: 0.34),
+                      blurRadius: 0,
+                      spreadRadius: 2,
                     ),
-                    child: Padding(
-                      key: ValueKey('note-card-content-${note.localId}'),
-                      padding: EdgeInsets.fromLTRB(
-                        compact ? 14 : 20,
-                        compact ? 12 : 18,
-                        compact ? 14 : 20,
-                        compact ? 14 : 20,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                  BoxShadow(
+                    color: design.glassShadow,
+                    blurRadius: _hovered
+                        ? 30
+                        : constrainedRaster
+                            ? 8
+                            : compact
+                                ? 14
+                                : 22,
+                    offset: Offset(
+                      0,
+                      _hovered
+                          ? 14
+                          : constrainedRaster
+                              ? 4
+                              : compact
+                                  ? 7
+                                  : 11,
+                    ),
+                  ),
+                ],
+              ),
+              child: _DesktopNoteBackdrop(
+                noteId: note.localId,
+                enabled: desktop,
+                shape: cardShape,
+                child: Material(
+                  color: bg,
+                  elevation: 0,
+                  shape: cardShape,
+                  clipBehavior: Clip.antiAlias,
+                  child: Ink(
+                    decoration: ShapeDecoration(
+                      gradient: brandNoteGradient(context, note.color),
+                      shape: cardShape,
+                    ),
+                    child: InkWell(
+                      onTap: widget.onTap,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: compact ? 136 : 168,
+                        ),
+                        child: Padding(
+                          key: ValueKey('note-card-content-${note.localId}'),
+                          padding: EdgeInsets.fromLTRB(
+                            compact ? 14 : 20,
+                            compact ? 12 : 18,
+                            compact ? 14 : 20,
+                            compact ? 14 : 20,
+                          ),
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              if (showHoverActions) ...[
-                                SizedBox(
-                                  width: 30,
-                                  height: AppSizes.favoriteButton,
-                                  child: Align(
-                                    alignment: Alignment.topLeft,
-                                    child: _NoteSelectionControl(
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: displayTitle.isEmpty
+                                        ? const SizedBox.shrink()
+                                        : Padding(
+                                            padding: EdgeInsets.only(
+                                              top: compact ? 3 : 6,
+                                              right: compact ? 6 : 8,
+                                            ),
+                                            child: Text(
+                                              displayTitle,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleLarge
+                                                  ?.copyWith(height: 1.15),
+                                            ),
+                                          ),
+                                  ),
+                                  IgnorePointer(
+                                    ignoring: widget.selectionActive,
+                                    child: _NoteFavoriteButton(
                                       noteId: note.localId,
-                                      visible:
-                                          _hovered || widget.selectionActive,
-                                      selected: widget.selected,
-                                      onPressed: widget.onToggleSelection,
+                                      tooltip: note.pinned
+                                          ? l10n.t('unpin')
+                                          : l10n.t('pin'),
+                                      icon: note.pinned
+                                          ? AppIcons.heartFill
+                                          : AppIcons.heart,
+                                      selected: note.pinned,
+                                      size: compact
+                                          ? AppSizes.favoriteButtonCompact
+                                          : AppSizes.favoriteButton,
+                                      iconSize: compact ? 17 : 19,
+                                      enableBlur: !compact,
+                                      onPressed: widget.onTogglePin,
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
-                              ],
-                              Expanded(
-                                child: displayTitle.isEmpty
-                                    ? const SizedBox.shrink()
-                                    : Padding(
-                                        padding: EdgeInsets.only(
-                                          top: compact ? 3 : 6,
-                                          right: compact ? 6 : 8,
-                                        ),
-                                        child: Text(
-                                          displayTitle,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleLarge
-                                              ?.copyWith(height: 1.15),
-                                        ),
-                                      ),
-                              ),
-                              IgnorePointer(
-                                ignoring: widget.selectionActive,
-                                child: _NoteFavoriteButton(
-                                  noteId: note.localId,
-                                  tooltip: note.pinned
-                                      ? l10n.t('unpin')
-                                      : l10n.t('pin'),
-                                  icon: note.pinned
-                                      ? AppIcons.heartFill
-                                      : AppIcons.heart,
-                                  selected: note.pinned,
-                                  size: compact
-                                      ? AppSizes.favoriteButtonCompact
-                                      : AppSizes.favoriteButton,
-                                  iconSize: compact ? 17 : 19,
-                                  enableBlur: !compact,
-                                  onPressed: widget.onTogglePin,
-                                ),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: compact ? 8 : 12),
-                          if (note.labels.isNotEmpty) ...[
-                            _NoteLabelChips(labels: note.labels),
-                            SizedBox(height: compact ? 8 : 12),
-                          ],
-                          note.checklist.isNotEmpty && note.body.trim().isEmpty
-                              ? _ChecklistPreview(items: note.checklist)
-                              : _FormattedPreview(
-                                  text: note.body,
-                                  delta: note.richTextDelta,
-                                ),
-                          if (showFooter) ...[
-                            SizedBox(height: compact ? 10 : 16),
-                            SizedBox(
-                              height: compact ? 30 : 36,
-                              child: Row(
-                                children: [
-                                  if (note.checklist.isNotEmpty)
-                                    _MetaPill(
-                                      icon: AppIcons.squareCheck,
-                                      label:
-                                          '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
-                                    ),
-                                  if (note.conflicted)
-                                    _MetaPill(
-                                      icon: AppIcons.circleAlert,
-                                      label: l10n.t('conflict'),
-                                      color: scheme.error,
-                                    ),
-                                  if (showSyncedStatus)
-                                    _MetaPill(
-                                      icon: AppIcons.cloudUpload,
-                                      label: l10n.t('synced'),
-                                      color: scheme.tertiary,
-                                    ),
-                                  if (note.reminderAt != null)
-                                    _MetaPill(
-                                      icon: AppIcons.bell,
-                                      label: _formatReminder(
-                                          note.reminderAt!, l10n),
-                                      color: scheme.primary,
-                                    ),
-                                  if (note.shared)
-                                    _MetaPill(
-                                      icon: AppIcons.users,
-                                      label: l10n.t('shared'),
-                                      color: scheme.primary,
-                                    ),
-                                  const Spacer(),
-                                  if (showHoverActions)
-                                    Visibility(
-                                      visible:
-                                          _hovered && !widget.selectionActive,
-                                      maintainAnimation: true,
-                                      maintainState: true,
-                                      maintainSize: true,
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (note.state != 'active')
-                                            AppIconButton(
-                                              tooltip: l10n.t('restore'),
-                                              icon: AppIcons.rotateCcw,
-                                              onPressed: widget.onRestore,
-                                            ),
-                                          if (note.state == 'active')
-                                            AppIconButton(
-                                              tooltip: l10n.t('archiveAction'),
-                                              icon: AppIcons.archive,
-                                              onPressed: widget.onArchive,
-                                            ),
-                                          if (note.state == 'active' &&
-                                              note.reminderAt == null)
-                                            AppIconButton(
-                                              tooltip:
-                                                  l10n.t('collaboratorInvite'),
-                                              icon: note.shared
-                                                  ? AppIcons.users
-                                                  : AppIcons.userPlus,
-                                              onPressed: widget.onInvite,
-                                            ),
-                                          if (note.state != 'trashed')
-                                            AppIconButton(
-                                              tooltip: l10n.t('reminder'),
-                                              icon: AppIcons.bell,
-                                              onPressed: widget.onReminder,
-                                            ),
-                                          if (note.state != 'trashed')
-                                            AppIconButton(
-                                              tooltip: l10n.t('trash'),
-                                              icon: AppIcons.trash,
-                                              onPressed: widget.onTrash,
-                                            )
-                                          else
-                                            AppIconButton(
-                                              tooltip: l10n.t('deleteForever'),
-                                              icon: AppIcons.trash2,
-                                              onPressed: widget.onDeleteForever,
-                                            ),
-                                        ],
-                                      ),
-                                    ),
                                 ],
                               ),
-                            ),
-                          ],
-                        ],
+                              SizedBox(height: compact ? 8 : 12),
+                              if (note.labels.isNotEmpty) ...[
+                                _NoteLabelChips(labels: note.labels),
+                                SizedBox(height: compact ? 8 : 12),
+                              ],
+                              note.checklist.isNotEmpty &&
+                                      note.body.trim().isEmpty
+                                  ? _ChecklistPreview(items: note.checklist)
+                                  : _FormattedPreview(
+                                      text: note.body,
+                                      delta: note.richTextDelta,
+                                    ),
+                              if (showFooter) ...[
+                                SizedBox(height: compact ? 10 : 16),
+                                SizedBox(
+                                  height: compact ? 30 : 36,
+                                  child: Row(
+                                    children: [
+                                      if (note.checklist.isNotEmpty)
+                                        _MetaPill(
+                                          icon: AppIcons.squareCheck,
+                                          label:
+                                              '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
+                                        ),
+                                      if (note.conflicted)
+                                        _MetaPill(
+                                          icon: AppIcons.circleAlert,
+                                          label: l10n.t('conflict'),
+                                          color: scheme.error,
+                                        ),
+                                      if (showSyncedStatus)
+                                        _MetaPill(
+                                          icon: AppIcons.cloudUpload,
+                                          label: l10n.t('synced'),
+                                          color: scheme.tertiary,
+                                        ),
+                                      if (note.reminderAt != null)
+                                        _MetaPill(
+                                          icon: AppIcons.bell,
+                                          label: _formatReminder(
+                                              note.reminderAt!, l10n),
+                                          color: scheme.primary,
+                                        ),
+                                      if (note.shared)
+                                        _MetaPill(
+                                          icon: AppIcons.users,
+                                          label: l10n.t('shared'),
+                                          color: scheme.primary,
+                                        ),
+                                      const Spacer(),
+                                      if (showHoverActions)
+                                        Visibility(
+                                          visible: _hovered &&
+                                              !widget.selectionActive,
+                                          maintainAnimation: true,
+                                          maintainState: true,
+                                          maintainSize: true,
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (note.state != 'active')
+                                                AppIconButton(
+                                                  tooltip: l10n.t('restore'),
+                                                  icon: AppIcons.rotateCcw,
+                                                  onPressed: widget.onRestore,
+                                                ),
+                                              if (note.state == 'active')
+                                                AppIconButton(
+                                                  tooltip:
+                                                      l10n.t('archiveAction'),
+                                                  icon: AppIcons.archive,
+                                                  onPressed: widget.onArchive,
+                                                ),
+                                              if (note.state == 'active' &&
+                                                  note.reminderAt == null)
+                                                AppIconButton(
+                                                  tooltip: l10n
+                                                      .t('collaboratorInvite'),
+                                                  icon: note.shared
+                                                      ? AppIcons.users
+                                                      : AppIcons.userPlus,
+                                                  onPressed: widget.onInvite,
+                                                ),
+                                              if (note.state != 'trashed')
+                                                AppIconButton(
+                                                  tooltip: l10n.t('reminder'),
+                                                  icon: AppIcons.bell,
+                                                  onPressed: widget.onReminder,
+                                                ),
+                                              if (note.state != 'trashed')
+                                                AppIconButton(
+                                                  tooltip: l10n.t('trash'),
+                                                  icon: AppIcons.trash,
+                                                  onPressed: widget.onTrash,
+                                                )
+                                              else
+                                                AppIconButton(
+                                                  tooltip:
+                                                      l10n.t('deleteForever'),
+                                                  icon: AppIcons.trash2,
+                                                  onPressed:
+                                                      widget.onDeleteForever,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
+            if (showHoverActions)
+              Positioned(
+                left: -8,
+                top: -8,
+                child: _NoteSelectionControl(
+                  noteId: note.localId,
+                  visible: _hovered || widget.selected,
+                  selected: widget.selected,
+                  showCheck: _hovered,
+                  size: 34,
+                  iconSize: 19,
+                  onPressed: widget.onToggleSelection,
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -6157,12 +6161,18 @@ class _NoteSelectionControl extends StatelessWidget {
     required this.visible,
     required this.selected,
     required this.onPressed,
+    this.size = 26,
+    this.iconSize = 16,
+    this.showCheck = false,
   });
 
   final String noteId;
   final bool visible;
   final bool selected;
   final VoidCallback onPressed;
+  final double size;
+  final double iconSize;
+  final bool showCheck;
 
   @override
   Widget build(BuildContext context) {
@@ -6183,22 +6193,35 @@ class _NoteSelectionControl extends StatelessWidget {
               : AppL10n(Localizations.localeOf(context).languageCode)
                   .t('selectNote'),
           child: Material(
-            color: selected
-                ? scheme.primary
-                : scheme.surface.withValues(alpha: 0.88),
+            color: scheme.surface.withValues(alpha: selected ? 1 : 0.94),
+            elevation: selected ? 3 : 1,
+            shadowColor: Colors.black.withValues(alpha: 0.22),
             shape: CircleBorder(
               side: BorderSide(
-                color: selected ? scheme.primary : scheme.outlineVariant,
+                color: selected
+                    ? scheme.surface
+                    : scheme.outlineVariant.withValues(alpha: 0.9),
               ),
             ),
             child: InkWell(
               customBorder: const CircleBorder(),
               onTap: onPressed,
               child: SizedBox.square(
-                dimension: 26,
-                child: selected
-                    ? Icon(AppIcons.check, size: 16, color: scheme.onPrimary)
-                    : const SizedBox.shrink(),
+                dimension: size,
+                child: AnimatedOpacity(
+                  opacity: selected || showCheck ? 1 : 0,
+                  duration: AppMotion.duration(
+                    context,
+                    const Duration(milliseconds: 100),
+                  ),
+                  child: Icon(
+                    AppIcons.check,
+                    size: iconSize,
+                    color: selected
+                        ? scheme.onSurface
+                        : scheme.onSurfaceVariant.withValues(alpha: 0.72),
+                  ),
+                ),
               ),
             ),
           ),

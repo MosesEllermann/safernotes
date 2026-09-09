@@ -753,7 +753,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey('mobile-header-button-backdrop')),
-      findsNothing,
+      findsNWidgets(2),
     );
     final gesture = await tester.startGesture(const Offset(4, 845));
     await gesture.moveBy(const Offset(0, -220));
@@ -1169,6 +1169,7 @@ void main() {
 
     final appBar = tester.widget<AppBar>(find.byType(AppBar));
     expect(appBar.toolbarHeight, 96);
+    expect(appBar.titleSpacing, 24);
     expect(appBar.actionsPadding, const EdgeInsets.only(bottom: 16));
     expect(find.byTooltip('Menu'), findsNothing);
     expect(find.text('New note'), findsOneWidget);
@@ -1528,20 +1529,57 @@ void main() {
         find.byKey(const ValueKey('note-selection-control-note-one'));
     final heightBefore = tester.getSize(first).height;
     expect(tester.widget<AnimatedOpacity>(firstControl).opacity, 0);
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.descendant(
+              of: firstControl,
+              matching: find.byType(AnimatedOpacity),
+            ),
+          )
+          .opacity,
+      0,
+    );
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: const Offset(1, 1));
     await mouse.moveTo(tester.getCenter(first));
     await tester.pumpAndSettle();
     expect(tester.widget<AnimatedOpacity>(firstControl).opacity, 1);
+    expect(
+      tester
+          .widget<AnimatedOpacity>(
+            find.descendant(
+              of: firstControl,
+              matching: find.byType(AnimatedOpacity),
+            ),
+          )
+          .opacity,
+      1,
+    );
     expect(tester.getSize(first).height, heightBefore);
+    expect(tester.getSize(firstControl), const Size.square(34));
+    expect(
+      tester.getTopLeft(firstControl).dx,
+      lessThan(tester.getTopLeft(first).dx),
+    );
+    expect(
+      tester.getTopLeft(firstControl).dy,
+      lessThan(tester.getTopLeft(first).dy),
+    );
+    final titleLeftBeforeSelection =
+        tester.getTopLeft(find.text('First note')).dx;
 
     await tester.tap(firstControl);
     await tester.pumpAndSettle();
     expect(find.text('1 selected'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('First note')).dx,
+      titleLeftBeforeSelection,
+    );
     final secondControl =
         find.byKey(const ValueKey('note-selection-control-note-two'));
-    expect(tester.widget<AnimatedOpacity>(secondControl).opacity, 1);
+    expect(tester.widget<AnimatedOpacity>(secondControl).opacity, 0);
 
     await tester.tap(
       find.byKey(const ValueKey('compact-note-drag-note-two')),
