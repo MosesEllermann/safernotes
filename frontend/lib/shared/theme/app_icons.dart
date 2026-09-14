@@ -19,6 +19,7 @@ abstract final class AppIcons {
   static const IconData checkCheck = PhosphorIconsRegular.checks;
   static const IconData chevronLeft = PhosphorIconsRegular.caretLeft;
   static const IconData chevronRight = PhosphorIconsRegular.caretRight;
+  static const IconData chevronDown = PhosphorIconsRegular.caretDown;
   static const IconData circleAlert = PhosphorIconsRegular.warningCircle;
   static const IconData circleCheck = PhosphorIconsRegular.checkCircle;
   static const IconData circleHelp = PhosphorIconsRegular.question;

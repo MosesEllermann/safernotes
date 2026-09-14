@@ -6,9 +6,21 @@ import 'package:timezone/timezone.dart' as tz;
 
 final _notifications = FlutterLocalNotificationsPlugin();
 var _initialized = false;
+Future<void>? _initialization;
+Future<void> _notificationQueue = Future.value();
 
-Future<void> _ensureInitialized() async {
-  if (_initialized) return;
+Future<void> _ensureInitialized() {
+  if (_initialized) return Future.value();
+  final active = _initialization;
+  if (active != null) return active;
+  final initialization = _initialize();
+  _initialization = initialization;
+  return initialization.whenComplete(() {
+    if (identical(_initialization, initialization)) _initialization = null;
+  });
+}
+
+Future<void> _initialize() async {
   tz_data.initializeTimeZones();
   const android = AndroidInitializationSettings('@drawable/ic_notification');
   const darwin = DarwinInitializationSettings();
@@ -45,35 +57,48 @@ Future<void> scheduleReminderNotification({
   required String title,
   required String body,
   required DateTime scheduledAt,
-}) async {
-  await _ensureInitialized();
-  if (!scheduledAt.isAfter(DateTime.now())) return;
-  final german = PlatformDispatcher.instance.locale.languageCode == 'de';
-  await _notifications.zonedSchedule(
-    id: _notificationId(reminderId),
-    title: title,
-    body: body,
-    scheduledDate: tz.TZDateTime.from(scheduledAt.toLocal(), tz.local),
-    androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-    notificationDetails: NotificationDetails(
-      android: AndroidNotificationDetails(
-        'note_reminders',
-        german ? 'Erinnerungen' : 'Reminders',
-        icon: 'ic_notification',
-        channelDescription: german
-            ? 'Lokale Erinnerungen für Notizen'
-            : 'Local reminders for notes',
-        importance: Importance.high,
-        priority: Priority.high,
+}) {
+  return _serializeNotificationMutation(() async {
+    await _ensureInitialized();
+    if (!scheduledAt.isAfter(DateTime.now())) return;
+    final german = PlatformDispatcher.instance.locale.languageCode == 'de';
+    await _notifications.zonedSchedule(
+      id: _notificationId(reminderId),
+      title: title,
+      body: body,
+      scheduledDate: tz.TZDateTime.from(scheduledAt.toLocal(), tz.local),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          'note_reminders',
+          german ? 'Erinnerungen' : 'Reminders',
+          icon: 'ic_notification',
+          channelDescription: german
+              ? 'Lokale Erinnerungen für Notizen'
+              : 'Local reminders for notes',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(),
       ),
-      iOS: DarwinNotificationDetails(),
-    ),
-  );
+    );
+  });
 }
 
-Future<void> cancelReminderNotification(String reminderId) async {
-  await _ensureInitialized();
-  await _notifications.cancel(id: _notificationId(reminderId));
+Future<void> cancelReminderNotification(String reminderId) {
+  return _serializeNotificationMutation(() async {
+    await _ensureInitialized();
+    await _notifications.cancel(id: _notificationId(reminderId));
+  });
+}
+
+Future<void> _serializeNotificationMutation(Future<void> Function() action) {
+  final operation = _notificationQueue.then((_) => action());
+  _notificationQueue = operation.then<void>(
+    (_) {},
+    onError: (Object _, StackTrace __) {},
+  );
+  return operation;
 }
 
 int _notificationId(String value) {

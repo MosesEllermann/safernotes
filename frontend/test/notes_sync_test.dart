@@ -158,6 +158,35 @@ void main() {
     expect(saved.dirty, isFalse);
     expect(container.read(syncStatusProvider), SyncStatus.saved);
   });
+
+  test('coalesces a burst of draft updates into one encrypted cache write',
+      () async {
+    final initial = _note(body: 'initial', dirty: false);
+    final store = _MemoryOfflineStore([initial]);
+    final api = _VersionedApiClient(serverVersion: 1);
+    final auth = Completer<AppSession?>();
+    final container = _container(store: store, api: api, auth: auth);
+    addTearDown(container.dispose);
+
+    await container.read(notesControllerProvider.future);
+    final controller = container.read(notesControllerProvider.notifier);
+    final saves = <Future<void>>[];
+    for (var index = 0; index < 250; index += 1) {
+      saves.add(
+        controller.saveDraft(
+          draft: initial.copyWith(body: 'rapid edit $index'),
+        ),
+      );
+    }
+    await Future.wait(saves);
+
+    expect(store.saveWrites, 1);
+    expect(
+      container.read(notesControllerProvider).requireValue.single.body,
+      'rapid edit 249',
+    );
+    expect(container.read(syncStatusProvider), SyncStatus.saving);
+  });
 }
 
 ProviderContainer _container({
@@ -219,12 +248,14 @@ class _MemoryOfflineStore extends OfflineStore {
         super(_TestCryptoService());
 
   List<PlainNote> _notes;
+  int saveWrites = 0;
 
   @override
   Future<List<PlainNote>> loadNotes() async => [..._notes];
 
   @override
   Future<void> saveNotes(List<PlainNote> notes) async {
+    saveWrites += 1;
     _notes = [...notes];
   }
 }

@@ -815,22 +815,67 @@ void main() {
     expect(find.byKey(const ValueKey('ios-native-bottom-navigation')),
         findsOneWidget);
     expect(
-        find.byKey(const ValueKey('ios-native-nav-selection')), findsNothing);
-    final nativeTabBar = tester.widget<CNTabBar>(
-      find.byKey(const ValueKey('ios-native-tab-bar')),
+        find.byKey(const ValueKey('ios-native-nav-selection')), findsOneWidget);
+    expect(find.byKey(const ValueKey('ios-native-bottom-bar-glass')),
+        findsOneWidget);
+    final bottomBarGlass = tester.widget<LiquidGlassContainer>(
+      find.byKey(const ValueKey('ios-native-bottom-bar-glass')),
     );
-    expect(nativeTabBar.items, hasLength(4));
-    expect(nativeTabBar.items.map((item) => item.icon?.name), [
-      'note.text',
-      'bell',
-      'trash',
-      'magnifyingglass',
-    ]);
-    expect(nativeTabBar.items.map((item) => item.icon?.size), everyElement(18));
-    expect(nativeTabBar.items.map((item) => item.label), everyElement(isNull));
-    expect(nativeTabBar.currentIndex, 0);
-    expect(nativeTabBar.height, 64);
-    expect(nativeTabBar.split, isFalse);
+    expect(bottomBarGlass.config.effect, CNGlassEffect.regular);
+    expect(bottomBarGlass.config.tint, isNull);
+    expect(
+      find.byKey(const ValueKey('ios-native-bottom-bar-progressive-blur')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('ios-native-create-actions')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('ios-native-nav-notes')), findsOneWidget);
+    expect(
+        find.byKey(const ValueKey('ios-native-nav-reminders')), findsOneWidget);
+    expect(find.byKey(const ValueKey('ios-native-nav-trash')), findsOneWidget);
+    expect(find.byKey(const ValueKey('ios-native-nav-search')), findsOneWidget);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ios-native-bottom-navigation')),
+      ),
+      const Size(309, 64),
+    );
+    final selection = find.byKey(const ValueKey('ios-native-nav-selection'));
+    expect(
+      tester.getSize(selection),
+      const Size(54, 54),
+    );
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ios-native-bottom-bar-glass')),
+      ),
+      const Size(309, 64),
+    );
+    final plusGlass = find.byKey(const ValueKey('ios-native-nav-create-glass'));
+    expect(tester.getSize(plusGlass), const Size.square(54));
+    expect(tester.getSize(plusGlass), tester.getSize(selection));
+    expect(
+      tester.widget<LiquidGlassContainer>(plusGlass).config.tint,
+      Colors.white,
+    );
+    expect(
+      tester.getRect(selection).left -
+          tester
+              .getRect(
+                find.byKey(const ValueKey('ios-native-bottom-navigation')),
+              )
+              .left,
+      5.5,
+    );
+    expect(
+      tester
+              .getRect(
+                find.byKey(const ValueKey('ios-native-bottom-navigation')),
+              )
+              .right -
+          tester.getRect(plusGlass).right,
+      5.5,
+    );
     final layoutButton = tester.widget<CNButton>(
       find.descendant(
         of: find.byKey(const ValueKey('mobile-layout-toggle')),
@@ -848,16 +893,178 @@ void main() {
     expect(accountButton.icon?.name, 'person');
     expect(accountButton.icon?.size, AppSizes.iosCompactHeaderIcon);
 
-    final createButton = tester.widget<CNButton>(
-      find.byKey(const ValueKey('ios-native-nav-create')),
+    for (final key in [
+      'ios-native-nav-notes',
+      'ios-native-nav-reminders',
+      'ios-native-nav-trash',
+      'ios-native-nav-search',
+      'ios-native-nav-create',
+    ]) {
+      final button = tester.widget<CNButton>(
+        find.descendant(
+          of: find.byKey(ValueKey(key)),
+          matching: find.byType(CNButton),
+        ),
+      );
+      expect(button.icon?.size, 14);
+    }
+
+    final restingCenter = tester.getCenter(selection);
+    tester
+        .widget<CNButton>(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey('ios-native-nav-reminders'),
+            ),
+            matching: find.byType(CNButton),
+          ),
+        )
+        .onPressed!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 110));
+    final travellingSize = tester.getSize(selection);
+    expect(travellingSize.width, greaterThan(54));
+    expect(travellingSize.height, greaterThan(54));
+    expect(travellingSize.width, lessThan(80));
+    expect(travellingSize.height, lessThan(80));
+    expect(
+      tester.widget<LiquidGlassContainer>(selection).config.tint,
+      isNull,
     );
-    expect(createButton.config.style, CNButtonStyle.prominentGlass);
-    expect(createButton.config.glassEffectInteractive, isTrue);
+    expect(
+      tester
+          .widget<Opacity>(
+            find.byKey(
+              const ValueKey('ios-native-nav-selection-settled-tint'),
+            ),
+          )
+          .opacity,
+      0,
+    );
+    expect(tester.getCenter(selection).dx, greaterThan(restingCenter.dx));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(selection), const Size.square(54));
+    expect(tester.getCenter(selection).dx, closeTo(restingCenter.dx + 61, 0.1));
+
+    final createButton = tester.widget<CNButton>(
+      find.descendant(
+        of: find.byKey(const ValueKey('ios-native-nav-create')),
+        matching: find.byType(CNButton),
+      ),
+    );
+    final selectionGlass = tester.widget<LiquidGlassContainer>(
+      find.byKey(const ValueKey('ios-native-nav-selection')),
+    );
+    expect(selectionGlass.config.effect, CNGlassEffect.regular);
+    expect(selectionGlass.config.shape, CNGlassEffectShape.circle);
+    expect(selectionGlass.config.interactive, isFalse);
+    expect(selectionGlass.config.tint, isNull);
+    expect(
+      tester
+          .widget<Opacity>(
+            find.byKey(
+              const ValueKey('ios-native-nav-selection-settled-tint'),
+            ),
+          )
+          .opacity,
+      1,
+    );
     createButton.onPressed!();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 420));
-    final nativeActions =
-        find.byKey(const ValueKey('ios-native-create-actions'));
+    await tester.pump(const Duration(milliseconds: 70));
+    var nativeActions = find.byKey(const ValueKey('ios-native-create-actions'));
+    expect(tester.widget(nativeActions), isA<Row>());
+    expect(
+      find.descendant(of: nativeActions, matching: find.byType(CNButton)),
+      findsNWidgets(3),
+    );
+    expect(
+      tester
+          .widget<Opacity>(
+            find.byKey(
+              const ValueKey('ios-native-notes-create-note-opacity'),
+            ),
+          )
+          .opacity,
+      inExclusiveRange(0, 1),
+    );
+    expect(
+      tester
+          .widget<Opacity>(
+            find.byKey(
+              const ValueKey('ios-native-notes-create-list-opacity'),
+            ),
+          )
+          .opacity,
+      0,
+    );
+    expect(
+      tester
+          .getRect(
+            find.byKey(
+              const ValueKey('ios-native-notes-create-note-surface'),
+            ),
+          )
+          .bottom,
+      lessThanOrEqualTo(
+        tester
+            .getRect(
+              find.byKey(const ValueKey('ios-native-nav-notes')),
+            )
+            .top,
+      ),
+    );
+    final growingSurfaceHeight = tester
+        .getSize(
+          find.byKey(const ValueKey('ios-native-bottom-navigation')),
+        )
+        .height;
+    expect(growingSurfaceHeight, greaterThan(64));
+    expect(growingSurfaceHeight, lessThan(141));
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('ios-native-bottom-bar-glass')),
+          )
+          .height,
+      closeTo(growingSurfaceHeight, 0.001),
+    );
+    expect(
+      tester
+          .widget<AnimatedRotation>(
+            find.byKey(
+              const ValueKey('ios-native-create-symbol-rotation'),
+            ),
+          )
+          .turns,
+      0.125,
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(
+      find.descendant(of: nativeActions, matching: find.byType(CNButton)),
+      findsNWidgets(3),
+    );
+    final firstPop = tester.widget<Positioned>(
+      find.byKey(const ValueKey('ios-native-notes-create-note-pop')),
+    );
+    expect(firstPop.top, lessThan(0));
+    expect(firstPop.height, 64);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(
+      find.byKey(const ValueKey('ios-native-bottom-bar-glass')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('ios-native-create-drawer-glass')),
+        findsNothing);
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('ios-native-bottom-navigation')),
+          )
+          .height,
+      141,
+    );
+    nativeActions = find.byKey(const ValueKey('ios-native-create-actions'));
     expect(nativeActions, findsOneWidget);
     expect(
       find.descendant(
@@ -866,15 +1073,228 @@ void main() {
       ),
       findsNWidgets(3),
     );
+    for (final surface in tester.widgetList<LiquidGlassContainer>(
+      find.descendant(
+        of: nativeActions,
+        matching: find.byType(LiquidGlassContainer),
+      ),
+    )) {
+      expect(surface.config.interactive, isFalse);
+    }
     expect(
       find.descendant(of: nativeActions, matching: find.byType(CNButton)),
       findsNWidgets(3),
+    );
+    expect(
+      tester
+          .widget<Opacity>(
+            find.byKey(
+              const ValueKey('ios-native-notes-create-note-opacity'),
+            ),
+          )
+          .opacity,
+      0.996,
+    );
+    expect(
+      tester
+              .getRect(
+                find.byKey(const ValueKey('ios-native-nav-button-group')),
+              )
+              .top -
+          tester
+              .getRect(
+                find.byKey(
+                  const ValueKey('ios-native-notes-create-note-surface'),
+                ),
+              )
+              .bottom,
+      10,
     );
     for (final button in tester.widgetList<CNButton>(
       find.descendant(of: nativeActions, matching: find.byType(CNButton)),
     )) {
       expect(button.config.imagePlacement, CNImagePlacement.top);
     }
+
+    tester
+        .widget<CNButton>(
+          find.descendant(
+            of: find.byKey(const ValueKey('ios-native-nav-search')),
+            matching: find.byType(CNButton),
+          ),
+        )
+        .onPressed!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(
+      tester
+          .widget<Opacity>(
+            find.byKey(
+              const ValueKey('ios-native-notes-create-note-opacity'),
+            ),
+          )
+          .opacity,
+      lessThan(0.5),
+    );
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey('ios-native-bottom-navigation')),
+          )
+          .height,
+      greaterThan(80),
+    );
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(
+      find.byKey(const ValueKey('ios-native-bottom-bar-glass')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile-nav-search-input')),
+      findsOneWidget,
+    );
+    final nativeSearchIcon = tester.widget<CNButton>(
+      find.byKey(const ValueKey('ios-native-search-leading-symbol')),
+    );
+    expect(nativeSearchIcon.icon?.name, 'magnifyingglass');
+    expect(nativeSearchIcon.icon?.size, AppSizes.iosCompactHeaderIcon);
+    final nativeSearchClose = tester.widget<CNButton>(
+      find.byKey(const ValueKey('mobile-nav-search-close')),
+    );
+    expect(nativeSearchClose.icon?.name, 'xmark');
+    expect(nativeSearchClose.icon?.size, AppSizes.iosCompactHeaderIcon);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ios-native-bottom-navigation')),
+      ),
+      const Size(398, 64),
+    );
+    tester
+        .widget<CNButton>(
+          find.byKey(const ValueKey('mobile-nav-search-close')),
+        )
+        .onPressed!();
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ios-native-bottom-navigation')),
+      ),
+      const Size(309, 64),
+    );
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('iOS selection is another state of the persistent native bar',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(430, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpNotesWithController(
+      tester,
+      _TestNotesController([
+        _note('note-one', 'First note', 'A short first preview.'),
+      ]),
+      theme: buildAppTheme(Brightness.dark, platform: TargetPlatform.iOS),
+    );
+
+    final shell = find.byKey(const ValueKey('ios-native-bottom-bar-glass'));
+    expect(shell, findsOneWidget);
+    final card = find.byKey(const ValueKey('compact-note-drag-note-one'));
+    final gesture = await tester.startGesture(tester.getCenter(card));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 170));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(shell, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('ios-native-selection-toolbar-content')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile-selection-toolbar-backdrop')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('ios-native-selection-toolbar-content'),
+        ),
+        matching: find.byType(CNButton),
+      ),
+      findsNWidgets(5),
+    );
+    for (final button in tester.widgetList<CNButton>(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey('ios-native-selection-toolbar-content'),
+        ),
+        matching: find.byType(CNButton),
+      ),
+    )) {
+      expect(button.icon?.size, AppSizes.iosCompactHeaderIcon);
+      expect(button.config.style, CNButtonStyle.plain);
+      expect(button.config.glassEffectId, isNull);
+      expect(button.config.glassEffectUnionId, isNull);
+    }
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ios-native-bottom-navigation')),
+      ),
+      const Size(398, 64),
+    );
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('iOS trash target morphs the persistent glass bar into a circle',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    tester.view.physicalSize = const Size(430, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await _pumpNotesWithController(
+      tester,
+      _TestNotesController([
+        _note('note-one', 'First note', 'A short first preview.'),
+      ]),
+      theme: buildAppTheme(Brightness.dark, platform: TargetPlatform.iOS),
+    );
+
+    final shell = find.byKey(const ValueKey('ios-native-bottom-bar-glass'));
+    final card = find.byKey(const ValueKey('compact-note-drag-note-one'));
+    final gesture = await tester.startGesture(tester.getCenter(card));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 420));
+
+    expect(shell, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('mobile-nav-trash-drop-target')),
+      findsOneWidget,
+    );
+    final nativeTrash = tester.widget<CNButton>(
+      find.byKey(const ValueKey('ios-native-trash-drop-symbol')),
+    );
+    expect(nativeTrash.icon?.name, 'trash');
+    expect(nativeTrash.config.style, CNButtonStyle.plain);
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('ios-native-bottom-navigation')),
+      ),
+      const Size.square(88),
+    );
+    final nativeGlass = tester.widget<LiquidGlassContainer>(shell);
+    expect(nativeGlass.config.shape, CNGlassEffectShape.rect);
+    expect(nativeGlass.config.cornerRadius, 44);
+    expect(nativeGlass.config.tint, isNull);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(shell, findsOneWidget);
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
@@ -1398,17 +1818,24 @@ void main() {
       find.byKey(const ValueKey('multi-selection-toolbar')),
       findsOneWidget,
     );
-    expect(
-      tester
-          .widgetList<DecoratedBox>(
-            find.byKey(const ValueKey('note-card-selection-note-one')),
-          )
-          .map((widget) => widget.decoration as ShapeDecoration)
-          .any(
-            (decoration) =>
-                decoration.shadows?.any((shadow) => shadow.spreadRadius == 2) ??
-                false,
+    final selectionOutlines = tester
+        .widgetList<DecoratedBox>(
+          find.byKey(
+            const ValueKey('note-card-selection-outline-note-one'),
           ),
+        )
+        .map(
+          (box) => (box.decoration as ShapeDecoration).shape
+              as RoundedSuperellipseBorder,
+        );
+    expect(selectionOutlines, isNotEmpty);
+    expect(
+      selectionOutlines.any(
+        (shape) =>
+            shape.borderRadius ==
+                BorderRadius.circular(AppRadii.noteCardCompact) &&
+            shape.side.width == 2,
+      ),
       isTrue,
     );
     await gesture.up();

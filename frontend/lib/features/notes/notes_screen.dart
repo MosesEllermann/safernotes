@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -84,9 +85,14 @@ bool get _usesIosNativeControls =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
 class NotesScreen extends ConsumerStatefulWidget {
-  const NotesScreen({super.key, this.invitationId});
+  const NotesScreen({
+    super.key,
+    this.invitationId,
+    this.invitationRevision = 0,
+  });
 
   final String? invitationId;
+  final int invitationRevision;
 
   @override
   ConsumerState<NotesScreen> createState() => _NotesScreenState();
@@ -94,7 +100,8 @@ class NotesScreen extends ConsumerStatefulWidget {
 
 class _NotesScreenState extends ConsumerState<NotesScreen> {
   final Map<String, Timer> _reminderTimers = {};
-  var _invitationHandled = false;
+  int? _handledInvitationRevision;
+  var _invitationReviewInProgress = false;
 
   @override
   void initState() {
@@ -103,18 +110,53 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       final notes = next.valueOrNull;
       if (notes != null) _scheduleReminders(notes);
     }, fireImmediately: true);
-    if (widget.invitationId != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_reviewInvitation(widget.invitationId!));
-      });
+    _scheduleInvitationReview();
+  }
+
+  @override
+  void didUpdateWidget(covariant NotesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.invitationRevision != oldWidget.invitationRevision ||
+        widget.invitationId != oldWidget.invitationId) {
+      _scheduleInvitationReview();
     }
   }
 
-  Future<void> _reviewInvitation(String invitationId) async {
-    if (_invitationHandled || !mounted) return;
-    _invitationHandled = true;
-    final session = ref.read(authControllerProvider).valueOrNull;
-    if (session == null) return;
+  void _scheduleInvitationReview() {
+    final invitationId = widget.invitationId;
+    if (invitationId == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        _reviewInvitation(invitationId, widget.invitationRevision),
+      );
+    });
+  }
+
+  Future<void> _reviewInvitation(
+    String invitationId,
+    int invitationRevision,
+  ) async {
+    if (_handledInvitationRevision == invitationRevision ||
+        _invitationReviewInProgress ||
+        !mounted) {
+      return;
+    }
+    _handledInvitationRevision = invitationRevision;
+    _invitationReviewInProgress = true;
+    try {
+      await _performInvitationReview(invitationId);
+    } finally {
+      _invitationReviewInProgress = false;
+    }
+  }
+
+  Future<void> _performInvitationReview(String invitationId) async {
+    final session = await ref.read(authControllerProvider.future);
+    if (!mounted) return;
+    if (session == null) {
+      _handledInvitationRevision = null;
+      return;
+    }
 
     try {
       final invitation = await _loadInvitation(
@@ -195,18 +237,22 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     required String accessToken,
     required _InvitationDecision decision,
   }) async {
-    return ref.read(apiClientProvider).decideShareInvitation(
-          invitationId: invitationId,
-          accessToken: accessToken,
-          decision: decision.name,
-        );
+    return retryInvitationDecision(
+      () => ref.read(apiClientProvider).decideShareInvitation(
+            invitationId: invitationId,
+            accessToken: accessToken,
+            decision: decision.name,
+          ),
+    );
   }
 
   Future<void> _importSharedNote(String noteId) async {
     await ref.read(authControllerProvider.notifier).ensureEncryptionKeys();
-    await ref
-        .read(notesControllerProvider.notifier)
-        .pullRemote(requiredNoteId: noteId);
+    await retrySharedNoteImport(
+      () => ref
+          .read(notesControllerProvider.notifier)
+          .pullRemote(requiredNoteId: noteId),
+    );
   }
 
   String _invitationErrorMessage(Object error) {
@@ -378,49 +424,56 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  child: AnimatedSwitcher(
-                    duration: AppMotion.duration(
-                      context,
-                      const Duration(milliseconds: 340),
-                    ),
-                    reverseDuration: AppMotion.duration(
-                      context,
-                      const Duration(milliseconds: 240),
-                    ),
-                    switchInCurve: Curves.easeOutBack,
-                    switchOutCurve: Curves.easeInCubic,
-                    layoutBuilder: (currentChild, previousChildren) => Stack(
-                      alignment: Alignment.bottomCenter,
-                      children: [
-                        ...previousChildren,
-                        if (currentChild != null) currentChild,
-                      ],
-                    ),
-                    transitionBuilder: (child, animation) {
-                      final slide = Tween<Offset>(
-                        begin: const Offset(0, 0.32),
-                        end: Offset.zero,
-                      ).animate(animation);
-                      final scale = Tween<double>(begin: 0.82, end: 1).animate(
-                        animation,
-                      );
-                      return FadeTransition(
-                        opacity: animation,
-                        child: SlideTransition(
-                          position: slide,
-                          child: ScaleTransition(scale: scale, child: child),
-                        ),
-                      );
-                    },
-                    child: selectionActive
-                        ? const _MultiSelectionToolbar(
-                            key: ValueKey('mobile-selection-toolbar'),
-                            compact: true,
-                          )
-                        : const _MobileBottomNav(
-                            key: ValueKey('mobile-standard-navigation'),
+                  child: _usesIosNativeControls
+                      ? const _MobileBottomNav(
+                          key: ValueKey('mobile-standard-navigation'),
+                        )
+                      : AnimatedSwitcher(
+                          duration: AppMotion.duration(
+                            context,
+                            const Duration(milliseconds: 340),
                           ),
-                  ),
+                          reverseDuration: AppMotion.duration(
+                            context,
+                            const Duration(milliseconds: 240),
+                          ),
+                          switchInCurve: Curves.easeOutBack,
+                          switchOutCurve: Curves.easeInCubic,
+                          layoutBuilder: (currentChild, previousChildren) =>
+                              Stack(
+                            alignment: Alignment.bottomCenter,
+                            children: [
+                              ...previousChildren,
+                              if (currentChild != null) currentChild,
+                            ],
+                          ),
+                          transitionBuilder: (child, animation) {
+                            final slide = Tween<Offset>(
+                              begin: const Offset(0, 0.32),
+                              end: Offset.zero,
+                            ).animate(animation);
+                            final scale =
+                                Tween<double>(begin: 0.82, end: 1).animate(
+                              animation,
+                            );
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: slide,
+                                child:
+                                    ScaleTransition(scale: scale, child: child),
+                              ),
+                            );
+                          },
+                          child: selectionActive
+                              ? const _MultiSelectionToolbar(
+                                  key: ValueKey('mobile-selection-toolbar'),
+                                  compact: true,
+                                )
+                              : const _MobileBottomNav(
+                                  key: ValueKey('mobile-standard-navigation'),
+                                ),
+                        ),
                 ),
             ],
           ),
@@ -440,12 +493,17 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       final key = '${note.localId}-${reminderAt.toIso8601String()}';
       nextIds.add(key);
       if (_reminderTimers.containsKey(key)) continue;
-      unawaited(scheduleReminderNotification(
-        reminderId: key,
-        title: note.title.trim().isEmpty ? l10n.t('reminder') : note.title,
-        body: _reminderBody(note),
-        scheduledAt: reminderAt,
-      ));
+      unawaited(
+        scheduleReminderNotification(
+          reminderId: key,
+          title: note.title.trim().isEmpty ? l10n.t('reminder') : note.title,
+          body: _reminderBody(note),
+          scheduledAt: reminderAt,
+        ).catchError((Object _) {
+          // The in-app timer below remains a useful fallback if the platform
+          // rejects an alarm because of device-specific scheduler limits.
+        }),
+      );
       _reminderTimers[key] = Timer(reminderAt.difference(now), () async {
         _reminderTimers.remove(key);
         final shown = await showReminderNotification(
@@ -474,7 +532,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     for (final entry in [..._reminderTimers.entries]) {
       if (!nextIds.contains(entry.key)) {
         entry.value.cancel();
-        unawaited(cancelReminderNotification(entry.key));
+        unawaited(
+          cancelReminderNotification(entry.key).catchError((Object _) {}),
+        );
         _reminderTimers.remove(entry.key);
       }
     }
@@ -490,6 +550,49 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     return checklist.isEmpty
         ? ref.read(l10nProvider).t('reminderDefaultBody')
         : checklist;
+  }
+}
+
+@visibleForTesting
+Future<void> retrySharedNoteImport(
+  Future<void> Function() importNote, {
+  List<Duration> retryDelays = const [
+    Duration(milliseconds: 250),
+    Duration(milliseconds: 750),
+    Duration(milliseconds: 1500),
+  ],
+  Future<void> Function(Duration) wait = Future.delayed,
+}) async {
+  for (var attempt = 0;; attempt += 1) {
+    try {
+      await importNote();
+      return;
+    } catch (_) {
+      if (attempt >= retryDelays.length) rethrow;
+      await wait(retryDelays[attempt]);
+    }
+  }
+}
+
+@visibleForTesting
+Future<T> retryInvitationDecision<T>(
+  Future<T> Function() decide, {
+  List<Duration> retryDelays = const [
+    Duration(milliseconds: 350),
+    Duration(milliseconds: 900),
+  ],
+  Future<void> Function(Duration) wait = Future.delayed,
+}) async {
+  for (var attempt = 0;; attempt += 1) {
+    try {
+      return await decide();
+    } catch (error) {
+      final transient = error is TimeoutException ||
+          error is ApiException &&
+              (error.statusCode == 0 || error.statusCode >= 500);
+      if (!transient || attempt >= retryDelays.length) rethrow;
+      await wait(retryDelays[attempt]);
+    }
   }
 }
 
@@ -545,6 +648,8 @@ class _KeepWorkspace extends ConsumerStatefulWidget {
 
 class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
     with WidgetsBindingObserver {
+  static const _cardPageSize = 48;
+
   String? _draggedId;
   int? _dropIndex;
   String? _selectedNoteId;
@@ -552,13 +657,13 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
   final _overviewScrollController = ScrollController();
   final _compactHeaderOpacity = ValueNotifier<double>(1);
 
-  /// Live pointer position during a drag. `DragTargetDetails.offset` reports
-  /// the feedback's top-left corner, which is useless for deciding whether the
-  /// pointer sits above or below a row's midpoint.
-  final _dragPointer = ValueNotifier<Offset?>(null);
   late final ProviderSubscription<String> _bucketSubscription;
   late final ProviderSubscription<int> _resetSubscription;
+  late final ProviderSubscription<String> _searchSubscription;
+  late final ProviderSubscription<NoteQuickFilter> _quickFilterSubscription;
+  late final ProviderSubscription<String?> _labelFilterSubscription;
   double _compactHeaderHeight = 190;
+  int _visibleCardLimit = _cardPageSize;
   bool _emptyingTrash = false;
 
   @override
@@ -577,6 +682,18 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
     _resetSubscription = ref.listenManual<int>(
       _noteOverviewResetProvider,
       (_, __) => _resetOverviewScroll(),
+    );
+    _searchSubscription = ref.listenManual<String>(
+      noteSearchProvider,
+      (_, __) => _resetCardLimit(),
+    );
+    _quickFilterSubscription = ref.listenManual<NoteQuickFilter>(
+      noteQuickFilterProvider,
+      (_, __) => _resetCardLimit(),
+    );
+    _labelFilterSubscription = ref.listenManual<String?>(
+      noteLabelFilterProvider,
+      (_, __) => _resetCardLimit(),
     );
   }
 
@@ -609,8 +726,10 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
     _compactHeaderOpacity.dispose();
     _bucketSubscription.close();
     _resetSubscription.close();
+    _searchSubscription.close();
+    _quickFilterSubscription.close();
+    _labelFilterSubscription.close();
     _trashHovering.dispose();
-    _dragPointer.dispose();
     super.dispose();
   }
 
@@ -784,6 +903,11 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
     final selectedNoteIds = ref.watch(_selectedNoteIdsProvider);
     final selectionActive = selectedNoteIds.isNotEmpty;
     final noteColumnCount = compact ? 2 : _noteColumnCount(screenWidth, wide);
+    final progressivelyRendered =
+        compact && filtered.length > _visibleCardLimit;
+    final renderedNotes = progressivelyRendered
+        ? filtered.take(_visibleCardLimit).toList(growable: false)
+        : filtered;
     return CustomScrollView(
       key: const ValueKey('cards-note-overview'),
       controller: controller,
@@ -807,21 +931,39 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
                     48,
                   ),
             sliver: SliverToBoxAdapter(
-              child: _AnimatedCardGrid(
-                sourceNotes: sourceNotes,
-                notes: filtered,
-                columnCount: noteColumnCount,
-                dropIndex: _dropIndex,
-                onDropIndexChanged: _setDropIndex,
-                onCommitReorder: (draggedId, targetIndex) =>
-                    _commitReorder(draggedId, targetIndex, bucket),
-                onDragStarted: _startDrag,
-                onDragEnded: _clearDragPreview,
-                trashHovering: _trashHovering,
-                selectedNoteIds: selectedNoteIds,
-                selectionActive: selectionActive,
-                onToggleSelection: _toggleSelection,
-                onLongPressSelect: _selectFromLongPress,
+              child: Column(
+                children: [
+                  _AnimatedCardGrid(
+                    sourceNotes: sourceNotes,
+                    notes: renderedNotes,
+                    columnCount: noteColumnCount,
+                    dropIndex: _dropIndex,
+                    onDropIndexChanged: _setDropIndex,
+                    onCommitReorder: (draggedId, targetIndex) =>
+                        _commitReorder(draggedId, targetIndex, bucket),
+                    onDragStarted: _startDrag,
+                    onDragEnded: _clearDragPreview,
+                    trashHovering: _trashHovering,
+                    selectedNoteIds: selectedNoteIds,
+                    selectionActive: selectionActive,
+                    onToggleSelection: _toggleSelection,
+                    onLongPressSelect: _selectFromLongPress,
+                  ),
+                  if (progressivelyRendered)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 16),
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('load-more-note-cards'),
+                        onPressed: () => setState(
+                          () => _visibleCardLimit += _cardPageSize,
+                        ),
+                        icon: const Icon(AppIcons.chevronDown),
+                        label: Text(
+                          ref.read(l10nProvider).t('loadMoreNotes'),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -844,7 +986,6 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
       bottomPadding: 96,
       dragging: _draggedId != null,
       draggedId: _draggedId,
-      dragPointer: _dragPointer,
       dropIndex: _dropIndex,
       trashHovering: _trashHovering,
       onDropIndexChanged: _setDropIndex,
@@ -881,6 +1022,11 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
     });
   }
 
+  void _resetCardLimit() {
+    if (!mounted || _visibleCardLimit == _cardPageSize) return;
+    setState(() => _visibleCardLimit = _cardPageSize);
+  }
+
   Widget _buildSplitOverview(List<PlainNote> notes, String bucket) {
     final selected = _selectedNote(notes);
     final editorShape = RoundedSuperellipseBorder(
@@ -906,7 +1052,6 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
             selectedNoteId: selected?.localId,
             dragging: _draggedId != null,
             draggedId: _draggedId,
-            dragPointer: _dragPointer,
             dropIndex: _dropIndex,
             trashHovering: _trashHovering,
             onDropIndexChanged: _setDropIndex,
@@ -1030,7 +1175,6 @@ class _KeepWorkspaceState extends ConsumerState<_KeepWorkspace>
       _dropIndex = origin < 0 ? null : origin;
     });
     ref.read(_draggedNoteProvider.notifier).state = note;
-    _dragPointer.value = null;
   }
 
   void _clearDragPreview() {
@@ -2035,7 +2179,6 @@ class _NoteListPane extends ConsumerWidget {
     required this.selectionActive,
     required this.onToggleSelection,
     required this.onLongPressSelect,
-    required this.dragPointer,
     this.draggedId,
     this.selectedNoteId,
     this.controller,
@@ -2056,7 +2199,6 @@ class _NoteListPane extends ConsumerWidget {
   final bool selectionActive;
   final ValueChanged<PlainNote> onToggleSelection;
   final ValueChanged<PlainNote> onLongPressSelect;
-  final ValueListenable<Offset?> dragPointer;
   final String? draggedId;
   final String? selectedNoteId;
   final ScrollController? controller;
@@ -2082,11 +2224,10 @@ class _NoteListPane extends ConsumerWidget {
 
     final trailingIndex = notes.length - (draggedIndex >= 0 ? 1 : 0);
 
-    return ListView.separated(
+    return ListView.builder(
       controller: controller,
       padding: EdgeInsets.fromLTRB(12, topPadding, 12, bottomPadding),
       itemCount: notes.length + 1,
-      separatorBuilder: (_, index) => const SizedBox(height: 6),
       itemBuilder: (context, index) {
         // Trailing drop zone so a note can be moved to the very end.
         if (index == notes.length) {
@@ -2127,7 +2268,6 @@ class _NoteListPane extends ConsumerWidget {
               dragging: dragging,
               dropIndex: dropIndex,
               trashHovering: trashHovering,
-              dragPointer: dragPointer,
               onDropIndexChanged: onDropIndexChanged,
               onCommitReorder: onCommitReorder,
               onDragStarted: () => onDragStarted(note),
@@ -2144,6 +2284,7 @@ class _NoteListPane extends ConsumerWidget {
               onLongPressSelect: () => onLongPressSelect(note),
               child: item,
             ),
+            _NoteListSeparator(collapsed: isDragged),
           ],
         );
       },
@@ -2162,18 +2303,39 @@ class _NoteListGap extends StatelessWidget {
     return AnimatedSize(
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOutCubic,
+      alignment: Alignment.topCenter,
       child: active
           ? Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: brandLavender.withValues(alpha: 0.22),
-                  borderRadius: BorderRadius.circular(AppRadii.xl),
+              padding: const EdgeInsets.only(bottom: 6),
+              child: SizedBox(
+                height: 64,
+                width: double.infinity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: brandLavender.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(AppRadii.md),
+                  ),
                 ),
-                child: const SizedBox(height: 64, width: double.infinity),
               ),
             )
-          : const SizedBox(width: double.infinity),
+          : const SizedBox.shrink(),
+    );
+  }
+}
+
+/// Keeps row spacing in the same animated slot as the row itself. This avoids
+/// a six-pixel snap when a drag preview becomes the committed list order.
+class _NoteListSeparator extends StatelessWidget {
+  const _NoteListSeparator({required this.collapsed});
+
+  final bool collapsed;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      height: collapsed ? 0 : 6,
     );
   }
 }
@@ -2201,9 +2363,6 @@ class _NoteListDropEdge extends StatelessWidget {
       onMove: (_) {
         if (dragging) onDropIndexChanged(index);
       },
-      onLeave: (_) {
-        if (dragging) onDropIndexChanged(null);
-      },
       onAcceptWithDetails: (details) =>
           onCommitReorder(details.data.localId, index),
       builder: (context, _, __) => Column(
@@ -2226,7 +2385,6 @@ class _DraggableNoteListEntry extends StatefulWidget {
     required this.dragging,
     required this.dropIndex,
     required this.trashHovering,
-    required this.dragPointer,
     required this.onDropIndexChanged,
     required this.onCommitReorder,
     required this.onDragStarted,
@@ -2244,7 +2402,6 @@ class _DraggableNoteListEntry extends StatefulWidget {
   final bool dragging;
   final int? dropIndex;
   final ValueListenable<bool> trashHovering;
-  final ValueListenable<Offset?> dragPointer;
   final ValueChanged<int?> onDropIndexChanged;
   final void Function(String draggedId, int targetIndex) onCommitReorder;
   final VoidCallback onDragStarted;
@@ -2261,11 +2418,6 @@ class _DraggableNoteListEntry extends StatefulWidget {
 class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
   final _entryKey = GlobalKey();
   int? _hoverDropIndex;
-
-  void _reportPointer(Offset position) {
-    final notifier = widget.dragPointer;
-    if (notifier is ValueNotifier<Offset?>) notifier.value = position;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -2287,9 +2439,6 @@ class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
           widget.onDropIndexChanged(nextIndex);
         }
       },
-      onLeave: (_) {
-        if (widget.dragging) widget.onDropIndexChanged(null);
-      },
       onAcceptWithDetails: (details) {
         final targetIndex =
             _hoverDropIndex ?? widget.dropIndex ?? widget.insertionIndex;
@@ -2299,19 +2448,24 @@ class _DraggableNoteListEntryState extends State<_DraggableNoteListEntry> {
           targetIndex,
         );
       },
-      builder: (context, _, __) => KeyedSubtree(
-        key: _entryKey,
-        child: _MeasuredNoteDraggable(
-          key: ValueKey('note-list-drag-${widget.note.localId}'),
-          note: widget.note,
-          trashHovering: widget.trashHovering,
-          onDragStarted: widget.onDragStarted,
-          onDragUpdate: (position) => _reportPointer(position),
-          onDragEnded: widget.onDragEnded,
-          dragEnabled: widget.dragEnabled,
-          onLongPressSelect: widget.onLongPressSelect,
-          childWhenDragging: const SizedBox.shrink(),
-          child: widget.child,
+      builder: (context, _, __) => AnimatedSize(
+        key: ValueKey('animated-note-list-entry-${widget.note.localId}'),
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: KeyedSubtree(
+          key: _entryKey,
+          child: _MeasuredNoteDraggable(
+            key: ValueKey('note-list-drag-${widget.note.localId}'),
+            note: widget.note,
+            trashHovering: widget.trashHovering,
+            onDragStarted: widget.onDragStarted,
+            onDragEnded: widget.onDragEnded,
+            dragEnabled: widget.dragEnabled,
+            onLongPressSelect: widget.onLongPressSelect,
+            childWhenDragging: const SizedBox.shrink(),
+            child: widget.child,
+          ),
         ),
       ),
     );
@@ -2360,116 +2514,120 @@ class _NoteListItemState extends State<_NoteListItem> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: Material(
-        color: widget.selected
-            ? scheme.surfaceContainerHighest
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: widget.onTap,
-          child: Padding(
-            key: ValueKey('note-list-content-${note.localId}'),
-            padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (desktop) ...[
-                  SizedBox(
-                    width: 28,
-                    height: 38,
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: _NoteSelectionControl(
-                        noteId: note.localId,
-                        visible: showSelectionControl,
-                        selected: widget.multiSelected,
-                        showCheck: _hovered,
-                        onPressed: widget.onToggleSelection,
+      child: SizedBox(
+        height: 64,
+        child: Material(
+          color: widget.selected
+              ? scheme.surfaceContainerHighest
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: widget.onTap,
+            child: Padding(
+              key: ValueKey('note-list-content-${note.localId}'),
+              padding: const EdgeInsets.fromLTRB(12, 9, 10, 9),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (desktop) ...[
+                    SizedBox(
+                      width: 28,
+                      height: 38,
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: _NoteSelectionControl(
+                          noteId: note.localId,
+                          visible: showSelectionControl,
+                          selected: widget.multiSelected,
+                          showCheck: _hovered,
+                          onPressed: widget.onToggleSelection,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 4),
+                  ],
+                  Container(
+                    width: 4,
+                    height: 38,
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: BoxDecoration(
+                      color: noteColor,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                  const SizedBox(width: 4),
-                ],
-                Container(
-                  width: 4,
-                  height: 38,
-                  margin: const EdgeInsets.only(top: 2),
-                  decoration: BoxDecoration(
-                    color: noteColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleSmall
-                                  ?.copyWith(fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          if (note.pinned)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 8),
-                              child: Icon(
-                                AppIcons.heartFill,
-                                size: 15,
-                                color: brandLavender,
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          Text(
-                            _noteListDate(note.updatedAt, l10n),
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodySmall
-                                ?.copyWith(color: scheme.onSurfaceVariant),
-                          ),
-                          if (showPreview) ...[
-                            const SizedBox(width: 8),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
                             Expanded(
                               child: Text(
-                                preview,
+                                title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context)
                                     .textTheme
-                                    .bodySmall
-                                    ?.copyWith(color: scheme.onSurfaceVariant),
+                                    .titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w700),
                               ),
                             ),
-                          ] else
-                            const Spacer(),
-                          if (note.checklist.isNotEmpty)
-                            _NoteListMetaIcon(
-                              icon: AppIcons.squareCheck,
-                              label:
-                                  '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
+                            if (note.pinned)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: Icon(
+                                  AppIcons.heartFill,
+                                  size: 15,
+                                  color: brandLavender,
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Row(
+                          children: [
+                            Text(
+                              _noteListDate(note.updatedAt, l10n),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
                             ),
-                          if (note.shared)
-                            const _NoteListMetaIcon(icon: AppIcons.users),
-                          if (note.reminderAt != null)
-                            const _NoteListMetaIcon(icon: AppIcons.bell),
-                        ],
-                      ),
-                    ],
+                            if (showPreview) ...[
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  preview,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                          color: scheme.onSurfaceVariant),
+                                ),
+                              ),
+                            ] else
+                              const Spacer(),
+                            if (note.checklist.isNotEmpty)
+                              _NoteListMetaIcon(
+                                icon: AppIcons.squareCheck,
+                                label:
+                                    '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
+                              ),
+                            if (note.shared)
+                              const _NoteListMetaIcon(icon: AppIcons.users),
+                            if (note.reminderAt != null)
+                              const _NoteListMetaIcon(icon: AppIcons.bell),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -3126,9 +3284,14 @@ class _RailButton extends ConsumerWidget {
 }
 
 class _MultiSelectionToolbar extends ConsumerStatefulWidget {
-  const _MultiSelectionToolbar({super.key, this.compact = false});
+  const _MultiSelectionToolbar({
+    super.key,
+    this.compact = false,
+    this.embeddedInNativeGlass = false,
+  });
 
   final bool compact;
+  final bool embeddedInNativeGlass;
 
   @override
   ConsumerState<_MultiSelectionToolbar> createState() =>
@@ -3154,17 +3317,61 @@ class _MultiSelectionToolbarState
     final allPinned =
         selected.isNotEmpty && selected.every((note) => note.pinned);
     final buttonSize = widget.compact ? 48.0 : 36.0;
-    final iconSize = widget.compact ? 22.0 : 18.0;
+    final iconSize = widget.embeddedInNativeGlass
+        ? AppSizes.iosCompactHeaderIcon
+        : widget.compact
+            ? 22.0
+            : 18.0;
+    Widget actionButton({
+      required Key key,
+      required String tooltip,
+      required IconData icon,
+      required String nativeSymbol,
+      required VoidCallback? onPressed,
+      bool selected = false,
+    }) {
+      if (widget.embeddedInNativeGlass && _usesIosNativeControls) {
+        return Tooltip(
+          message: tooltip,
+          child: CNButton.icon(
+            key: key,
+            icon: CNSymbol(
+              nativeSymbol,
+              size: iconSize,
+              mode: CNSymbolRenderingMode.monochrome,
+            ),
+            tint: Theme.of(context).colorScheme.onSurface,
+            onPressed: onPressed,
+            config: CNButtonConfig(
+              width: buttonSize,
+              minHeight: buttonSize,
+              padding: const EdgeInsets.all(15),
+              style: CNButtonStyle.plain,
+              glassEffectInteractive: false,
+            ),
+          ),
+        );
+      }
+      return AppIconButton(
+        key: key,
+        tooltip: tooltip,
+        icon: icon,
+        selected: selected,
+        size: buttonSize,
+        iconSize: iconSize,
+        onPressed: onPressed,
+      );
+    }
+
     final actions = Row(
       key: const ValueKey('multi-selection-toolbar'),
       mainAxisSize: MainAxisSize.min,
       children: [
-        AppIconButton(
+        actionButton(
           key: const ValueKey('clear-note-selection'),
           tooltip: l10n.t('clearSelection'),
           icon: AppIcons.x,
-          size: buttonSize,
-          iconSize: iconSize,
+          nativeSymbol: 'xmark',
           onPressed: _busy ? null : _clearSelection,
         ),
         Padding(
@@ -3177,37 +3384,33 @@ class _MultiSelectionToolbarState
                 ),
           ),
         ),
-        AppIconButton(
+        actionButton(
           key: const ValueKey('delete-selected-notes'),
           tooltip: l10n.t('deleteSelection'),
           icon: AppIcons.trash2,
-          size: buttonSize,
-          iconSize: iconSize,
+          nativeSymbol: 'trash',
           onPressed: _busy || selected.isEmpty ? null : _deleteSelected,
         ),
-        AppIconButton(
+        actionButton(
           key: const ValueKey('archive-selected-notes'),
           tooltip: l10n.t('archiveSelection'),
           icon: AppIcons.archive,
-          size: buttonSize,
-          iconSize: iconSize,
+          nativeSymbol: 'archivebox',
           onPressed: _busy || selected.isEmpty ? null : _archiveSelected,
         ),
-        AppIconButton(
+        actionButton(
           key: const ValueKey('background-selected-notes'),
           tooltip: l10n.t('backgroundSelection'),
           icon: AppIcons.palette,
-          size: buttonSize,
-          iconSize: iconSize,
+          nativeSymbol: 'paintpalette',
           onPressed: _busy || selected.isEmpty ? null : _changeBackground,
         ),
-        AppIconButton(
+        actionButton(
           key: const ValueKey('pin-selected-notes'),
           tooltip: l10n.t(allPinned ? 'unpin' : 'pin'),
           icon: allPinned ? AppIcons.heartFill : AppIcons.heart,
+          nativeSymbol: allPinned ? 'heart.fill' : 'heart',
           selected: allPinned,
-          size: buttonSize,
-          iconSize: iconSize,
           onPressed:
               _busy || selected.isEmpty ? null : () => _setPinned(!allPinned),
         ),
@@ -3215,6 +3418,13 @@ class _MultiSelectionToolbarState
     );
 
     if (!widget.compact) return actions;
+    if (widget.embeddedInNativeGlass) {
+      return Padding(
+        key: const ValueKey('ios-native-selection-toolbar-content'),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: FittedBox(fit: BoxFit.scaleDown, child: actions),
+      );
+    }
     return SafeArea(
       top: false,
       minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -3447,7 +3657,17 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
   static const double _iosItemSize = 54;
   static const double _iosNativeBarHeight = 64;
   static const double _iosCreateButtonSize = 48;
-  static const double _iosSearchHeight = 50;
+  static const double _iosNavIconSize = 14;
+  static const double _iosIndicatorRestSize = _iosItemSize;
+  static const double _iosIndicatorGrowSize = 16;
+  static const double _iosNavContentWidth = _iosItemSize * 5 + _iosGap * 4;
+  static const double _iosBarHorizontalInset = 5.5;
+  static const double _iosTabBarInset = 5;
+  static const double _iosTabBarWidth = _iosItemSize * 4 + _iosTabBarInset * 2;
+  static const double _iosDockWidth =
+      _iosNavContentWidth + _iosBarHorizontalInset * 2;
+  static const double _iosSearchHeight = _iosNativeBarHeight;
+  static const double _iosExpandedBarHeight = 141;
   static const double _iosGap = 7;
   static const double _trashDropSize = 88;
   static const double _createMenuContentHeight = 76;
@@ -3460,6 +3680,11 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
   static const Color _darkSelectionOverlay = Color(0x24ffffff);
   static const Duration _createDuration = Duration(milliseconds: 230);
   static const Duration _createReverseDuration = Duration(milliseconds: 180);
+  static const Duration _iosCreateDuration = Duration(milliseconds: 320);
+  static const Duration _iosCreateReverseDuration = Duration(milliseconds: 250);
+  static const Duration _modeDuration = Duration(milliseconds: 320);
+  static const Duration _indicatorLiftDuration = Duration(milliseconds: 150);
+  static const Duration _indicatorLandDuration = Duration(milliseconds: 260);
   static const Duration _trashDuration = Duration(milliseconds: 400);
   static const Duration _trashReverseDuration = Duration(milliseconds: 320);
 
@@ -3470,19 +3695,36 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
   final _searchFocusNode = FocusNode();
   late final AnimationController _createMenuController;
   late final AnimationController _trashMorphController;
+  late final AnimationController _indicatorPositionController;
+  late final AnimationController _indicatorLiftController;
   PlainNote? _morphingDraggedNote;
 
-  /// Slot the liquid indicator animates from, so it can stretch mid-flight.
+  /// The indicator travels on the same spring model as the reference liquid
+  /// glass tab bar, while a separate lift envelope grows it for the journey.
   double _indicatorFrom = 0;
   int _indicatorTarget = 0;
+  int _indicatorAnimationGeneration = 0;
 
   @override
   void initState() {
     super.initState();
+    _indicatorTarget = _slotForBucket(ref.read(noteBucketProvider));
+    _indicatorFrom = _indicatorTarget.toDouble();
+    _indicatorPositionController = AnimationController.unbounded(
+      vsync: this,
+      value: _indicatorFrom,
+    );
+    _indicatorLiftController = AnimationController(
+      vsync: this,
+      duration: _indicatorLiftDuration,
+      reverseDuration: _indicatorLandDuration,
+    );
     _createMenuController = AnimationController(
       vsync: this,
-      duration: _createDuration,
-      reverseDuration: _createReverseDuration,
+      duration: _usesIosNativeControls ? _iosCreateDuration : _createDuration,
+      reverseDuration: _usesIosNativeControls
+          ? _iosCreateReverseDuration
+          : _createReverseDuration,
     );
     final draggedNote = ref.read(_draggedNoteProvider);
     _morphingDraggedNote = draggedNote;
@@ -3505,6 +3747,9 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
         unawaited(_reverseTrashMorph());
       }
     });
+    ref.listenManual<String>(noteBucketProvider, (previous, next) {
+      unawaited(_animateIndicatorTo(_slotForBucket(next)));
+    });
   }
 
   @override
@@ -3513,15 +3758,29 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     if (_reduceMotion == reduceMotion) return;
     _reduceMotion = reduceMotion;
-    _createMenuController.duration =
-        reduceMotion ? Duration.zero : _createDuration;
-    _createMenuController.reverseDuration =
-        reduceMotion ? Duration.zero : _createReverseDuration;
+    _createMenuController.duration = reduceMotion
+        ? Duration.zero
+        : _usesIosNativeControls
+            ? _iosCreateDuration
+            : _createDuration;
+    _createMenuController.reverseDuration = reduceMotion
+        ? Duration.zero
+        : _usesIosNativeControls
+            ? _iosCreateReverseDuration
+            : _createReverseDuration;
     _trashMorphController.duration =
         reduceMotion ? Duration.zero : _trashDuration;
     _trashMorphController.reverseDuration =
         reduceMotion ? Duration.zero : _trashReverseDuration;
+    _indicatorLiftController.duration =
+        reduceMotion ? Duration.zero : _indicatorLiftDuration;
+    _indicatorLiftController.reverseDuration =
+        reduceMotion ? Duration.zero : _indicatorLandDuration;
     if (reduceMotion) {
+      _indicatorAnimationGeneration++;
+      _indicatorPositionController.stop();
+      _indicatorPositionController.value = _indicatorTarget.toDouble();
+      _indicatorLiftController.value = 0;
       _createMenuController.value = _expanded ? 1 : 0;
       final draggedNote = ref.read(_draggedNoteProvider);
       _trashMorphController.value =
@@ -3543,14 +3802,62 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
         _ => 0,
       };
 
+  Future<void> _animateIndicatorTo(int next) async {
+    if (next == _indicatorTarget) return;
+
+    final generation = ++_indicatorAnimationGeneration;
+    final from = _indicatorPositionController.value;
+    setState(() {
+      _indicatorFrom = from;
+      _indicatorTarget = next;
+    });
+
+    if (_reduceMotion) {
+      _indicatorPositionController.stop();
+      _indicatorPositionController.value = next.toDouble();
+      _indicatorLiftController.value = 0;
+      return;
+    }
+
+    unawaited(
+      _indicatorLiftController.animateTo(
+        1,
+        duration: _indicatorLiftDuration,
+        curve: Curves.easeOutBack,
+      ),
+    );
+
+    try {
+      await _indicatorPositionController
+          .animateWith(
+            SpringSimulation(
+              const SpringDescription(
+                mass: 1,
+                stiffness: 280,
+                damping: 31.4,
+              ),
+              from,
+              next.toDouble(),
+              _indicatorPositionController.velocity,
+            ),
+          )
+          .orCancel;
+    } on TickerCanceled {
+      return;
+    }
+
+    if (!mounted || generation != _indicatorAnimationGeneration) return;
+    _indicatorPositionController.value = next.toDouble();
+    await _indicatorLiftController.animateBack(
+      0,
+      duration: _indicatorLandDuration,
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   void _selectBucket(String bucket) {
     final next = _slotForBucket(bucket);
-    if (next != _indicatorTarget) {
-      setState(() {
-        _indicatorFrom = _indicatorTarget.toDouble();
-        _indicatorTarget = next;
-      });
-    }
+    unawaited(_animateIndicatorTo(next));
     _collapse();
     _closeSearch();
     ref.read(noteBucketProvider.notifier).state = bucket;
@@ -3596,6 +3903,8 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
 
   @override
   void dispose() {
+    _indicatorPositionController.dispose();
+    _indicatorLiftController.dispose();
     _createMenuController.dispose();
     _trashMorphController.dispose();
     _searchController.dispose();
@@ -3622,6 +3931,7 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
     final l10n = ref.watch(l10nProvider);
     final bucket = ref.watch(noteBucketProvider);
     final draggedNote = ref.watch(_draggedNoteProvider);
+    final selectionActive = ref.watch(_selectedNoteIdsProvider).isNotEmpty;
     final scheme = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     final draggingToTrash =
@@ -3632,20 +3942,41 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
     final availableMobileWidth =
         math.max(0.0, MediaQuery.sizeOf(context).width - 32);
     final compactNavWidth = navItemSize * 5 + navGap * 4 + _inset * 2;
-    final iosNavWidth = math.min(360.0, availableMobileWidth);
+    final iosNavWidth = math.min(_iosDockWidth, availableMobileWidth);
     final searchNavWidth = math.min(420.0, availableMobileWidth);
     final collapsedNavSurfaceHeight =
         _usesIosNativeControls ? _iosNativeBarHeight : _itemSize + _inset * 2;
-    final expandedNavSurfaceHeight = collapsedNavSurfaceHeight +
-        _createMenuSpacing +
-        _createMenuContentHeight;
-    final popoutHeight =
-        draggingToTrash ? _trashDropSize : expandedNavSurfaceHeight;
-    final indicatorSlot = _slotForBucket(bucket);
-    if (indicatorSlot != _indicatorTarget) {
-      _indicatorFrom = _indicatorTarget.toDouble();
-      _indicatorTarget = indicatorSlot;
-    }
+    final expandedNavSurfaceHeight = _usesIosNativeControls
+        ? _iosExpandedBarHeight
+        : collapsedNavSurfaceHeight +
+            _createMenuSpacing +
+            _createMenuContentHeight;
+    final popoutHeight = _usesIosNativeControls
+        ? draggingToTrash
+            ? _trashDropSize
+            : _expanded && !selectionActive && !_searching
+                ? expandedNavSurfaceHeight
+                : selectionActive
+                    ? _iosNativeBarHeight
+                    : _searching
+                        ? _iosSearchHeight
+                        : _iosNativeBarHeight
+        : draggingToTrash
+            ? _trashDropSize
+            : expandedNavSurfaceHeight;
+    final createTransitionActive = _expanded || _createMenuController.value > 0;
+    final createDuration =
+        _usesIosNativeControls ? _iosCreateDuration : _createDuration;
+    final createReverseDuration = _usesIosNativeControls
+        ? _iosCreateReverseDuration
+        : _createReverseDuration;
+    final geometryDuration = draggingToTrash
+        ? _trashDuration
+        : createTransitionActive
+            ? _expanded
+                ? createDuration
+                : createReverseDuration
+            : _modeDuration;
     return AnimatedBuilder(
       animation: _trashMorphController,
       builder: (context, _) {
@@ -3668,241 +3999,308 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
             child: Center(
               heightFactor: 1,
               child: AnimatedContainer(
-                duration: AppMotion.duration(context, _trashDuration),
+                duration: AppMotion.duration(context, geometryDuration),
                 curve: Curves.easeOutCubic,
                 height: popoutHeight,
                 width: draggingToTrash
                     ? _trashDropSize
-                    : _searching
+                    : selectionActive && _usesIosNativeControls
                         ? searchNavWidth
-                        : _usesIosNativeControls
-                            ? iosNavWidth
-                            : compactNavWidth,
+                        : _searching
+                            ? searchNavWidth
+                            : _usesIosNativeControls
+                                ? iosNavWidth
+                                : compactNavWidth,
                 child: KeyedSubtree(
                   key: const ValueKey('mobile-create-popout-layout'),
                   child: RepaintBoundary(
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        if (!_usesIosNativeControls ||
-                            _expanded ||
-                            draggingToTrash ||
-                            trashMorph > 0)
-                          _MobileNavDrawerSurface(
-                            animation: _createMenuController,
-                            morphProgress: trashMorph,
-                            collapsedHeight: collapsedNavSurfaceHeight,
-                            expandedHeight: expandedNavSurfaceHeight,
-                            trashHeight: _trashDropSize,
-                            collapsedRadius: targetRadius,
-                            trashRadius: _trashDropSize / 2,
-                          ),
-                        if (!draggingToTrash)
-                          Positioned(
-                            top: 0,
-                            left: _createMenuInset,
-                            right: _createMenuInset,
-                            height: _createMenuContentHeight,
-                            child: ClipRect(
-                              key: const ValueKey(
-                                'mobile-create-actions-clip',
-                              ),
-                              child: IgnorePointer(
-                                ignoring: !_expanded,
-                                child: _usesIosNativeControls
-                                    ? _IosNativeCreateActions(
-                                        animation: _createMenuController,
-                                        noteLabel: l10n.t('newNote'),
-                                        reminderLabel: l10n.t('reminder'),
-                                        listLabel: l10n.t('newChecklist'),
-                                        onNote: () => unawaited(
-                                          _runCreateAction(
-                                              _MobileCreateAction.note),
-                                        ),
-                                        onReminder: () => unawaited(
-                                          _runCreateAction(
-                                            _MobileCreateAction.reminder,
-                                          ),
-                                        ),
-                                        onList: () => unawaited(
-                                          _runCreateAction(
-                                              _MobileCreateAction.list),
-                                        ),
-                                      )
-                                    : Padding(
-                                        padding: const EdgeInsets.only(
-                                          top: _createMenuInset,
-                                        ),
-                                        child: _CreateActionsReveal(
-                                          animation: _createMenuController,
-                                          children: [
-                                            _MobileCreateDrawerAction(
-                                              key: const ValueKey(
-                                                'mobile-create-note-action',
-                                              ),
-                                              icon: AppIcons.filePlus2,
-                                              label: l10n.t('newNote'),
-                                              semanticLabel: l10n.t('newNote'),
-                                              onTap: () => unawaited(
+                    child: _usesIosNativeControls
+                        ? _IosLiquidBottomBar(
+                            bucket: bucket,
+                            expanded: _expanded && !selectionActive,
+                            searching: _searching && !selectionActive,
+                            selectionActive: selectionActive,
+                            foreground: scheme.onSurface,
+                            indicatorFrom: _indicatorFrom,
+                            indicatorTarget: _indicatorTarget,
+                            indicatorPosition: _indicatorPositionController,
+                            indicatorLift: _indicatorLiftController,
+                            createAnimation: _createMenuController,
+                            draggedNote: draggedNote ?? _morphingDraggedNote,
+                            trashMorphProgress: trashMorph,
+                            searchController: _searchController,
+                            searchFocusNode: _searchFocusNode,
+                            searchHint: l10n.t('searchNotes'),
+                            noteLabel: l10n.t('newNote'),
+                            reminderLabel: l10n.t('reminder'),
+                            listLabel: l10n.t('newChecklist'),
+                            onNotes: () => _selectBucket('active'),
+                            onReminders: () => _selectBucket('reminders'),
+                            onTrash: () => _selectBucket('trashed'),
+                            onSearch: _openSearch,
+                            onSearchChanged: (value) => ref
+                                .read(noteSearchProvider.notifier)
+                                .state = value,
+                            onSearchClose: _closeSearch,
+                            onCreate: _toggleCreate,
+                            onCreateNote: () => unawaited(
+                              _runCreateAction(_MobileCreateAction.note),
+                            ),
+                            onCreateReminder: () => unawaited(
+                              _runCreateAction(_MobileCreateAction.reminder),
+                            ),
+                            onCreateList: () => unawaited(
+                              _runCreateAction(_MobileCreateAction.list),
+                            ),
+                          )
+                        : Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              if (!_usesIosNativeControls ||
+                                  _expanded ||
+                                  draggingToTrash ||
+                                  trashMorph > 0)
+                                _MobileNavDrawerSurface(
+                                  animation: _createMenuController,
+                                  morphProgress: trashMorph,
+                                  collapsedHeight: collapsedNavSurfaceHeight,
+                                  expandedHeight: expandedNavSurfaceHeight,
+                                  trashHeight: _trashDropSize,
+                                  collapsedRadius: targetRadius,
+                                  trashRadius: _trashDropSize / 2,
+                                ),
+                              if (!draggingToTrash)
+                                Positioned(
+                                  top: 0,
+                                  left: _createMenuInset,
+                                  right: _createMenuInset,
+                                  height: _createMenuContentHeight,
+                                  child: ClipRect(
+                                    key: const ValueKey(
+                                      'mobile-create-actions-clip',
+                                    ),
+                                    child: IgnorePointer(
+                                      ignoring: !_expanded,
+                                      child: _usesIosNativeControls
+                                          ? _IosNativeCreateActions(
+                                              animation: _createMenuController,
+                                              noteLabel: l10n.t('newNote'),
+                                              reminderLabel: l10n.t('reminder'),
+                                              listLabel: l10n.t('newChecklist'),
+                                              onNote: () => unawaited(
                                                 _runCreateAction(
-                                                  _MobileCreateAction.note,
-                                                ),
+                                                    _MobileCreateAction.note),
                                               ),
-                                            ),
-                                            _MobileCreateDrawerAction(
-                                              key: const ValueKey(
-                                                'mobile-create-reminder-action',
-                                              ),
-                                              icon: AppIcons.bellPlus,
-                                              label: l10n.t('reminder'),
-                                              semanticLabel:
-                                                  l10n.t('setReminder'),
-                                              onTap: () => unawaited(
+                                              onReminder: () => unawaited(
                                                 _runCreateAction(
                                                   _MobileCreateAction.reminder,
                                                 ),
                                               ),
-                                            ),
-                                            _MobileCreateDrawerAction(
-                                              key: const ValueKey(
-                                                'mobile-create-list-action',
-                                              ),
-                                              icon: AppIcons.listChecks,
-                                              label: l10n.t('newChecklist'),
-                                              semanticLabel:
-                                                  l10n.t('newChecklist'),
-                                              onTap: () => unawaited(
+                                              onList: () => unawaited(
                                                 _runCreateAction(
-                                                  _MobileCreateAction.list,
-                                                ),
+                                                    _MobileCreateAction.list),
+                                              ),
+                                            )
+                                          : Padding(
+                                              padding: const EdgeInsets.only(
+                                                top: _createMenuInset,
+                                              ),
+                                              child: _CreateActionsReveal(
+                                                animation:
+                                                    _createMenuController,
+                                                children: [
+                                                  _MobileCreateDrawerAction(
+                                                    key: const ValueKey(
+                                                      'mobile-create-note-action',
+                                                    ),
+                                                    icon: AppIcons.filePlus2,
+                                                    label: l10n.t('newNote'),
+                                                    semanticLabel:
+                                                        l10n.t('newNote'),
+                                                    onTap: () => unawaited(
+                                                      _runCreateAction(
+                                                        _MobileCreateAction
+                                                            .note,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  _MobileCreateDrawerAction(
+                                                    key: const ValueKey(
+                                                      'mobile-create-reminder-action',
+                                                    ),
+                                                    icon: AppIcons.bellPlus,
+                                                    label: l10n.t('reminder'),
+                                                    semanticLabel:
+                                                        l10n.t('setReminder'),
+                                                    onTap: () => unawaited(
+                                                      _runCreateAction(
+                                                        _MobileCreateAction
+                                                            .reminder,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  _MobileCreateDrawerAction(
+                                                    key: const ValueKey(
+                                                      'mobile-create-list-action',
+                                                    ),
+                                                    icon: AppIcons.listChecks,
+                                                    label:
+                                                        l10n.t('newChecklist'),
+                                                    semanticLabel:
+                                                        l10n.t('newChecklist'),
+                                                    onTap: () => unawaited(
+                                                      _runCreateAction(
+                                                        _MobileCreateAction
+                                                            .list,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
                                             ),
-                                          ],
-                                        ),
-                                      ),
-                              ),
-                            ),
-                          ),
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: _MobileNavGlassSurface(
-                            child: SizedBox(
-                              key: const ValueKey(
-                                'mobile-nav-morphing-viewport',
-                              ),
-                              height: navViewportHeight,
-                              child: AnimatedSwitcher(
-                                duration: AppMotion.duration(
-                                  context,
-                                  const Duration(milliseconds: 220),
-                                ),
-                                reverseDuration: AppMotion.duration(
-                                  context,
-                                  const Duration(milliseconds: 240),
-                                ),
-                                switchInCurve: Curves.easeOutCubic,
-                                switchOutCurve: Curves.easeInCubic,
-                                transitionBuilder: (child, animation) =>
-                                    FadeTransition(
-                                  opacity: animation,
-                                  child: ScaleTransition(
-                                    scale: Tween<double>(begin: 0.96, end: 1)
-                                        .animate(animation),
-                                    child: child,
+                                    ),
                                   ),
                                 ),
-                                child: _searching && !draggingToTrash
-                                    ? KeyedSubtree(
-                                        key: const ValueKey(
-                                          'mobile-nav-search-mode',
-                                        ),
-                                        child: _MobileNavSearchField(
-                                          controller: _searchController,
-                                          focusNode: _searchFocusNode,
-                                          hintText: l10n.t('searchNotes'),
-                                          onChanged: (value) => ref
-                                              .read(noteSearchProvider.notifier)
-                                              .state = value,
-                                          onClose: _closeSearch,
-                                        ),
-                                      )
-                                    : KeyedSubtree(
-                                        key: const ValueKey(
-                                          'mobile-nav-icons-mode',
-                                        ),
-                                        child: _usesIosNativeControls &&
-                                                !draggingToTrash &&
-                                                trashMorph == 0
-                                            ? _expanded
-                                                ? _IosNativeNavButtonGroup(
-                                                    bucket: bucket,
-                                                    expanded: _expanded,
-                                                    foreground:
-                                                        scheme.onSurface,
-                                                    indicatorFrom:
-                                                        _indicatorFrom,
-                                                    indicatorTarget:
-                                                        _indicatorTarget,
-                                                    onNotes: () =>
-                                                        _selectBucket('active'),
-                                                    onReminders: () =>
-                                                        _selectBucket(
-                                                            'reminders'),
-                                                    onTrash: () =>
-                                                        _selectBucket(
-                                                            'trashed'),
-                                                    onSearch: _openSearch,
-                                                    onCreate: _toggleCreate,
-                                                  )
-                                                : _IosNativeTabBar(
-                                                    bucket: bucket,
-                                                    foreground:
-                                                        scheme.onSurface,
-                                                    onNotes: () =>
-                                                        _selectBucket('active'),
-                                                    onReminders: () =>
-                                                        _selectBucket(
-                                                            'reminders'),
-                                                    onTrash: () =>
-                                                        _selectBucket(
-                                                            'trashed'),
-                                                    onSearch: _openSearch,
-                                                    onCreate: _toggleCreate,
-                                                  )
-                                            : _MobileNavMorphingIconGroup(
-                                                bucket: bucket,
-                                                draggedNote: draggedNote ??
-                                                    _morphingDraggedNote,
-                                                morphProgress: trashMorph,
-                                                dark: dark,
-                                                indicatorFrom: _indicatorFrom,
-                                                indicatorTarget:
-                                                    _indicatorTarget,
-                                                notesTooltip: l10n.t('notes'),
-                                                remindersTooltip:
-                                                    l10n.t('reminders'),
-                                                trashTooltip: l10n.t('trash'),
-                                                searchTooltip:
-                                                    l10n.t('searchNotes'),
-                                                createExpanded: _expanded,
-                                                onNotes: () =>
-                                                    _selectBucket('active'),
-                                                onReminders: () =>
-                                                    _selectBucket('reminders'),
-                                                onTrash: () =>
-                                                    _selectBucket('trashed'),
-                                                onSearch: _openSearch,
-                                                onCreate: _toggleCreate,
-                                              ),
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 0,
+                                child: _MobileNavGlassSurface(
+                                  child: SizedBox(
+                                    key: const ValueKey(
+                                      'mobile-nav-morphing-viewport',
+                                    ),
+                                    height: navViewportHeight,
+                                    child: AnimatedSwitcher(
+                                      duration: AppMotion.duration(
+                                        context,
+                                        const Duration(milliseconds: 220),
                                       ),
+                                      reverseDuration: AppMotion.duration(
+                                        context,
+                                        const Duration(milliseconds: 240),
+                                      ),
+                                      switchInCurve: Curves.easeOutCubic,
+                                      switchOutCurve: Curves.easeInCubic,
+                                      transitionBuilder: (child, animation) =>
+                                          FadeTransition(
+                                        opacity: animation,
+                                        child: ScaleTransition(
+                                          scale:
+                                              Tween<double>(begin: 0.96, end: 1)
+                                                  .animate(animation),
+                                          child: child,
+                                        ),
+                                      ),
+                                      child: _searching && !draggingToTrash
+                                          ? KeyedSubtree(
+                                              key: const ValueKey(
+                                                'mobile-nav-search-mode',
+                                              ),
+                                              child: _MobileNavSearchField(
+                                                controller: _searchController,
+                                                focusNode: _searchFocusNode,
+                                                hintText: l10n.t('searchNotes'),
+                                                onChanged: (value) => ref
+                                                    .read(noteSearchProvider
+                                                        .notifier)
+                                                    .state = value,
+                                                onClose: _closeSearch,
+                                              ),
+                                            )
+                                          : KeyedSubtree(
+                                              key: const ValueKey(
+                                                'mobile-nav-icons-mode',
+                                              ),
+                                              child: _usesIosNativeControls &&
+                                                      !draggingToTrash &&
+                                                      trashMorph == 0
+                                                  ? _expanded
+                                                      ? _IosNativeNavButtonGroup(
+                                                          bucket: bucket,
+                                                          expanded: _expanded,
+                                                          foreground:
+                                                              scheme.onSurface,
+                                                          indicatorFrom:
+                                                              _indicatorFrom,
+                                                          indicatorTarget:
+                                                              _indicatorTarget,
+                                                          indicatorPosition:
+                                                              _indicatorPositionController,
+                                                          indicatorLift:
+                                                              _indicatorLiftController,
+                                                          onNotes: () =>
+                                                              _selectBucket(
+                                                                  'active'),
+                                                          onReminders: () =>
+                                                              _selectBucket(
+                                                                  'reminders'),
+                                                          onTrash: () =>
+                                                              _selectBucket(
+                                                                  'trashed'),
+                                                          onSearch: _openSearch,
+                                                          onCreate:
+                                                              _toggleCreate,
+                                                        )
+                                                      : _IosNativeTabBar(
+                                                          bucket: bucket,
+                                                          foreground:
+                                                              scheme.onSurface,
+                                                          indicatorFrom:
+                                                              _indicatorFrom,
+                                                          indicatorTarget:
+                                                              _indicatorTarget,
+                                                          onNotes: () =>
+                                                              _selectBucket(
+                                                                  'active'),
+                                                          onReminders: () =>
+                                                              _selectBucket(
+                                                                  'reminders'),
+                                                          onTrash: () =>
+                                                              _selectBucket(
+                                                                  'trashed'),
+                                                          onSearch: _openSearch,
+                                                          onCreate:
+                                                              _toggleCreate,
+                                                        )
+                                                  : _MobileNavMorphingIconGroup(
+                                                      bucket: bucket,
+                                                      draggedNote: draggedNote ??
+                                                          _morphingDraggedNote,
+                                                      morphProgress: trashMorph,
+                                                      dark: dark,
+                                                      indicatorFrom:
+                                                          _indicatorFrom,
+                                                      indicatorTarget:
+                                                          _indicatorTarget,
+                                                      notesTooltip:
+                                                          l10n.t('notes'),
+                                                      remindersTooltip:
+                                                          l10n.t('reminders'),
+                                                      trashTooltip:
+                                                          l10n.t('trash'),
+                                                      searchTooltip:
+                                                          l10n.t('searchNotes'),
+                                                      createExpanded: _expanded,
+                                                      onNotes: () =>
+                                                          _selectBucket(
+                                                              'active'),
+                                                      onReminders: () =>
+                                                          _selectBucket(
+                                                              'reminders'),
+                                                      onTrash: () =>
+                                                          _selectBucket(
+                                                              'trashed'),
+                                                      onSearch: _openSearch,
+                                                      onCreate: _toggleCreate,
+                                                    ),
+                                            ),
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
               ),
@@ -3910,6 +4308,237 @@ class _MobileBottomNavState extends ConsumerState<_MobileBottomNav>
           ),
         );
       },
+    );
+  }
+}
+
+/// A single, persistent native glass host for every iOS bottom-bar state.
+///
+/// Keeping this platform view mounted is important: replacing the dock with
+/// unrelated glass widgets makes SwiftUI restart its optical sampling and the
+/// transition reads as a cross-fade. Here the same glass sheet changes bounds
+/// while the navigation, create drawer, search, drop target, and selection
+/// controls move inside it.
+class _IosLiquidBottomBar extends StatelessWidget {
+  const _IosLiquidBottomBar({
+    required this.bucket,
+    required this.expanded,
+    required this.searching,
+    required this.selectionActive,
+    required this.foreground,
+    required this.indicatorFrom,
+    required this.indicatorTarget,
+    required this.indicatorPosition,
+    required this.indicatorLift,
+    required this.createAnimation,
+    required this.draggedNote,
+    required this.trashMorphProgress,
+    required this.searchController,
+    required this.searchFocusNode,
+    required this.searchHint,
+    required this.noteLabel,
+    required this.reminderLabel,
+    required this.listLabel,
+    required this.onNotes,
+    required this.onReminders,
+    required this.onTrash,
+    required this.onSearch,
+    required this.onSearchChanged,
+    required this.onSearchClose,
+    required this.onCreate,
+    required this.onCreateNote,
+    required this.onCreateReminder,
+    required this.onCreateList,
+  });
+
+  final String bucket;
+  final bool expanded;
+  final bool searching;
+  final bool selectionActive;
+  final Color foreground;
+  final double indicatorFrom;
+  final int indicatorTarget;
+  final AnimationController indicatorPosition;
+  final AnimationController indicatorLift;
+  final Animation<double> createAnimation;
+  final PlainNote? draggedNote;
+  final double trashMorphProgress;
+  final TextEditingController searchController;
+  final FocusNode searchFocusNode;
+  final String searchHint;
+  final String noteLabel;
+  final String reminderLabel;
+  final String listLabel;
+  final VoidCallback onNotes;
+  final VoidCallback onReminders;
+  final VoidCallback onTrash;
+  final VoidCallback onSearch;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onSearchClose;
+  final VoidCallback onCreate;
+  final VoidCallback onCreateNote;
+  final VoidCallback onCreateReminder;
+  final VoidCallback onCreateList;
+
+  static const _contentDuration = Duration(milliseconds: 320);
+
+  @override
+  Widget build(BuildContext context) {
+    final trashVisible = draggedNote != null || trashMorphProgress > 0;
+    final normalVisible =
+        !searching && !selectionActive && trashMorphProgress < 0.01;
+    final shellRadius = trashVisible
+        ? _MobileBottomNavState._trashDropSize / 2
+        : searching
+            ? _MobileBottomNavState._iosSearchHeight / 2
+            : _MobileBottomNavState._barRadius;
+    final content = SizedBox.expand(
+      key: const ValueKey('ios-native-bottom-navigation'),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            top: 0,
+            left: _MobileBottomNavState._createMenuInset,
+            right: _MobileBottomNavState._createMenuInset,
+            height: _MobileBottomNavState._createMenuContentHeight,
+            child: IgnorePointer(
+              ignoring: !expanded,
+              child: _IosNativeCreateActions(
+                animation: createAnimation,
+                noteLabel: noteLabel,
+                reminderLabel: reminderLabel,
+                listLabel: listLabel,
+                onNote: onCreateNote,
+                onReminder: onCreateReminder,
+                onList: onCreateList,
+              ),
+            ),
+          ),
+          Positioned(
+            right: _MobileBottomNavState._iosBarHorizontalInset,
+            bottom: 5,
+            width: _MobileBottomNavState._iosNavContentWidth,
+            height: _MobileBottomNavState._iosItemSize,
+            child: IgnorePointer(
+              ignoring: !normalVisible,
+              child: AnimatedOpacity(
+                key: const ValueKey('ios-native-nav-content-opacity'),
+                opacity: normalVisible ? 1 : 0,
+                duration: AppMotion.duration(context, _contentDuration),
+                curve: Curves.easeOutCubic,
+                child: AnimatedScale(
+                  scale: normalVisible ? 1 : 0.88,
+                  duration: AppMotion.duration(context, _contentDuration),
+                  curve: Curves.easeOutCubic,
+                  child: Center(
+                    child: _IosNativeNavButtonGroup(
+                      bucket: bucket,
+                      expanded: expanded,
+                      foreground: foreground,
+                      indicatorFrom: indicatorFrom,
+                      indicatorTarget: indicatorTarget,
+                      indicatorPosition: indicatorPosition,
+                      indicatorLift: indicatorLift,
+                      onNotes: onNotes,
+                      onReminders: onReminders,
+                      onTrash: onTrash,
+                      onSearch: onSearch,
+                      onCreate: onCreate,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: _MobileBottomNavState._iosSearchHeight,
+            child: IgnorePointer(
+              ignoring: !searching,
+              child: AnimatedOpacity(
+                key: const ValueKey('ios-native-search-content-opacity'),
+                opacity: searching ? 1 : 0,
+                duration: AppMotion.duration(context, _contentDuration),
+                curve: Curves.easeOutCubic,
+                child: AnimatedSlide(
+                  offset: searching ? Offset.zero : const Offset(0.08, 0),
+                  duration: AppMotion.duration(context, _contentDuration),
+                  curve: Curves.easeOutCubic,
+                  child: _MobileNavSearchField(
+                    controller: searchController,
+                    focusNode: searchFocusNode,
+                    hintText: searchHint,
+                    onChanged: onSearchChanged,
+                    onClose: onSearchClose,
+                    useNativeSurface: false,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !selectionActive,
+              child: AnimatedOpacity(
+                key: const ValueKey('ios-native-selection-content-opacity'),
+                opacity: selectionActive ? 1 : 0,
+                duration: AppMotion.duration(context, _contentDuration),
+                curve: Curves.easeOutCubic,
+                child: AnimatedScale(
+                  scale: selectionActive ? 1 : 0.90,
+                  duration: AppMotion.duration(context, _contentDuration),
+                  curve: Curves.easeOutCubic,
+                  child: const Center(
+                    child: _MultiSelectionToolbar(
+                      compact: true,
+                      embeddedInNativeGlass: true,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (trashVisible)
+            Positioned.fill(
+              child: Center(
+                child: AnimatedOpacity(
+                  key: const ValueKey('ios-native-trash-content-opacity'),
+                  opacity: trashMorphProgress.clamp(0.0, 1.0),
+                  duration: Duration.zero,
+                  child: draggedNote == null
+                      ? const SizedBox.shrink()
+                      : _MobileNavTrashDropButton(
+                          key: const ValueKey(
+                            'mobile-nav-trash-drop-target',
+                          ),
+                          note: draggedNote!,
+                          morphProgress: trashMorphProgress,
+                        ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+    return Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.expand,
+      children: [
+        LiquidGlassContainer(
+          key: const ValueKey('ios-native-bottom-bar-glass'),
+          config: LiquidGlassConfig(
+            effect: CNGlassEffect.regular,
+            shape: CNGlassEffectShape.rect,
+            cornerRadius: shellRadius,
+            interactive: false,
+          ),
+          child: const SizedBox.expand(),
+        ),
+        content,
+      ],
     );
   }
 }
@@ -4212,6 +4841,8 @@ class _IosNativeTabBar extends StatelessWidget {
   const _IosNativeTabBar({
     required this.bucket,
     required this.foreground,
+    required this.indicatorFrom,
+    required this.indicatorTarget,
     required this.onNotes,
     required this.onReminders,
     required this.onTrash,
@@ -4221,61 +4852,136 @@ class _IosNativeTabBar extends StatelessWidget {
 
   final String bucket;
   final Color foreground;
+  final double indicatorFrom;
+  final int indicatorTarget;
   final VoidCallback onNotes;
   final VoidCallback onReminders;
   final VoidCallback onTrash;
   final VoidCallback onSearch;
   final VoidCallback onCreate;
 
+  Widget _tabButton({
+    required String symbol,
+    required String effectId,
+    required bool selected,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox.square(
+      key: ValueKey(effectId),
+      dimension: _MobileBottomNavState._iosItemSize,
+      child: AnimatedScale(
+        scale: selected ? 1.06 : 1,
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutBack,
+        child: CNButton.icon(
+          icon: CNSymbol(
+            symbol,
+            size: _MobileBottomNavState._iosNavIconSize,
+            mode: CNSymbolRenderingMode.monochrome,
+          ),
+          onPressed: onPressed,
+          tint: foreground,
+          config: const CNButtonConfig(
+            width: _MobileBottomNavState._iosItemSize,
+            minHeight: _MobileBottomNavState._iosItemSize,
+            padding: EdgeInsets.all(18),
+            style: CNButtonStyle.plain,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    const items = [
-      CNTabBarItem(
-        icon: CNSymbol('note.text', size: 18),
-        activeIcon: CNSymbol('note.text', size: 18),
-      ),
-      CNTabBarItem(
-        icon: CNSymbol('bell', size: 18),
-        activeIcon: CNSymbol('bell', size: 18),
-      ),
-      CNTabBarItem(
-        icon: CNSymbol('trash', size: 18),
-        activeIcon: CNSymbol('trash', size: 18),
-      ),
-      CNTabBarItem(
-        icon: CNSymbol('magnifyingglass', size: 18),
-        activeIcon: CNSymbol('magnifyingglass', size: 18),
-      ),
-    ];
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final selectedSlot = _MobileBottomNavState._slotForBucket(bucket);
+    const itemSize = _MobileBottomNavState._iosItemSize;
+    const inset = _MobileBottomNavState._iosTabBarInset;
+    const selectionSize = _MobileBottomNavState._iosCreateButtonSize;
     return SizedBox(
       key: const ValueKey('ios-native-bottom-navigation'),
+      width: _MobileBottomNavState._iosDockWidth,
       height: _MobileBottomNavState._iosNativeBarHeight,
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: CNTabBar(
-              key: const ValueKey('ios-native-tab-bar'),
-              items: items,
-              currentIndex: _MobileBottomNavState._slotForBucket(bucket),
-              onTap: (index) {
-                switch (index) {
-                  case 0:
-                    onNotes();
-                    return;
-                  case 1:
-                    onReminders();
-                    return;
-                  case 2:
-                    onTrash();
-                    return;
-                  case 3:
-                    onSearch();
-                    return;
-                }
-              },
-              tint: foreground,
-              height: _MobileBottomNavState._iosNativeBarHeight,
-              shrinkCentered: false,
+          SizedBox(
+            key: const ValueKey('ios-native-tab-bar'),
+            width: _MobileBottomNavState._iosTabBarWidth,
+            height: _MobileBottomNavState._iosNativeBarHeight,
+            child: LiquidGlassContainer(
+              key: const ValueKey('ios-native-tab-bar-glass'),
+              config: LiquidGlassConfig(
+                effect: CNGlassEffect.regular,
+                shape: CNGlassEffectShape.capsule,
+                tint: dark
+                    ? Colors.white.withValues(alpha: 0.025)
+                    : Colors.white.withValues(alpha: 0.10),
+                interactive: true,
+              ),
+              child: Stack(
+                alignment: Alignment.centerLeft,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(
+                      begin: indicatorFrom,
+                      end: indicatorTarget.toDouble(),
+                    ),
+                    duration: const Duration(milliseconds: 460),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, value, child) => Positioned(
+                      left: inset +
+                          value * itemSize +
+                          (itemSize - selectionSize) / 2,
+                      width: selectionSize,
+                      height: selectionSize,
+                      child: child!,
+                    ),
+                    child: DecoratedBox(
+                      key: const ValueKey('ios-native-nav-selection'),
+                      decoration: BoxDecoration(
+                        color: dark
+                            ? Colors.white.withValues(alpha: 0.14)
+                            : Colors.black.withValues(alpha: 0.075),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: inset),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _tabButton(
+                          symbol: 'note.text',
+                          effectId: 'ios-native-nav-notes',
+                          selected: selectedSlot == 0,
+                          onPressed: onNotes,
+                        ),
+                        _tabButton(
+                          symbol: 'bell',
+                          effectId: 'ios-native-nav-reminders',
+                          selected: selectedSlot == 1,
+                          onPressed: onReminders,
+                        ),
+                        _tabButton(
+                          symbol: 'trash',
+                          effectId: 'ios-native-nav-trash',
+                          selected: selectedSlot == 2,
+                          onPressed: onTrash,
+                        ),
+                        _tabButton(
+                          symbol: 'magnifyingglass',
+                          effectId: 'ios-native-nav-search',
+                          selected: false,
+                          onPressed: onSearch,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: _MobileBottomNavState._iosGap),
@@ -4284,7 +4990,10 @@ class _IosNativeTabBar extends StatelessWidget {
             child: Center(
               child: CNButton.icon(
                 key: const ValueKey('ios-native-nav-create'),
-                icon: const CNSymbol('plus', size: 18),
+                icon: const CNSymbol(
+                  'plus',
+                  size: _MobileBottomNavState._iosNavIconSize,
+                ),
                 onPressed: onCreate,
                 tint: foreground,
                 config: const CNButtonConfig(
@@ -4310,6 +5019,8 @@ class _IosNativeNavButtonGroup extends StatelessWidget {
     required this.foreground,
     required this.indicatorFrom,
     required this.indicatorTarget,
+    required this.indicatorPosition,
+    required this.indicatorLift,
     required this.onNotes,
     required this.onReminders,
     required this.onTrash,
@@ -4322,6 +5033,8 @@ class _IosNativeNavButtonGroup extends StatelessWidget {
   final Color foreground;
   final double indicatorFrom;
   final int indicatorTarget;
+  final AnimationController indicatorPosition;
+  final AnimationController indicatorLift;
   final VoidCallback onNotes;
   final VoidCallback onReminders;
   final VoidCallback onTrash;
@@ -4329,10 +5042,13 @@ class _IosNativeNavButtonGroup extends StatelessWidget {
   final VoidCallback onCreate;
 
   Widget _button({
+    required BuildContext context,
     required String symbol,
     required String effectId,
     required VoidCallback onPressed,
+    bool selected = false,
     bool prominent = false,
+    double rotationTurns = 0,
     Color? prominentFill,
     Color? prominentForeground,
   }) {
@@ -4350,26 +5066,42 @@ class _IosNativeNavButtonGroup extends StatelessWidget {
                   effect: CNGlassEffect.regular,
                   shape: CNGlassEffectShape.circle,
                   tint: prominentFill,
+                  interactive: true,
                 ),
                 child: const SizedBox.expand(),
               ),
             ),
-          CNButton.icon(
-            icon: CNSymbol(
-              symbol,
-              size: 18,
-              mode: CNSymbolRenderingMode.monochrome,
+          AnimatedRotation(
+            key: prominent
+                ? const ValueKey('ios-native-create-symbol-rotation')
+                : null,
+            turns: rotationTurns,
+            duration: AppMotion.duration(
+              context,
+              const Duration(milliseconds: 280),
             ),
-            onPressed: onPressed,
-            // Keep every tab symbol neutral. Selection is communicated by the
-            // moving native glass lens, while the create control keeps a
-            // deliberately inverted neutral symbol.
-            tint: prominent ? prominentForeground : foreground,
-            config: const CNButtonConfig(
-              width: _MobileBottomNavState._iosItemSize,
-              minHeight: _MobileBottomNavState._iosItemSize,
-              padding: EdgeInsets.all(18),
-              style: CNButtonStyle.plain,
+            curve: Curves.easeInOutBack,
+            child: AnimatedScale(
+              scale: selected ? 1.04 : 1,
+              duration: const Duration(milliseconds: 360),
+              curve: Curves.easeOutBack,
+              child: CNButton.icon(
+                icon: CNSymbol(
+                  symbol,
+                  size: _MobileBottomNavState._iosNavIconSize,
+                  mode: CNSymbolRenderingMode.monochrome,
+                ),
+                onPressed: onPressed,
+                // Keep every tab symbol neutral. Selection is communicated by
+                // the moving native refractive lens.
+                tint: prominent ? prominentForeground : foreground,
+                config: const CNButtonConfig(
+                  width: _MobileBottomNavState._iosItemSize,
+                  minHeight: _MobileBottomNavState._iosItemSize,
+                  padding: EdgeInsets.all(18),
+                  style: CNButtonStyle.plain,
+                ),
+              ),
             ),
           ),
         ],
@@ -4383,81 +5115,65 @@ class _IosNativeNavButtonGroup extends StatelessWidget {
     final itemSize = _MobileBottomNavState._iosItemSize;
     final gap = _MobileBottomNavState._iosGap;
     final slotExtent = itemSize + gap;
+    final selectedSlot = _MobileBottomNavState._slotForBucket(bucket);
+    const selectionSize = _MobileBottomNavState._iosIndicatorRestSize;
     return SizedBox(
-      key: const ValueKey('ios-native-bottom-navigation'),
+      key: const ValueKey('ios-native-nav-button-group'),
       height: itemSize,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          TweenAnimationBuilder<double>(
-            tween: Tween(
-              begin: indicatorFrom,
-              end: indicatorTarget.toDouble(),
-            ),
-            duration: const Duration(milliseconds: 460),
-            curve: Curves.easeOutCubic,
-            child: LiquidGlassContainer(
-              key: const ValueKey('ios-native-nav-selection'),
-              config: LiquidGlassConfig(
-                effect: CNGlassEffect.regular,
-                shape: CNGlassEffectShape.capsule,
-                tint: dark
-                    ? Colors.white.withValues(alpha: 0.09)
-                    : Colors.black.withValues(alpha: 0.055),
-              ),
-              child: const SizedBox.expand(),
-            ),
-            builder: (context, value, child) {
-              final span = (indicatorTarget - indicatorFrom).abs();
-              final progress = span == 0
-                  ? 1.0
-                  : ((value - indicatorFrom).abs() / span).clamp(0.0, 1.0);
-              final bell = math.sin(math.pi * progress);
-              final width = itemSize * (1 + bell * 0.34);
-              final height = itemSize * (1 - bell * 0.08);
-              return Positioned(
-                left: value * slotExtent - (width - itemSize) / 2,
-                top: (itemSize - height) / 2,
-                width: width,
-                height: height,
-                child: child!,
-              );
-            },
+          _IosLiquidSelectionIndicator(
+            dark: dark,
+            from: indicatorFrom,
+            target: indicatorTarget,
+            position: indicatorPosition,
+            lift: indicatorLift,
+            itemSize: itemSize,
+            slotExtent: slotExtent,
+            restSize: selectionSize,
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               _button(
-                symbol: 'note.text',
+                context: context,
+                symbol: 'doc.text',
                 effectId: 'ios-native-nav-notes',
+                selected: selectedSlot == 0,
                 onPressed: onNotes,
               ),
               SizedBox(width: gap),
               _button(
+                context: context,
                 symbol: 'bell',
                 effectId: 'ios-native-nav-reminders',
+                selected: selectedSlot == 1,
                 onPressed: onReminders,
               ),
               SizedBox(width: gap),
               _button(
+                context: context,
                 symbol: 'trash',
                 effectId: 'ios-native-nav-trash',
+                selected: selectedSlot == 2,
                 onPressed: onTrash,
               ),
               SizedBox(width: gap),
               _button(
+                context: context,
                 symbol: 'magnifyingglass',
                 effectId: 'ios-native-nav-search',
                 onPressed: onSearch,
               ),
               SizedBox(width: gap),
               _button(
-                symbol: expanded ? 'xmark' : 'plus',
+                context: context,
+                symbol: 'plus',
                 effectId: 'ios-native-nav-create',
                 prominent: true,
-                prominentFill: dark
-                    ? Colors.white.withValues(alpha: 0.72)
-                    : const Color(0xd917201f),
+                rotationTurns: expanded ? 0.125 : 0,
+                prominentFill: dark ? Colors.white : const Color(0xff17201f),
                 prominentForeground:
                     dark ? const Color(0xff17201f) : Colors.white,
                 onPressed: onCreate,
@@ -4466,6 +5182,89 @@ class _IosNativeNavButtonGroup extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _IosLiquidSelectionIndicator extends StatelessWidget {
+  const _IosLiquidSelectionIndicator({
+    required this.dark,
+    required this.from,
+    required this.target,
+    required this.position,
+    required this.lift,
+    required this.itemSize,
+    required this.slotExtent,
+    required this.restSize,
+  });
+
+  final bool dark;
+  final double from;
+  final int target;
+  final AnimationController position;
+  final AnimationController lift;
+  final double itemSize;
+  final double slotExtent;
+  final double restSize;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([position, lift]),
+      builder: (context, _) {
+        final value = position.value;
+        final lifted = lift.value.clamp(0.0, 1.0);
+
+        // The glass first rises out of its resting circle, stays lifted for
+        // the spring travel, then lands. The spring's current acceleration is
+        // converted to the same opposing-axis deformation used by the
+        // reference package (capped at 12% for tab-scale motion).
+        final envelope =
+            restSize + _MobileBottomNavState._iosIndicatorGrowSize * lifted;
+        final acceleration =
+            (-280 * (value - target) - 31.4 * position.velocity) * slotExtent;
+        final force = (acceleration.abs() * 0.00007).clamp(0.0, 0.12) * lifted;
+        final direction = (target - from).sign;
+        final deformation = -direction * force;
+        final width = envelope * (1 + deformation);
+        final height = envelope * (1 - deformation);
+        final atTarget =
+            (value - target).abs() < 0.001 && position.velocity.abs() < 0.01;
+        final settledTintOpacity =
+            atTarget ? math.pow(1 - lifted, 2).toDouble().clamp(0.0, 1.0) : 0.0;
+        final settledOverlay = dark
+            ? Colors.white.withValues(alpha: 0.065)
+            : Colors.black.withValues(alpha: 0.08);
+
+        return Positioned(
+          left: value * slotExtent + (itemSize - width) / 2,
+          top: (itemSize - height) / 2,
+          width: width,
+          height: height,
+          child: LiquidGlassContainer(
+            key: const ValueKey('ios-native-nav-selection'),
+            config: LiquidGlassConfig(
+              effect: CNGlassEffect.regular,
+              shape: CNGlassEffectShape.circle,
+            ),
+            // Keep the native glass itself untinted at all times. Updating a
+            // native tint animates inside SwiftUI and can trail the moving
+            // lens; this Flutter overlay is therefore exactly zero in flight
+            // and fades in only while the lens lands at its destination.
+            child: Opacity(
+              key: const ValueKey('ios-native-nav-selection-settled-tint'),
+              opacity: settledTintOpacity,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: settledOverlay,
+                  shape: BoxShape.circle,
+                ),
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -4570,19 +5369,50 @@ class _MobileNavTrashDropButtonState
                             key: const ValueKey(
                               'mobile-nav-trash-icon-scale',
                             ),
-                            scale: 1 + widget.morphProgress * 0.65,
-                            child: Icon(
-                              AppIcons.trash2,
-                              key: const ValueKey(
-                                'mobile-nav-trash-icon-color',
-                              ),
-                              size: 20,
-                              color: Color.lerp(
-                                morphForeground,
-                                scheme.error,
-                                glow,
-                              ),
-                            ),
+                            scale: _usesIosNativeControls
+                                ? 1
+                                : 1 + widget.morphProgress * 0.65,
+                            child: _usesIosNativeControls
+                                ? CNButton.icon(
+                                    key: const ValueKey(
+                                      'ios-native-trash-drop-symbol',
+                                    ),
+                                    icon: CNSymbol(
+                                      'trash',
+                                      size: lerpDouble(
+                                        AppSizes.iosCompactHeaderIcon,
+                                        32,
+                                        widget.morphProgress,
+                                      )!,
+                                      mode: CNSymbolRenderingMode.monochrome,
+                                    ),
+                                    tint: Color.lerp(
+                                      morphForeground,
+                                      scheme.error,
+                                      glow,
+                                    ),
+                                    onPressed: () {},
+                                    config: const CNButtonConfig(
+                                      width: 76,
+                                      minHeight: 76,
+                                      padding: EdgeInsets.all(20),
+                                      style: CNButtonStyle.plain,
+                                      interaction: false,
+                                      glassEffectInteractive: false,
+                                    ),
+                                  )
+                                : Icon(
+                                    AppIcons.trash2,
+                                    key: const ValueKey(
+                                      'mobile-nav-trash-icon-color',
+                                    ),
+                                    size: 20,
+                                    color: Color.lerp(
+                                      morphForeground,
+                                      scheme.error,
+                                      glow,
+                                    ),
+                                  ),
                           ),
                         ),
                       ),
@@ -4621,7 +5451,6 @@ class _IosNativeCreateActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final foreground = theme.colorScheme.onSurface;
-    final dark = theme.brightness == Brightness.dark;
     return Padding(
       padding:
           const EdgeInsets.only(top: _MobileBottomNavState._createMenuInset),
@@ -4632,14 +5461,22 @@ class _IosNativeCreateActions extends StatelessWidget {
             animation: animation,
             builder: (context, child) {
               final value = animation.value;
-              final visibleCount = value < 0.60
-                  ? 0
-                  : value < 0.72
-                      ? 1
-                      : value < 0.84
-                          ? 2
-                          : 3;
-              if (visibleCount == 0) return const SizedBox.expand();
+              // Keep the native glass views mounted even while invisible so
+              // iOS has their material and shadow ready before the pop begins.
+              // Lift them by the shell's missing height so they stay above
+              // the navbar while its shared surface grows upward. Their
+              // native shadows can then fade freely without a clipping edge.
+              final surfaceProgress =
+                  animation.status == AnimationStatus.reverse
+                      ? Curves.easeInCubic.transform(value)
+                      : Curves.easeOutCubic.transform(value);
+              final surfaceHeight = lerpDouble(
+                _MobileBottomNavState._iosNativeBarHeight,
+                _MobileBottomNavState._iosExpandedBarHeight,
+                surfaceProgress,
+              )!;
+              final drawerLift =
+                  _MobileBottomNavState._iosExpandedBarHeight - surfaceHeight;
               final actions = <({
                 String label,
                 String symbol,
@@ -4672,62 +5509,113 @@ class _IosNativeCreateActions extends StatelessWidget {
                   for (var index = 0; index < actions.length; index++) ...[
                     if (index > 0) const SizedBox(width: 6),
                     Expanded(
-                      child: index < visibleCount
-                          ? SizedBox(
-                              height: 64,
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  IgnorePointer(
+                      child: Builder(
+                        builder: (context) {
+                          final start = 0.08 + index * 0.08;
+                          final linearProgress =
+                              ((value - start) / (1 - start)).clamp(0.0, 1.0);
+                          final fadeProgress = Curves.easeOutCubic.transform(
+                            linearProgress,
+                          );
+                          final popProgress = Curves.easeOutBack.transform(
+                            linearProgress,
+                          );
+                          final closing =
+                              animation.status == AnimationStatus.reverse;
+                          final exitDelay = (actions.length - 1 - index) * 0.03;
+                          final exitProgress =
+                              ((1 - value - exitDelay) / 0.48).clamp(0.0, 1.0);
+                          final exitCurve =
+                              Curves.easeOutCubic.transform(exitProgress);
+                          // Stay one compositor alpha step below 1.0 so the
+                          // native platform view keeps the same opacity layer
+                          // at rest; otherwise its shadow changes when Flutter
+                          // removes that layer on the final frame.
+                          final actionOpacity = closing
+                              ? math.min(1 - exitCurve, 0.996)
+                              : math.min(fadeProgress, 0.996);
+                          // Move the native glass view through layout instead
+                          // of applying a paint transform. A transformed
+                          // UiKitView receives a temporary composited shadow
+                          // which iOS drops as soon as the transform becomes
+                          // the identity matrix. The overshooting vertical
+                          // offset retains the staggered pop without that
+                          // final-frame shadow swap or changing text layout.
+                          final actionOffset = closing
+                              ? -drawerLift - 6 * exitCurve
+                              : -drawerLift - 10 * (1 - popProgress);
+                          return SizedBox(
+                            height: 64,
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Positioned(
+                                  key: ValueKey(
+                                    'ios-native-${actions[index].effectId}-pop',
+                                  ),
+                                  top: actionOffset,
+                                  left: 0,
+                                  right: 0,
+                                  height: 64,
+                                  child: Opacity(
+                                    key: ValueKey(
+                                      'ios-native-${actions[index].effectId}-opacity',
+                                    ),
+                                    opacity: actionOpacity,
                                     child: LiquidGlassContainer(
                                       key: ValueKey(
-                                        'ios-native-${actions[index].effectId}-glass',
+                                        'ios-native-${actions[index].effectId}-surface',
                                       ),
                                       config: LiquidGlassConfig(
                                         effect: CNGlassEffect.regular,
                                         shape: CNGlassEffectShape.rect,
                                         cornerRadius: _MobileBottomNavState
                                             ._createActionRadius,
-                                        tint: Colors.white.withValues(
-                                          alpha: dark ? 0.045 : 0.10,
+                                        // The plain CNButton remains fully
+                                        // tappable. Interactive glass reacts
+                                        // to motion with temporary elevation
+                                        // and a shadow that disappears once
+                                        // the card stops moving.
+                                        interactive: false,
+                                      ),
+                                      child: CNButton(
+                                        key: ValueKey(
+                                          'ios-native-${actions[index].effectId}',
+                                        ),
+                                        label: actions[index].label,
+                                        icon: CNSymbol(
+                                          actions[index].symbol,
+                                          size: 13,
+                                          mode:
+                                              CNSymbolRenderingMode.monochrome,
+                                        ),
+                                        tint: foreground,
+                                        onPressed: actions[index].onPressed,
+                                        config: CNButtonConfig(
+                                          width: itemWidth,
+                                          minHeight: 64,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 8,
+                                          ),
+                                          borderRadius: _MobileBottomNavState
+                                              ._createActionRadius,
+                                          imagePadding: 4,
+                                          imagePlacement: CNImagePlacement.top,
+                                          style: CNButtonStyle.plain,
+                                          maxLines: 1,
+                                          labelFontSize: 11.5,
+                                          labelFontWeight: FontWeight.w600,
                                         ),
                                       ),
-                                      child: const SizedBox.expand(),
                                     ),
                                   ),
-                                  CNButton(
-                                    key: ValueKey(
-                                      'ios-native-${actions[index].effectId}',
-                                    ),
-                                    label: actions[index].label,
-                                    icon: CNSymbol(
-                                      actions[index].symbol,
-                                      size: 13,
-                                      mode: CNSymbolRenderingMode.monochrome,
-                                    ),
-                                    tint: foreground,
-                                    onPressed: actions[index].onPressed,
-                                    config: CNButtonConfig(
-                                      width: itemWidth,
-                                      minHeight: 64,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 7,
-                                        vertical: 8,
-                                      ),
-                                      borderRadius: _MobileBottomNavState
-                                          ._createActionRadius,
-                                      imagePadding: 4,
-                                      imagePlacement: CNImagePlacement.top,
-                                      style: CNButtonStyle.plain,
-                                      maxLines: 1,
-                                      labelFontSize: 11.5,
-                                      labelFontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : const SizedBox(height: 64),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ],
                 ],
@@ -4970,6 +5858,7 @@ class _MobileNavSearchField extends StatelessWidget {
     required this.hintText,
     required this.onChanged,
     required this.onClose,
+    this.useNativeSurface = true,
   });
 
   final TextEditingController controller;
@@ -4977,21 +5866,74 @@ class _MobileNavSearchField extends StatelessWidget {
   final String hintText;
   final ValueChanged<String> onChanged;
   final VoidCallback onClose;
+  final bool useNativeSurface;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final nativeSearchControls = _usesIosNativeControls;
+    final searchIcon = nativeSearchControls
+        ? Padding(
+            padding: const EdgeInsets.only(left: 10, right: 2),
+            child: CNButton.icon(
+              key: const ValueKey('ios-native-search-leading-symbol'),
+              icon: const CNSymbol(
+                'magnifyingglass',
+                size: AppSizes.iosCompactHeaderIcon,
+                mode: CNSymbolRenderingMode.monochrome,
+              ),
+              tint: scheme.onSurfaceVariant,
+              onPressed: focusNode.requestFocus,
+              config: const CNButtonConfig(
+                width: 44,
+                minHeight: 44,
+                padding: EdgeInsets.all(13.5),
+                style: CNButtonStyle.plain,
+                glassEffectInteractive: false,
+              ),
+            ),
+          )
+        : Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            child: Icon(
+              AppIcons.search,
+              size: 18,
+              color: scheme.onSurfaceVariant,
+            ),
+          );
+    final closeButton = nativeSearchControls
+        ? Padding(
+            padding: const EdgeInsets.only(left: 2, right: 10),
+            child: CNButton.icon(
+              key: const ValueKey('mobile-nav-search-close'),
+              icon: const CNSymbol(
+                'xmark',
+                size: AppSizes.iosCompactHeaderIcon,
+                mode: CNSymbolRenderingMode.monochrome,
+              ),
+              tint: scheme.onSurface,
+              onPressed: onClose,
+              config: const CNButtonConfig(
+                width: 44,
+                minHeight: 44,
+                padding: EdgeInsets.all(13.5),
+                style: CNButtonStyle.plain,
+                glassEffectInteractive: false,
+              ),
+            ),
+          )
+        : IconButton(
+            key: const ValueKey('mobile-nav-search-close'),
+            tooltip: AppL10n(Localizations.localeOf(context).languageCode).t(
+              'close',
+            ),
+            onPressed: onClose,
+            icon: const Icon(AppIcons.x, size: 17),
+          );
     final content = Row(
       key: const ValueKey('mobile-nav-search-field'),
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 15),
-          child: Icon(
-            AppIcons.search,
-            size: 18,
-            color: scheme.onSurfaceVariant,
-          ),
-        ),
+        searchIcon,
         Expanded(
           child: TextField(
             key: const ValueKey('mobile-nav-search-input'),
@@ -5015,17 +5957,11 @@ class _MobileNavSearchField extends StatelessWidget {
             ),
           ),
         ),
-        IconButton(
-          key: const ValueKey('mobile-nav-search-close'),
-          tooltip:
-              AppL10n(Localizations.localeOf(context).languageCode).t('close'),
-          onPressed: onClose,
-          icon: const Icon(AppIcons.x, size: 17),
-        ),
-        const SizedBox(width: 3),
+        closeButton,
+        if (!nativeSearchControls) const SizedBox(width: 3),
       ],
     );
-    if (_usesIosNativeControls) {
+    if (_usesIosNativeControls && useNativeSurface) {
       return LiquidGlassContainer(
         key: const ValueKey('ios-native-nav-search-surface'),
         config: LiquidGlassConfig(
@@ -5883,12 +6819,6 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
               decoration: ShapeDecoration(
                 shape: cardShape,
                 shadows: [
-                  if (widget.selected)
-                    BoxShadow(
-                      color: scheme.primary.withValues(alpha: 0.34),
-                      blurRadius: 0,
-                      spreadRadius: 2,
-                    ),
                   BoxShadow(
                     color: design.glassShadow,
                     blurRadius: _hovered
@@ -5911,191 +6841,207 @@ class _KeepNoteCardState extends State<_KeepNoteCard> {
                   ),
                 ],
               ),
-              child: _DesktopNoteBackdrop(
-                noteId: note.localId,
-                enabled: desktop,
-                shape: cardShape,
-                child: Material(
-                  color: bg,
-                  elevation: 0,
-                  shape: cardShape,
-                  clipBehavior: Clip.antiAlias,
-                  child: Ink(
-                    decoration: ShapeDecoration(
-                      gradient: brandNoteGradient(context, note.color),
-                      shape: cardShape,
+              child: DecoratedBox(
+                key: ValueKey('note-card-selection-outline-${note.localId}'),
+                position: DecorationPosition.foreground,
+                decoration: ShapeDecoration(
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(cardCornerRadius),
+                    side: BorderSide(
+                      color: widget.selected
+                          ? scheme.primary.withValues(alpha: 0.78)
+                          : Colors.transparent,
+                      width: widget.selected ? 2 : 0,
                     ),
-                    child: InkWell(
-                      onTap: widget.onTap,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: compact ? 136 : 168,
-                        ),
-                        child: Padding(
-                          key: ValueKey('note-card-content-${note.localId}'),
-                          padding: EdgeInsets.fromLTRB(
-                            compact ? 14 : 20,
-                            compact ? 12 : 18,
-                            compact ? 14 : 20,
-                            compact ? 14 : 20,
+                  ),
+                ),
+                child: _DesktopNoteBackdrop(
+                  noteId: note.localId,
+                  enabled: desktop,
+                  shape: cardShape,
+                  child: Material(
+                    color: bg,
+                    elevation: 0,
+                    shape: cardShape,
+                    clipBehavior: Clip.antiAlias,
+                    child: Ink(
+                      decoration: ShapeDecoration(
+                        gradient: brandNoteGradient(context, note.color),
+                        shape: cardShape,
+                      ),
+                      child: InkWell(
+                        onTap: widget.onTap,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: compact ? 136 : 168,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: displayTitle.isEmpty
-                                        ? const SizedBox.shrink()
-                                        : Padding(
-                                            padding: EdgeInsets.only(
-                                              top: compact ? 3 : 6,
-                                              right: compact ? 6 : 8,
+                          child: Padding(
+                            key: ValueKey('note-card-content-${note.localId}'),
+                            padding: EdgeInsets.fromLTRB(
+                              compact ? 14 : 20,
+                              compact ? 12 : 18,
+                              compact ? 14 : 20,
+                              compact ? 14 : 20,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: displayTitle.isEmpty
+                                          ? const SizedBox.shrink()
+                                          : Padding(
+                                              padding: EdgeInsets.only(
+                                                top: compact ? 3 : 6,
+                                                right: compact ? 6 : 8,
+                                              ),
+                                              child: Text(
+                                                displayTitle,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleLarge
+                                                    ?.copyWith(height: 1.15),
+                                              ),
                                             ),
-                                            child: Text(
-                                              displayTitle,
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .titleLarge
-                                                  ?.copyWith(height: 1.15),
+                                    ),
+                                    IgnorePointer(
+                                      ignoring: widget.selectionActive,
+                                      child: _NoteFavoriteButton(
+                                        noteId: note.localId,
+                                        tooltip: note.pinned
+                                            ? l10n.t('unpin')
+                                            : l10n.t('pin'),
+                                        icon: note.pinned
+                                            ? AppIcons.heartFill
+                                            : AppIcons.heart,
+                                        selected: note.pinned,
+                                        size: compact
+                                            ? AppSizes.favoriteButtonCompact
+                                            : AppSizes.favoriteButton,
+                                        iconSize: compact ? 17 : 19,
+                                        enableBlur: !compact,
+                                        onPressed: widget.onTogglePin,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                SizedBox(height: compact ? 8 : 12),
+                                if (note.labels.isNotEmpty) ...[
+                                  _NoteLabelChips(labels: note.labels),
+                                  SizedBox(height: compact ? 8 : 12),
+                                ],
+                                note.checklist.isNotEmpty &&
+                                        note.body.trim().isEmpty
+                                    ? _ChecklistPreview(items: note.checklist)
+                                    : _FormattedPreview(
+                                        text: note.body,
+                                        delta: note.richTextDelta,
+                                      ),
+                                if (showFooter) ...[
+                                  SizedBox(height: compact ? 10 : 16),
+                                  SizedBox(
+                                    height: compact ? 30 : 36,
+                                    child: Row(
+                                      children: [
+                                        if (note.checklist.isNotEmpty)
+                                          _MetaPill(
+                                            icon: AppIcons.squareCheck,
+                                            label:
+                                                '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
+                                          ),
+                                        if (note.conflicted)
+                                          _MetaPill(
+                                            icon: AppIcons.circleAlert,
+                                            label: l10n.t('conflict'),
+                                            color: scheme.error,
+                                          ),
+                                        if (showSyncedStatus)
+                                          _MetaPill(
+                                            icon: AppIcons.cloudUpload,
+                                            label: l10n.t('synced'),
+                                            color: scheme.tertiary,
+                                          ),
+                                        if (note.reminderAt != null)
+                                          _MetaPill(
+                                            icon: AppIcons.bell,
+                                            label: _formatReminder(
+                                                note.reminderAt!, l10n),
+                                            color: scheme.primary,
+                                          ),
+                                        if (note.shared)
+                                          _MetaPill(
+                                            icon: AppIcons.users,
+                                            label: l10n.t('shared'),
+                                            color: scheme.primary,
+                                          ),
+                                        const Spacer(),
+                                        if (showHoverActions)
+                                          Visibility(
+                                            visible: _hovered &&
+                                                !widget.selectionActive,
+                                            maintainAnimation: true,
+                                            maintainState: true,
+                                            maintainSize: true,
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                if (note.state != 'active')
+                                                  AppIconButton(
+                                                    tooltip: l10n.t('restore'),
+                                                    icon: AppIcons.rotateCcw,
+                                                    onPressed: widget.onRestore,
+                                                  ),
+                                                if (note.state == 'active')
+                                                  AppIconButton(
+                                                    tooltip:
+                                                        l10n.t('archiveAction'),
+                                                    icon: AppIcons.archive,
+                                                    onPressed: widget.onArchive,
+                                                  ),
+                                                if (note.state == 'active' &&
+                                                    note.reminderAt == null)
+                                                  AppIconButton(
+                                                    tooltip: l10n.t(
+                                                        'collaboratorInvite'),
+                                                    icon: note.shared
+                                                        ? AppIcons.users
+                                                        : AppIcons.userPlus,
+                                                    onPressed: widget.onInvite,
+                                                  ),
+                                                if (note.state != 'trashed')
+                                                  AppIconButton(
+                                                    tooltip: l10n.t('reminder'),
+                                                    icon: AppIcons.bell,
+                                                    onPressed:
+                                                        widget.onReminder,
+                                                  ),
+                                                if (note.state != 'trashed')
+                                                  AppIconButton(
+                                                    tooltip: l10n.t('trash'),
+                                                    icon: AppIcons.trash,
+                                                    onPressed: widget.onTrash,
+                                                  )
+                                                else
+                                                  AppIconButton(
+                                                    tooltip:
+                                                        l10n.t('deleteForever'),
+                                                    icon: AppIcons.trash2,
+                                                    onPressed:
+                                                        widget.onDeleteForever,
+                                                  ),
+                                              ],
                                             ),
                                           ),
-                                  ),
-                                  IgnorePointer(
-                                    ignoring: widget.selectionActive,
-                                    child: _NoteFavoriteButton(
-                                      noteId: note.localId,
-                                      tooltip: note.pinned
-                                          ? l10n.t('unpin')
-                                          : l10n.t('pin'),
-                                      icon: note.pinned
-                                          ? AppIcons.heartFill
-                                          : AppIcons.heart,
-                                      selected: note.pinned,
-                                      size: compact
-                                          ? AppSizes.favoriteButtonCompact
-                                          : AppSizes.favoriteButton,
-                                      iconSize: compact ? 17 : 19,
-                                      enableBlur: !compact,
-                                      onPressed: widget.onTogglePin,
+                                      ],
                                     ),
                                   ),
                                 ],
-                              ),
-                              SizedBox(height: compact ? 8 : 12),
-                              if (note.labels.isNotEmpty) ...[
-                                _NoteLabelChips(labels: note.labels),
-                                SizedBox(height: compact ? 8 : 12),
                               ],
-                              note.checklist.isNotEmpty &&
-                                      note.body.trim().isEmpty
-                                  ? _ChecklistPreview(items: note.checklist)
-                                  : _FormattedPreview(
-                                      text: note.body,
-                                      delta: note.richTextDelta,
-                                    ),
-                              if (showFooter) ...[
-                                SizedBox(height: compact ? 10 : 16),
-                                SizedBox(
-                                  height: compact ? 30 : 36,
-                                  child: Row(
-                                    children: [
-                                      if (note.checklist.isNotEmpty)
-                                        _MetaPill(
-                                          icon: AppIcons.squareCheck,
-                                          label:
-                                              '${note.checklist.where((item) => item.done).length}/${note.checklist.length}',
-                                        ),
-                                      if (note.conflicted)
-                                        _MetaPill(
-                                          icon: AppIcons.circleAlert,
-                                          label: l10n.t('conflict'),
-                                          color: scheme.error,
-                                        ),
-                                      if (showSyncedStatus)
-                                        _MetaPill(
-                                          icon: AppIcons.cloudUpload,
-                                          label: l10n.t('synced'),
-                                          color: scheme.tertiary,
-                                        ),
-                                      if (note.reminderAt != null)
-                                        _MetaPill(
-                                          icon: AppIcons.bell,
-                                          label: _formatReminder(
-                                              note.reminderAt!, l10n),
-                                          color: scheme.primary,
-                                        ),
-                                      if (note.shared)
-                                        _MetaPill(
-                                          icon: AppIcons.users,
-                                          label: l10n.t('shared'),
-                                          color: scheme.primary,
-                                        ),
-                                      const Spacer(),
-                                      if (showHoverActions)
-                                        Visibility(
-                                          visible: _hovered &&
-                                              !widget.selectionActive,
-                                          maintainAnimation: true,
-                                          maintainState: true,
-                                          maintainSize: true,
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              if (note.state != 'active')
-                                                AppIconButton(
-                                                  tooltip: l10n.t('restore'),
-                                                  icon: AppIcons.rotateCcw,
-                                                  onPressed: widget.onRestore,
-                                                ),
-                                              if (note.state == 'active')
-                                                AppIconButton(
-                                                  tooltip:
-                                                      l10n.t('archiveAction'),
-                                                  icon: AppIcons.archive,
-                                                  onPressed: widget.onArchive,
-                                                ),
-                                              if (note.state == 'active' &&
-                                                  note.reminderAt == null)
-                                                AppIconButton(
-                                                  tooltip: l10n
-                                                      .t('collaboratorInvite'),
-                                                  icon: note.shared
-                                                      ? AppIcons.users
-                                                      : AppIcons.userPlus,
-                                                  onPressed: widget.onInvite,
-                                                ),
-                                              if (note.state != 'trashed')
-                                                AppIconButton(
-                                                  tooltip: l10n.t('reminder'),
-                                                  icon: AppIcons.bell,
-                                                  onPressed: widget.onReminder,
-                                                ),
-                                              if (note.state != 'trashed')
-                                                AppIconButton(
-                                                  tooltip: l10n.t('trash'),
-                                                  icon: AppIcons.trash,
-                                                  onPressed: widget.onTrash,
-                                                )
-                                              else
-                                                AppIconButton(
-                                                  tooltip:
-                                                      l10n.t('deleteForever'),
-                                                  icon: AppIcons.trash2,
-                                                  onPressed:
-                                                      widget.onDeleteForever,
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ],
+                            ),
                           ),
                         ),
                       ),
@@ -6299,7 +7245,7 @@ class _MeasuredNoteDraggable extends StatefulWidget {
     required this.note,
     required this.trashHovering,
     required this.onDragStarted,
-    required this.onDragUpdate,
+    this.onDragUpdate,
     required this.onDragEnded,
     required this.dragEnabled,
     required this.onLongPressSelect,
@@ -6310,7 +7256,7 @@ class _MeasuredNoteDraggable extends StatefulWidget {
   final PlainNote note;
   final ValueListenable<bool> trashHovering;
   final VoidCallback onDragStarted;
-  final ValueChanged<Offset> onDragUpdate;
+  final ValueChanged<Offset>? onDragUpdate;
   final VoidCallback onDragEnded;
   final bool dragEnabled;
   final VoidCallback onLongPressSelect;
@@ -6398,7 +7344,7 @@ class _MeasuredNoteDraggableState extends State<_MeasuredNoteDraggable> {
       if (mounted) setState(() {});
       widget.onDragStarted();
     }
-    if (_dragStarted) widget.onDragUpdate(position);
+    if (_dragStarted) widget.onDragUpdate?.call(position);
   }
 
   void _handleDragStarted() {

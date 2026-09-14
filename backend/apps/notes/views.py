@@ -375,14 +375,50 @@ class ShareInvitationViewSet(viewsets.ModelViewSet):
 
     @decorators.action(detail=True, methods=["post"])
     def decide(self, request, pk=None):
-        invitation = self.get_object()
-        if invitation.recipient_user != request.user:
-            raise exceptions.PermissionDenied("Only invitation recipients can accept or decline.")
-        if invitation.status != ShareInvitationStatus.PENDING:
-            raise exceptions.ValidationError("Invitation is no longer pending.")
         serializer = ShareInvitationDecisionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         decision = serializer.validated_data["decision"]
+        with transaction.atomic():
+            invitation = get_object_or_404(self.get_queryset().select_for_update(), pk=pk)
+            if invitation.recipient_user != request.user:
+                raise exceptions.PermissionDenied(
+                    "Only invitation recipients can accept or decline."
+                )
+            return self._decide_locked(request, invitation, decision)
+
+    def _decide_locked(self, request, invitation, decision):
+        # Mobile clients can safely retry after a response is lost or times out.
+        # Returning the existing result avoids the confusing situation where the
+        # note appears during the next sync after the retry reported an error.
+        if invitation.status == ShareInvitationStatus.ACCEPTED and decision == "accept":
+            grant = (
+                NoteKeyGrant.objects.filter(
+                    note=invitation.note,
+                    recipient_user=invitation.recipient_user,
+                    revoked_at__isnull=True,
+                )
+                .order_by("-updated_at")
+                .first()
+            )
+            if grant is None:
+                raise exceptions.ValidationError(
+                    "The accepted invitation no longer has an active grant."
+                )
+            return response.Response(
+                {
+                    "invitation": ShareInvitationSerializer(
+                        invitation, context={"request": request}
+                    ).data,
+                    "grant": NoteKeyGrantSerializer(grant, context={"request": request}).data,
+                }
+            )
+        if invitation.status == ShareInvitationStatus.DECLINED and decision == "decline":
+            return response.Response(
+                ShareInvitationSerializer(invitation, context={"request": request}).data
+            )
+        if invitation.status != ShareInvitationStatus.PENDING:
+            raise exceptions.ValidationError("Invitation is no longer pending.")
+
         if decision == "decline":
             invitation.status = ShareInvitationStatus.DECLINED
             invitation.declined_at = timezone.now()

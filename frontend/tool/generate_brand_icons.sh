@@ -81,8 +81,10 @@ done
 # iOS/iPadOS use one high-resolution source per light, dark, and tinted
 # appearance. Xcode creates the device-specific sizes at build time.
 ios_icons="$frontend_dir/ios/Runner/Assets.xcassets/AppIcon.appiconset"
-render_opaque_png "$app_icon_light_source" 1024 "$ios_icons/Icon-App-1024x1024-light.png"
-render_square "$app_icon_source" 1024 "$ios_icons/Icon-App-1024x1024-dark.png"
+# iOS applies its own rounded-rectangle mask. Use full-bleed artwork here so
+# no baked-in white corners or a second circular mask remain visible.
+render_opaque_png "$maskable_icon_source" 1024 "$ios_icons/Icon-App-1024x1024-light.png"
+render_opaque_png "$maskable_icon_source" 1024 "$ios_icons/Icon-App-1024x1024-dark.png"
 render_square "$app_icon_tinted_source" 1024 "$ios_icons/Icon-App-1024x1024-tinted.png"
 
 # Store listing artwork derived from the same brand sources.

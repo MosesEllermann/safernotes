@@ -299,6 +299,8 @@ jobs:
 
           rsync -az --delete --exclude '.htaccess' --exclude '.well-known/' -e "ssh -p ${SPANEL_PORT:-22} -i ~/.ssh/spanel_deploy_key" website/ "$SPANEL_USER@$SPANEL_HOST:$SPANEL_LANDING_PATH/"
           rsync -az --delete --exclude '.htaccess' --exclude '.well-known/' -e "ssh -p ${SPANEL_PORT:-22} -i ~/.ssh/spanel_deploy_key" frontend/build/web/ "$SPANEL_USER@$SPANEL_HOST:$SPANEL_APP_PATH/"
+          ssh -p "${SPANEL_PORT:-22}" -i ~/.ssh/spanel_deploy_key "$SPANEL_USER@$SPANEL_HOST" "mkdir -p '$SPANEL_APP_PATH/.well-known'"
+          rsync -az -e "ssh -p ${SPANEL_PORT:-22} -i ~/.ssh/spanel_deploy_key" frontend/web/.well-known/assetlinks.json "$SPANEL_USER@$SPANEL_HOST:$SPANEL_APP_PATH/.well-known/assetlinks.json"
 
       - name: Deploy backend to Ubuntu host
         env:
@@ -384,6 +386,7 @@ jobs:
           curl -fsS https://safernotes.com/ | grep -q 'Safernotes'
           curl -fsS https://safernotes.com/downloads.html | grep -q 'Downloads'
           curl -fsSI https://safernotes.com/downloads/safernotes-android.apk
+          curl -fsS https://app.safernotes.com/.well-known/assetlinks.json | grep -q 'at.ecrumedia.safernotes'
 
   deploy-disabled:
     if: ${{ github.event_name != 'pull_request' && vars.ENABLE_PRODUCTION_DEPLOY != 'true' }}

@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:safernotes_app/shared/theme/app_icons.dart';
@@ -153,6 +154,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   Future<void> _submit() async {
+    if (_submitBusy ||
+        _recoveryBusy ||
+        ref.read(authControllerProvider).isLoading) {
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     setState(() {
       _submitBusy = true;
@@ -453,216 +459,240 @@ class _AuthPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final design = context.safernotesTheme;
+
+    void submitOrAdvance(String _) {
+      if (busy) return;
+      if (formKey.currentState?.validate() ?? false) {
+        onSubmit();
+      } else {
+        FocusScope.of(context).nextFocus();
+      }
+    }
+
     return Form(
       key: formKey,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(AppRadii.card),
-          boxShadow: [
-            BoxShadow(
-              color: design.glassShadow,
-              blurRadius: 34,
-              offset: const Offset(0, 18),
-            ),
-          ],
-        ),
-        child: _FrostedCard(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(28, 28, 28, 30),
-            child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (showBrand) ...[
-                Row(
-                  children: [
-                    const SafernotesLogo(size: 34),
-                    const SizedBox(width: 10),
-                    Text(
-                      l10n.t('appName'),
-                      style: Theme.of(context).textTheme.titleLarge,
+      child: AutofillGroup(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadii.card),
+            boxShadow: [
+              BoxShadow(
+                color: design.glassShadow,
+                blurRadius: 34,
+                offset: const Offset(0, 18),
+              ),
+            ],
+          ),
+          child: _FrostedCard(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(28, 28, 28, 30),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (showBrand) ...[
+                    Row(
+                      children: [
+                        const SafernotesLogo(size: 34),
+                        const SizedBox(width: 10),
+                        Text(
+                          l10n.t('appName'),
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+                  ],
+                  Row(
+                    children: [
+                      _AuthMark(icon: modeIcon),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: Theme.of(context).textTheme.headlineMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  if (!recovering && showModeSwitch) ...[
+                    _AuthModeSwitch(
+                      loginLabel: l10n.t('login'),
+                      registerLabel: l10n.t('register'),
+                      registering: registering,
+                      disabled: busy,
+                      onChanged: onModeChanged,
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                  _AuthTextField(
+                    controller: email,
+                    label: l10n.t('email'),
+                    icon: AppIcons.atSign,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    onFieldSubmitted: busy ? null : submitOrAdvance,
+                    autofillHints: registering
+                        ? const [AutofillHints.newUsername, AutofillHints.email]
+                        : const [AutofillHints.username, AutofillHints.email],
+                    validator: (value) {
+                      final text = value?.trim() ?? '';
+                      if (!text.contains('@')) return l10n.t('invalidEmail');
+                      return null;
+                    },
+                  ),
+                  if (!recovering) ...[
+                    const SizedBox(height: 12),
+                    _AuthTextField(
+                      controller: password,
+                      label: l10n.t('password'),
+                      icon: AppIcons.keyRound,
+                      obscureText: obscure,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: registering
+                          ? const [AutofillHints.newPassword]
+                          : const [AutofillHints.password],
+                      onFieldSubmitted: busy ? null : (_) => onSubmit(),
+                      suffix: _PasswordVisibilityButton(
+                        l10n: l10n,
+                        obscure: obscure,
+                        onPressed: onTogglePassword,
+                      ),
+                      validator: (value) {
+                        final text = value ?? '';
+                        if (registering && text.length < 8) {
+                          return l10n.t('passwordMin');
+                        }
+                        if (!registering && text.isEmpty) {
+                          return l10n.t('enterPassword');
+                        }
+                        return null;
+                      },
                     ),
                   ],
-                ),
-                const SizedBox(height: 30),
-              ],
-              Row(
-                children: [
-                  _AuthMark(icon: modeIcon),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.headlineMedium,
+                  if (registering) ...[
+                    const SizedBox(height: 12),
+                    _AuthTextField(
+                      controller: workspace,
+                      label: l10n.t('workspace'),
+                      icon: AppIcons.folderLock,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: busy ? null : (_) => onSubmit(),
+                      validator: (value) {
+                        if ((value ?? '').trim().isEmpty) {
+                          return l10n.t('nameWorkspace');
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                  if (recovering && recoveryRequested) ...[
+                    const SizedBox(height: 12),
+                    _AuthTextField(
+                      controller: code,
+                      label: l10n.t('recoveryCode'),
+                      icon: AppIcons.mailCheck,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.next,
+                      validator: (value) {
+                        if ((value ?? '').trim().length < 6) {
+                          return l10n.t('enterRecoveryCode');
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _AuthTextField(
+                      controller: recoveryKey,
+                      label: l10n.t('recoveryKey'),
+                      icon: AppIcons.keySquare,
+                      textInputAction: TextInputAction.next,
+                      validator: (value) {
+                        if ((value ?? '').trim().isEmpty) {
+                          return l10n.t('enterRecoveryKey');
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _AuthTextField(
+                      controller: newPassword,
+                      label: l10n.t('newPassword'),
+                      icon: AppIcons.keyRound,
+                      obscureText: obscure,
+                      textInputAction: TextInputAction.done,
+                      autofillHints: const [AutofillHints.newPassword],
+                      onFieldSubmitted: busy ? null : (_) => onSubmit(),
+                      suffix: _PasswordVisibilityButton(
+                        l10n: l10n,
+                        obscure: obscure,
+                        onPressed: onTogglePassword,
+                      ),
+                      validator: (value) {
+                        if ((value ?? '').length < 8) {
+                          return l10n.t('passwordMin');
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                  if (error != null) ...[
+                    const SizedBox(height: 14),
+                    _AuthError(message: error!),
+                  ],
+                  const SizedBox(height: 20),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: FilledButton.icon(
+                      key: ValueKey(busy),
+                      onPressed: busy ? null : onSubmit,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(56),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadii.xl),
+                        ),
+                      ),
+                      icon: busy
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(actionIcon),
+                      label: Text(actionLabel),
                     ),
                   ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    child: busy
+                        ? Padding(
+                            key: const ValueKey('auth-progress'),
+                            padding: const EdgeInsets.only(top: 12),
+                            child: ClipRRect(
+                              borderRadius:
+                                  BorderRadius.circular(AppRadii.pill),
+                              child:
+                                  const LinearProgressIndicator(minHeight: 3),
+                            ),
+                          )
+                        : const SizedBox.shrink(key: ValueKey('auth-idle')),
+                  ),
+                  if (!registering) ...[
+                    const SizedBox(height: 10),
+                    TextButton.icon(
+                      onPressed: busy ? null : onToggleRecovery,
+                      icon: Icon(
+                        recovering ? AppIcons.arrowLeft : AppIcons.circleHelp,
+                      ),
+                      label: Text(
+                        recovering
+                            ? l10n.t('backToLogin')
+                            : l10n.t('forgotPassword'),
+                      ),
+                    ),
+                  ],
                 ],
               ),
-              const SizedBox(height: 24),
-              if (!recovering && showModeSwitch) ...[
-                _AuthModeSwitch(
-                  loginLabel: l10n.t('login'),
-                  registerLabel: l10n.t('register'),
-                  registering: registering,
-                  disabled: busy,
-                  onChanged: onModeChanged,
-                ),
-                const SizedBox(height: 20),
-              ],
-              _AuthTextField(
-                controller: email,
-                label: l10n.t('email'),
-                icon: AppIcons.atSign,
-                keyboardType: TextInputType.emailAddress,
-                textInputAction: TextInputAction.next,
-                validator: (value) {
-                  final text = value?.trim() ?? '';
-                  if (!text.contains('@')) return l10n.t('invalidEmail');
-                  return null;
-                },
-              ),
-              if (!recovering) ...[
-                const SizedBox(height: 12),
-                _AuthTextField(
-                  controller: password,
-                  label: l10n.t('password'),
-                  icon: AppIcons.keyRound,
-                  obscureText: obscure,
-                  textInputAction:
-                      registering ? TextInputAction.next : TextInputAction.done,
-                  suffix: _PasswordVisibilityButton(
-                    l10n: l10n,
-                    obscure: obscure,
-                    onPressed: onTogglePassword,
-                  ),
-                  validator: (value) {
-                    final text = value ?? '';
-                    if (registering && text.length < 8) {
-                      return l10n.t('passwordMin');
-                    }
-                    if (!registering && text.isEmpty) {
-                      return l10n.t('enterPassword');
-                    }
-                    return null;
-                  },
-                ),
-              ],
-              if (registering) ...[
-                const SizedBox(height: 12),
-                _AuthTextField(
-                  controller: workspace,
-                  label: l10n.t('workspace'),
-                  icon: AppIcons.folderLock,
-                  textInputAction: TextInputAction.done,
-                  validator: (value) {
-                    if ((value ?? '').trim().isEmpty) {
-                      return l10n.t('nameWorkspace');
-                    }
-                    return null;
-                  },
-                ),
-              ],
-              if (recovering && recoveryRequested) ...[
-                const SizedBox(height: 12),
-                _AuthTextField(
-                  controller: code,
-                  label: l10n.t('recoveryCode'),
-                  icon: AppIcons.mailCheck,
-                  keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.next,
-                  validator: (value) {
-                    if ((value ?? '').trim().length < 6) {
-                      return l10n.t('enterRecoveryCode');
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-                _AuthTextField(
-                  controller: recoveryKey,
-                  label: l10n.t('recoveryKey'),
-                  icon: AppIcons.keySquare,
-                  textInputAction: TextInputAction.next,
-                  validator: (value) {
-                    if ((value ?? '').trim().isEmpty) {
-                      return l10n.t('enterRecoveryKey');
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-                _AuthTextField(
-                  controller: newPassword,
-                  label: l10n.t('newPassword'),
-                  icon: AppIcons.keyRound,
-                  obscureText: obscure,
-                  textInputAction: TextInputAction.done,
-                  suffix: _PasswordVisibilityButton(
-                    l10n: l10n,
-                    obscure: obscure,
-                    onPressed: onTogglePassword,
-                  ),
-                  validator: (value) {
-                    if ((value ?? '').length < 8) {
-                      return l10n.t('passwordMin');
-                    }
-                    return null;
-                  },
-                ),
-              ],
-              if (error != null) ...[
-                const SizedBox(height: 14),
-                _AuthError(message: error!),
-              ],
-              const SizedBox(height: 20),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: FilledButton.icon(
-                  key: ValueKey(busy),
-                  onPressed: busy ? null : onSubmit,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(56),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppRadii.xl),
-                    ),
-                  ),
-                  icon: busy
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(actionIcon),
-                  label: Text(actionLabel),
-                ),
-              ),
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: busy
-                    ? Padding(
-                        key: const ValueKey('auth-progress'),
-                        padding: const EdgeInsets.only(top: 12),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(AppRadii.pill),
-                          child: const LinearProgressIndicator(minHeight: 3),
-                        ),
-                      )
-                    : const SizedBox.shrink(key: ValueKey('auth-idle')),
-              ),
-              if (!registering) ...[
-                const SizedBox(height: 10),
-                TextButton.icon(
-                  onPressed: busy ? null : onToggleRecovery,
-                  icon: Icon(
-                    recovering ? AppIcons.arrowLeft : AppIcons.circleHelp,
-                  ),
-                  label: Text(
-                    recovering
-                        ? l10n.t('backToLogin')
-                        : l10n.t('forgotPassword'),
-                  ),
-                ),
-              ],
-            ],
             ),
           ),
         ),
@@ -852,6 +882,8 @@ class _AuthTextField extends StatelessWidget {
     required this.icon,
     this.keyboardType,
     this.textInputAction,
+    this.autofillHints,
+    this.onFieldSubmitted,
     this.obscureText = false,
     this.suffix,
     this.validator,
@@ -862,6 +894,8 @@ class _AuthTextField extends StatelessWidget {
   final IconData icon;
   final TextInputType? keyboardType;
   final TextInputAction? textInputAction;
+  final Iterable<String>? autofillHints;
+  final ValueChanged<String>? onFieldSubmitted;
   final bool obscureText;
   final Widget? suffix;
   final FormFieldValidator<String>? validator;
@@ -882,6 +916,8 @@ class _AuthTextField extends StatelessWidget {
       controller: controller,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
+      autofillHints: autofillHints,
+      onFieldSubmitted: onFieldSubmitted,
       obscureText: obscureText,
       validator: validator,
       decoration: InputDecoration(
@@ -989,7 +1025,6 @@ class _AuthError extends StatelessWidget {
   }
 }
 
-
 /// Frosted container used by the auth panels.
 class _FrostedCard extends StatelessWidget {
   const _FrostedCard({required this.child});
@@ -1000,19 +1035,22 @@ class _FrostedCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final design = context.safernotesTheme;
     final radius = BorderRadius.circular(AppRadii.card);
+    final surface = DecoratedBox(
+      decoration: BoxDecoration(
+        color: design.glassFill,
+        borderRadius: radius,
+        border: Border.all(color: design.glassStroke),
+      ),
+      child: child,
+    );
     return ClipRRect(
       borderRadius: radius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: design.glassFill,
-            borderRadius: radius,
-            border: Border.all(color: design.glassStroke),
-          ),
-          child: child,
-        ),
-      ),
+      child: !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+          ? surface
+          : BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+              child: surface,
+            ),
     );
   }
 }

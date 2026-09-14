@@ -219,6 +219,11 @@ Jobs erfolgreich waren:
 8. API, SMTP und Downloads pruefen
 
 Die SPanel-Deploys schuetzen vorhandene `.htaccess`- und `.well-known/`-Dateien, damit SSL-Erneuerungen und Panel-Regeln nicht durch `rsync --delete` entfernt werden.
+Die Android-App-Verknuepfung wird separat als
+`app.safernotes.com/.well-known/assetlinks.json` ausgerollt und nach dem Deploy
+geprueft. Wenn die APK kuenftig ueber Google Play mit Play App Signing verteilt
+wird, muss der SHA-256-Fingerabdruck des App-Signing-Zertifikats aus der Play
+Console zusaetzlich in dieser Datei eingetragen werden.
 
 ## 9. Backups
 

@@ -32,6 +32,30 @@ void main() {
     expect(unlocked, material.masterKey);
   });
 
+  test('local vault recovery keys are deterministic and account scoped',
+      () async {
+    final crypto = CryptoService();
+    final masterKey = List<int>.generate(32, (index) => index);
+
+    final first = await crypto.deriveLocalVaultRecoveryKey(
+      masterKey: masterKey,
+      accountScope: 'owner@example.test:personal',
+    );
+    final repeated = await crypto.deriveLocalVaultRecoveryKey(
+      masterKey: masterKey,
+      accountScope: 'owner@example.test:personal',
+    );
+    final otherTenant = await crypto.deriveLocalVaultRecoveryKey(
+      masterKey: masterKey,
+      accountScope: 'owner@example.test:work',
+    );
+
+    expect(first, repeated);
+    expect(first, hasLength(32));
+    expect(first, isNot(otherTenant));
+    expect(first, isNot(masterKey));
+  });
+
   test('recovery-key rotation wraps the same master key with a new local key',
       () async {
     final crypto = CryptoService();

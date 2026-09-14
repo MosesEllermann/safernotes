@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
@@ -22,26 +23,47 @@ final presenceProvider =
 
 enum SyncStatus { saved, saving, syncing, offline, conflict }
 
-class NotesController extends AsyncNotifier<List<PlainNote>> {
+class NotesController extends AsyncNotifier<List<PlainNote>>
+    with WidgetsBindingObserver {
+  static const _automaticSyncInterval = Duration(seconds: 8);
+  static const _maximumAutomaticSyncBackoff = Duration(minutes: 2);
+
   final _uuid = const Uuid();
   Timer? _syncTimer;
   Timer? _debounce;
   Future<void> _saveQueue = Future.value();
+  final List<_PendingDraftSave> _pendingDraftSaves = [];
+  bool _saveDrainActive = false;
   Future<void>? _syncFuture;
   bool _syncRequested = false;
   bool _pullAfterPushRequested = false;
+  int _consecutiveSyncFailures = 0;
+  DateTime? _automaticSyncBlockedUntil;
 
   @override
   Future<List<PlainNote>> build() async {
+    final binding = WidgetsFlutterBinding.ensureInitialized();
+    binding.addObserver(this);
     ref.onDispose(() {
+      binding.removeObserver(this);
       _syncTimer?.cancel();
       _debounce?.cancel();
     });
-    _syncTimer = Timer.periodic(
-        const Duration(seconds: 8), (_) => syncNow(pullAfterPush: true));
+    _syncTimer = Timer.periodic(_automaticSyncInterval, (_) {
+      if (_canRunAutomaticSync()) {
+        unawaited(syncNow(pullAfterPush: true));
+      }
+    });
     final notes = await ref.watch(offlineStoreProvider).loadNotes();
     unawaited(syncNow(pullAfterPush: true));
     return notes;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(syncNow(pullAfterPush: true));
+    }
   }
 
   PlainNote createEmptyNote() {
@@ -81,47 +103,69 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     bool syncImmediately = false,
   }) {
     final snapshot = draft.copyWith(checklist: [...draft.checklist]);
-    final queued = _saveQueue.then<void>(
-      (_) => _saveDraft(snapshot, syncImmediately: syncImmediately),
+    final pending = _PendingDraftSave(
+      draft: snapshot,
+      syncImmediately: syncImmediately,
     );
-    _saveQueue = queued.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace __) {},
-    );
-    return queued;
+    _pendingDraftSaves.add(pending);
+    if (!_saveDrainActive) {
+      _saveDrainActive = true;
+      _saveQueue = Future<void>.microtask(_drainPendingDraftSaves);
+    }
+    return pending.completer.future;
   }
 
-  Future<void> _saveDraft(
-    PlainNote draft, {
-    required bool syncImmediately,
-  }) async {
-    final existing =
-        state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
-    PlainNote? previous;
-    for (final item in existing) {
-      if (item.localId == draft.localId) {
-        previous = item;
-        break;
+  Future<void> _drainPendingDraftSaves() async {
+    while (_pendingDraftSaves.isNotEmpty) {
+      final batch = List<_PendingDraftSave>.of(_pendingDraftSaves);
+      _pendingDraftSaves.clear();
+      try {
+        await _saveDraftBatch(batch);
+        for (final pending in batch) {
+          pending.completer.complete();
+        }
+      } catch (error, stackTrace) {
+        for (final pending in batch) {
+          pending.completer.completeError(error, stackTrace);
+        }
       }
     }
-    final remoteId = draft.remoteId ?? previous?.remoteId;
-    final version = remoteId != null &&
-            previous?.remoteId == remoteId &&
-            previous!.version > draft.version
-        ? previous.version
-        : draft.version;
-    final nextDraft = draft.copyWith(
-      remoteId: remoteId,
-      title: draft.title.trim(),
-      updatedAt: DateTime.now().toUtc(),
-      dirty: true,
-      version: version,
-      conflicted: false,
+    _saveDrainActive = false;
+  }
+
+  Future<void> _saveDraftBatch(List<_PendingDraftSave> batch) async {
+    var next = List<PlainNote>.of(
+      state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes(),
     );
-    final next = [
-      nextDraft,
-      ...existing.where((item) => item.localId != nextDraft.localId),
-    ]..sort(_sortNotes);
+    for (final pending in batch) {
+      final draft = pending.draft;
+      PlainNote? previous;
+      for (final item in next) {
+        if (item.localId == draft.localId) {
+          previous = item;
+          break;
+        }
+      }
+      final remoteId = draft.remoteId ?? previous?.remoteId;
+      final version = remoteId != null &&
+              previous?.remoteId == remoteId &&
+              previous!.version > draft.version
+          ? previous.version
+          : draft.version;
+      final nextDraft = draft.copyWith(
+        remoteId: remoteId,
+        title: draft.title.trim(),
+        updatedAt: DateTime.now().toUtc(),
+        dirty: true,
+        version: version,
+        conflicted: false,
+      );
+      next = [
+        nextDraft,
+        ...next.where((item) => item.localId != nextDraft.localId),
+      ];
+    }
+    next.sort(_sortNotes);
     await _persist(next);
     ref.read(syncStatusProvider.notifier).state = SyncStatus.saving;
     if (_syncFuture != null) {
@@ -130,8 +174,9 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     }
     _debounce?.cancel();
     _debounce = Timer(
-        syncImmediately ? Duration.zero : const Duration(milliseconds: 900),
-        () {
+        batch.any((pending) => pending.syncImmediately)
+            ? Duration.zero
+            : const Duration(milliseconds: 900), () {
       unawaited(syncNow(pullAfterPush: true));
     });
   }
@@ -232,6 +277,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
       await ref.read(offlineStoreProvider).saveNotes(notes);
       state = AsyncData(notes);
       await refreshPresence();
+      _recordSyncSuccess();
       ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
       if (requiredNoteId != null &&
           (requiredNoteError != null ||
@@ -241,6 +287,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
         );
       }
     } catch (error) {
+      _recordSyncFailure();
       ref.read(syncStatusProvider.notifier).state =
           error is ApiException && error.statusCode == 409
               ? SyncStatus.conflict
@@ -295,7 +342,10 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     final notes =
         state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
     final dirty = notes.where((note) => note.dirty).toList();
-    if (dirty.isEmpty) return _SyncOutcome.success;
+    if (dirty.isEmpty) {
+      _recordSyncSuccess();
+      return _SyncOutcome.success;
+    }
 
     ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
     try {
@@ -364,8 +414,10 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
               : next.any((note) => note.dirty)
                   ? SyncStatus.saving
                   : SyncStatus.saved;
+      _recordSyncSuccess();
       return sawConflict ? _SyncOutcome.conflict : _SyncOutcome.success;
     } catch (error) {
+      _recordSyncFailure();
       final conflict = error is ApiException && error.statusCode == 409;
       ref.read(syncStatusProvider.notifier).state =
           conflict ? SyncStatus.conflict : SyncStatus.offline;
@@ -632,6 +684,43 @@ class NotesController extends AsyncNotifier<List<PlainNote>> {
     await ref.read(offlineStoreProvider).saveNotes(notes);
     state = AsyncData(notes);
   }
+
+  bool _canRunAutomaticSync() {
+    final lifecycle = WidgetsFlutterBinding.ensureInitialized().lifecycleState;
+    if (lifecycle != null && lifecycle != AppLifecycleState.resumed) {
+      return false;
+    }
+    final blockedUntil = _automaticSyncBlockedUntil;
+    return blockedUntil == null || !DateTime.now().isBefore(blockedUntil);
+  }
+
+  void _recordSyncSuccess() {
+    _consecutiveSyncFailures = 0;
+    _automaticSyncBlockedUntil = null;
+  }
+
+  void _recordSyncFailure() {
+    _consecutiveSyncFailures += 1;
+    final exponent = (_consecutiveSyncFailures - 1).clamp(0, 4);
+    final seconds = _automaticSyncInterval.inSeconds * (1 << exponent);
+    final cappedSeconds = seconds.clamp(
+      _automaticSyncInterval.inSeconds,
+      _maximumAutomaticSyncBackoff.inSeconds,
+    );
+    _automaticSyncBlockedUntil =
+        DateTime.now().add(Duration(seconds: cappedSeconds));
+  }
+}
+
+class _PendingDraftSave {
+  _PendingDraftSave({
+    required this.draft,
+    required this.syncImmediately,
+  });
+
+  final PlainNote draft;
+  final bool syncImmediately;
+  final Completer<void> completer = Completer<void>();
 }
 
 enum _SyncOutcome { success, conflict, offline, skipped }

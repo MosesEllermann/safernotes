@@ -618,6 +618,57 @@ def test_invitation_link_id_opens_recipient_acceptance_flow(db, django_user_mode
     assert note_payload["is_shared"] is True
 
 
+@pytest.mark.parametrize("replays", [1, 10, 100])
+def test_share_invitation_acceptance_is_idempotent_under_retries(db, django_user_model, replays):
+    from apps.notes.models import Note, NoteKeyGrant, ShareInvitation
+    from apps.tenants.models import Organization
+
+    owner = django_user_model.objects.create_user(
+        email=f"retry-owner-{replays}@example.com", password="strong-password"
+    )
+    recipient = django_user_model.objects.create_user(
+        email=f"retry-recipient-{replays}@example.com", password="strong-password"
+    )
+    tenant = Organization.objects.create(name_ciphertext=encrypted_payload(), owner_user=owner)
+    note = Note.objects.create(
+        tenant=tenant,
+        owner_user=owner,
+        encrypted_payload=encrypted_payload(),
+        payload_hash=b"server-hash",
+        client_updated_at="2026-06-09T00:00:00Z",
+    )
+    invitation = ShareInvitation.objects.create(
+        note=note,
+        sender_user=owner,
+        recipient_user=recipient,
+        role="editor",
+        encrypted_note_key=encrypted_payload(),
+        invitation_signature=b"signature",
+    )
+    view = ShareInvitationViewSet.as_view({"post": "decide"})
+
+    for _ in range(replays):
+        request = APIRequestFactory().post(
+            f"/api/v1/notes/invitations/{invitation.id}/decide/",
+            {"decision": "accept"},
+            format="json",
+        )
+        force_authenticate(request, user=recipient)
+        result = view(request, pk=invitation.id)
+        assert result.status_code == 200
+        assert result.data["invitation"]["status"] == "accepted"
+        assert result.data["grant"]["role"] == "editor"
+
+    assert (
+        NoteKeyGrant.objects.filter(
+            source_invitation=invitation,
+            recipient_user=recipient,
+            revoked_at__isnull=True,
+        ).count()
+        == 1
+    )
+
+
 def test_share_invitation_contacts_include_sent_and_received(db, django_user_model):
     from apps.notes.models import Note, ShareInvitation
     from apps.tenants.models import Organization

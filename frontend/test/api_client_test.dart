@@ -43,6 +43,28 @@ void main() {
     );
   });
 
+  test('login converts malformed server payloads to a friendly API error',
+      () async {
+    final client = ApiClient(
+      baseUrl: 'http://example.test',
+      httpClient:
+          MockClient((_) async => http.Response('<html>bad</html>', 200)),
+    );
+
+    await expectLater(
+      client.login(email: 'user@example.test', password: 'password'),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.statusCode, 'statusCode', 200)
+            .having(
+              (error) => error.message,
+              'message',
+              'The server returned an invalid response. Please try again.',
+            ),
+      ),
+    );
+  });
+
   test('recovery-key update sends only the encrypted wrapper', () async {
     late http.Request captured;
     final client = ApiClient(

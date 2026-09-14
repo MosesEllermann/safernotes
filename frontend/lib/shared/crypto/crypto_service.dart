@@ -71,6 +71,24 @@ class CryptoService {
     throw UnsupportedError('Unsupported password KDF: $algorithm');
   }
 
+  /// Derives a purpose-specific key that can wrap the device-local vault key.
+  /// The account scope prevents a wrapper copied between accounts or tenants
+  /// from being useful, while HKDF keeps the master key out of local storage.
+  Future<List<int>> deriveLocalVaultRecoveryKey({
+    required List<int> masterKey,
+    required String accountScope,
+  }) async {
+    final derived = await Hkdf(
+      hmac: Hmac.sha256(),
+      outputLength: 32,
+    ).deriveKey(
+      secretKey: SecretKey(masterKey),
+      nonce: utf8.encode('safernotes-local-vault-recovery-v1'),
+      info: utf8.encode(accountScope),
+    );
+    return derived.extractBytes();
+  }
+
   List<int> _deriveArgon2idPasswordKey(
     String password,
     List<int> salt,

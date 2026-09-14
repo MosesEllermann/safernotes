@@ -312,6 +312,77 @@ void main() {
     expect(secondDestination, greaterThan(secondStartDestination));
     expect(secondPreview.dx, greaterThan(secondStart.dx));
   });
+
+  testWidgets(
+      'list rows glide between stable equal-height slots while dragging',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'zk.pref.note_overview_layout': 'list',
+    });
+    tester.view.physicalSize = const Size(430, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final notes = [
+      for (var index = 1; index <= 4; index += 1)
+        _note(
+          localId: 'note-$index',
+          title: 'Note $index',
+          body: 'Preview $index',
+        ),
+    ];
+    final controller = _TestNotesController(notes);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(() => controller),
+        ],
+        child: const MaterialApp(home: NotesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final first = find.byKey(const ValueKey('note-list-item-note-1'));
+    final second = find.byKey(const ValueKey('note-list-item-note-2'));
+    final fourth = find.byKey(const ValueKey('note-list-item-note-4'));
+    final motion = tester.widget<AnimatedSize>(
+      find.byKey(const ValueKey('animated-note-list-entry-note-1')),
+    );
+    expect(motion.duration, const Duration(milliseconds: 180));
+    expect(motion.curve, Curves.easeOutCubic);
+    expect(tester.getSize(first).height, 64);
+    expect(tester.getSize(second).height, 64);
+    final secondStart = tester.getTopLeft(second);
+
+    final gesture = await tester.startGesture(tester.getCenter(first));
+    await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(tester.getTopLeft(second).dy, closeTo(secondStart.dy, 1));
+
+    await gesture.moveTo(tester.getCenter(fourth));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, 18));
+    await tester.pump();
+    final immediate = tester.getTopLeft(second).dy;
+    await tester.pump(const Duration(milliseconds: 70));
+    final midway = tester.getTopLeft(second).dy;
+    await tester.pump(const Duration(milliseconds: 150));
+    final destination = tester.getTopLeft(second).dy;
+
+    expect(immediate, closeTo(secondStart.dy, 1));
+    expect(midway, lessThan(immediate));
+    expect(midway, greaterThan(destination));
+    expect(destination, closeTo(secondStart.dy - 70, 1));
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(controller.reorderedNoteId, 'note-1');
+    expect(controller.reorderedTargetIndex, 3);
+  });
 }
 
 PlainNote _note({

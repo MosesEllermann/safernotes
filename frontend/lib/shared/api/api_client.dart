@@ -425,8 +425,19 @@ class ApiClient {
   }
 
   Map<String, dynamic> _decode(http.Response response) {
-    final dynamic body =
-        response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
+    late final dynamic body;
+    try {
+      body = response.body.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(response.body);
+    } on FormatException {
+      throw ApiException(
+        response.statusCode >= 400
+            ? 'Request failed. Please try again.'
+            : 'The server returned an invalid response. Please try again.',
+        response.statusCode,
+      );
+    }
     if (response.statusCode >= 400) {
       throw ApiException(_friendlyErrorMessage(body), response.statusCode);
     }
