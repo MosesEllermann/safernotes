@@ -379,9 +379,18 @@ void main() {
     final lastField = tester.widget<TextField>(
       find.widgetWithText(TextField, 'Item 8'),
     );
+    final collapsibleTitle =
+        find.byKey(const ValueKey('keyboard-collapsible-title'));
+    final expandedTitleHeight = tester.getSize(collapsibleTitle).height;
     lastField.focusNode!.requestFocus();
     await tester.pump();
     tester.view.viewInsets = const FakeViewPadding(bottom: 1170);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 130));
+
+    final transitioningTitleHeight = tester.getSize(collapsibleTitle).height;
+    expect(transitioningTitleHeight, greaterThan(0));
+    expect(transitioningTitleHeight, lessThan(expandedTitleHeight));
     await tester.pumpAndSettle();
 
     expect(lastField.focusNode!.hasFocus, isTrue);
@@ -390,8 +399,19 @@ void main() {
           .bottom,
       greaterThan(0),
     );
-    expect(find.byKey(const ValueKey('note-editor-title')), findsNothing);
-    expect(find.byKey(const ValueKey('note-add-label')), findsNothing);
+    expect(find.byKey(const ValueKey('note-editor-title')), findsOneWidget);
+    expect(find.byKey(const ValueKey('note-add-label')), findsOneWidget);
+    expect(tester.getSize(collapsibleTitle).height, 0);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('keyboard-collapsible-labels')))
+          .height,
+      0,
+    );
+    expect(
+      find.byKey(const ValueKey('checklist-compact-title')),
+      findsOneWidget,
+    );
     final viewport = tester.getRect(
       find.byKey(const ValueKey('checklist-scroll-view')),
     );
@@ -407,6 +427,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('note-editor-title')), findsOneWidget);
     expect(find.byKey(const ValueKey('note-add-label')), findsOneWidget);
+    expect(tester.getSize(collapsibleTitle).height, expandedTitleHeight);
+    expect(
+      find.byKey(const ValueKey('checklist-compact-title')),
+      findsNothing,
+    );
   });
 
   testWidgets('checked rows animate below the add row and back up',

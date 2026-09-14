@@ -21,10 +21,14 @@ import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
 import 'package:safernotes_app/shared/widgets/app_canvas.dart';
 import 'package:safernotes_app/shared/widgets/app_info_bar.dart';
+import 'package:safernotes_app/shared/widgets/app_motion.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 bool get _usesIosNativeEditorControls =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
+const _keyboardLayoutTransition = Duration(milliseconds: 260);
+const _keyboardLayoutCurve = Curves.easeInOutCubic;
 
 class NoteEditorScreen extends StatelessWidget {
   const NoteEditorScreen({super.key, required this.note});
@@ -269,7 +273,12 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Padding(
+                    AnimatedPadding(
+                      duration: AppMotion.duration(
+                        context,
+                        _keyboardLayoutTransition,
+                      ),
+                      curve: _keyboardLayoutCurve,
                       padding: EdgeInsets.fromLTRB(
                         bottomToolbar ? 14 : 24,
                         compactChecklistKeyboard
@@ -284,53 +293,103 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (!desktop) ...[
-                            Row(
-                              children: [
-                                if (!widget.embedded)
-                                  _EditorBackButton(
-                                    tooltip: l10n.t('close'),
-                                    compact: bottomToolbar,
-                                    onPressed: () {
-                                      _saveNow();
-                                      Navigator.of(context).maybePop();
-                                    },
-                                  ),
-                                if (compactChecklistKeyboard)
-                                  Expanded(
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                      ),
-                                      child: Text(
-                                        _title.text.trim().isEmpty
-                                            ? l10n.t('title')
-                                            : _title.text.trim(),
-                                        key: const ValueKey(
-                                          'checklist-compact-title',
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .titleSmall
-                                            ?.copyWith(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                            ),
-                                      ),
+                            AnimatedScale(
+                              duration: AppMotion.duration(
+                                context,
+                                _keyboardLayoutTransition,
+                              ),
+                              curve: _keyboardLayoutCurve,
+                              scale: compactChecklistKeyboard ? 0.98 : 1,
+                              alignment: Alignment.center,
+                              child: Row(
+                                children: [
+                                  if (!widget.embedded)
+                                    _EditorBackButton(
+                                      tooltip: l10n.t('close'),
+                                      compact: bottomToolbar,
+                                      onPressed: () {
+                                        _saveNow();
+                                        Navigator.of(context).maybePop();
+                                      },
                                     ),
-                                  )
-                                else
-                                  const Spacer(),
-                                _PresenceDots(presence: presence),
-                                headerActions,
-                              ],
+                                  Expanded(
+                                    child: AnimatedSwitcher(
+                                      duration: AppMotion.duration(
+                                        context,
+                                        _keyboardLayoutTransition,
+                                      ),
+                                      switchInCurve: _keyboardLayoutCurve,
+                                      switchOutCurve: _keyboardLayoutCurve,
+                                      transitionBuilder: (child, animation) {
+                                        return FadeTransition(
+                                          opacity: animation,
+                                          child: ScaleTransition(
+                                            scale: Tween<double>(
+                                              begin: 0.94,
+                                              end: 1,
+                                            ).animate(animation),
+                                            child: SlideTransition(
+                                              position: Tween<Offset>(
+                                                begin: const Offset(0, 0.12),
+                                                end: Offset.zero,
+                                              ).animate(animation),
+                                              child: child,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      child: compactChecklistKeyboard
+                                          ? Padding(
+                                              key: const ValueKey(
+                                                'checklist-compact-title',
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                              ),
+                                              child: Text(
+                                                _title.text.trim().isEmpty
+                                                    ? l10n.t('title')
+                                                    : _title.text.trim(),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .titleSmall
+                                                    ?.copyWith(
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                              ),
+                                            )
+                                          : const SizedBox.shrink(
+                                              key: ValueKey(
+                                                'checklist-title-spacer',
+                                              ),
+                                            ),
+                                    ),
+                                  ),
+                                  _PresenceDots(presence: presence),
+                                  headerActions,
+                                ],
+                              ),
                             ),
-                            if (!compactChecklistKeyboard) ...[
-                              SizedBox(height: bottomToolbar ? 16 : 20),
-                              titleField,
-                            ],
+                            _AnimatedKeyboardCollapse(
+                              key: const ValueKey(
+                                'keyboard-collapsible-title',
+                              ),
+                              collapsed: compactChecklistKeyboard,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  SizedBox(
+                                    height: bottomToolbar ? 16 : 20,
+                                  ),
+                                  titleField,
+                                ],
+                              ),
+                            ),
                           ] else
                             Row(
                               key: const ValueKey('desktop-editor-title-row'),
@@ -363,8 +422,10 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                         ],
                       ),
                     ),
-                    if (!compactChecklistKeyboard)
-                      _LabelEditorRow(
+                    _AnimatedKeyboardCollapse(
+                      key: const ValueKey('keyboard-collapsible-labels'),
+                      collapsed: compactChecklistKeyboard,
+                      child: _LabelEditorRow(
                         labels: _labels,
                         l10n: l10n,
                         onAdd: _promptAddLabel,
@@ -373,6 +434,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                           immediate: true,
                         ),
                       ),
+                    ),
                     if (!bottomToolbar) toolbar,
                     Expanded(
                       child: LayoutBuilder(
@@ -416,14 +478,30 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                                     );
                                   },
                                   child: _checklistMode
-                                      ? Padding(
+                                      ? AnimatedPadding(
                                           key: const ValueKey('checklist'),
+                                          duration: AppMotion.duration(
+                                            context,
+                                            _keyboardLayoutTransition,
+                                          ),
+                                          curve: _keyboardLayoutCurve,
                                           padding: compactChecklistKeyboard
                                               ? const EdgeInsets.fromLTRB(
                                                   16, 4, 16, 4)
                                               : const EdgeInsets.fromLTRB(
                                                   24, 20, 24, 20),
-                                          child: checklist,
+                                          child: AnimatedScale(
+                                            duration: AppMotion.duration(
+                                              context,
+                                              _keyboardLayoutTransition,
+                                            ),
+                                            curve: _keyboardLayoutCurve,
+                                            scale: compactChecklistKeyboard
+                                                ? 0.985
+                                                : 1,
+                                            alignment: Alignment.topCenter,
+                                            child: checklist,
+                                          ),
                                         )
                                       : Padding(
                                           key: const ValueKey('body'),
@@ -843,6 +921,45 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   }
 }
 
+class _AnimatedKeyboardCollapse extends StatelessWidget {
+  const _AnimatedKeyboardCollapse({
+    super.key,
+    required this.collapsed,
+    required this.child,
+  });
+
+  final bool collapsed;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = AppMotion.duration(context, _keyboardLayoutTransition);
+    return ClipRect(
+      child: AnimatedAlign(
+        duration: duration,
+        curve: _keyboardLayoutCurve,
+        alignment: Alignment.topCenter,
+        heightFactor: collapsed ? 0 : 1,
+        child: AnimatedOpacity(
+          duration: duration,
+          curve: _keyboardLayoutCurve,
+          opacity: collapsed ? 0 : 1,
+          child: AnimatedScale(
+            duration: duration,
+            curve: _keyboardLayoutCurve,
+            alignment: Alignment.topCenter,
+            scale: collapsed ? 0.96 : 1,
+            child: IgnorePointer(
+              ignoring: collapsed,
+              child: child,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DesktopEditorBackdrop extends StatelessWidget {
   const _DesktopEditorBackdrop({
     required this.enabled,
@@ -908,13 +1025,16 @@ class _Toolbar extends StatelessWidget {
     ];
     final scheme = Theme.of(context).colorScheme;
     final nativeGlass = _usesIosNativeEditorControls;
+    final duration = AppMotion.duration(context, _keyboardLayoutTransition);
     final content = Material(
       color: nativeGlass
           ? Colors.transparent
           : scheme.surface.withValues(alpha: 0.68),
       borderRadius: BorderRadius.circular(AppRadii.xxl),
       clipBehavior: Clip.antiAlias,
-      child: Padding(
+      child: AnimatedPadding(
+        duration: duration,
+        curve: _keyboardLayoutCurve,
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 6 : 8,
           vertical: compact ? 2 : 7,
@@ -960,22 +1080,31 @@ class _Toolbar extends StatelessWidget {
         ),
       ),
     );
-    return Padding(
+    final toolbarSurface = nativeGlass
+        ? LiquidGlassContainer(
+            key: const ValueKey('ios-editor-formatting-glass'),
+            config: LiquidGlassConfig(
+              effect: CNGlassEffect.regular,
+              shape: CNGlassEffectShape.capsule,
+              tint: scheme.surface.withValues(alpha: 0.08),
+              interactive: true,
+            ),
+            child: content,
+          )
+        : content;
+    return AnimatedPadding(
+      duration: duration,
+      curve: _keyboardLayoutCurve,
       padding: compact
           ? const EdgeInsets.fromLTRB(12, 4, 12, 6)
           : const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: nativeGlass
-          ? LiquidGlassContainer(
-              key: const ValueKey('ios-editor-formatting-glass'),
-              config: LiquidGlassConfig(
-                effect: CNGlassEffect.regular,
-                shape: CNGlassEffectShape.capsule,
-                tint: scheme.surface.withValues(alpha: 0.08),
-                interactive: true,
-              ),
-              child: content,
-            )
-          : content,
+      child: AnimatedScale(
+        duration: duration,
+        curve: _keyboardLayoutCurve,
+        alignment: Alignment.bottomCenter,
+        scale: compact ? 0.98 : 1,
+        child: toolbarSurface,
+      ),
     );
   }
 }
