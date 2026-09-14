@@ -333,6 +333,82 @@ void main() {
     expect(tester.getTopLeft(field).dx, initialX + 18);
   });
 
+  testWidgets(
+      'mobile checklist keeps the last five items visible above a tall keyboard',
+      (tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    SharedPreferences.setMockInitialValues({});
+    final note = _checklistNote().copyWith(
+      title: 'Shopping list',
+      checklist: List.generate(
+        8,
+        (index) => ChecklistItem(
+          id: 'item-${index + 1}',
+          text: 'Item ${index + 1}',
+          done: false,
+          indent: 0,
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([note]),
+          ),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            quill.FlutterQuillLocalizations.delegate,
+          ],
+          home: NoteEditorScreen(note: note),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final lastField = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Item 8'),
+    );
+    lastField.focusNode!.requestFocus();
+    await tester.pump();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 1170);
+    await tester.pumpAndSettle();
+
+    expect(lastField.focusNode!.hasFocus, isTrue);
+    expect(
+      MediaQuery.viewInsetsOf(tester.element(find.byType(NoteEditorScreen)))
+          .bottom,
+      greaterThan(0),
+    );
+    expect(find.byKey(const ValueKey('note-editor-title')), findsNothing);
+    expect(find.byKey(const ValueKey('note-add-label')), findsNothing);
+    final viewport = tester.getRect(
+      find.byKey(const ValueKey('checklist-scroll-view')),
+    );
+    for (var item = 4; item <= 8; item += 1) {
+      final center = tester.getCenter(
+        find.widgetWithText(TextField, 'Item $item'),
+      );
+      expect(center.dy, greaterThanOrEqualTo(viewport.top));
+      expect(center.dy, lessThanOrEqualTo(viewport.bottom));
+    }
+
+    tester.view.resetViewInsets();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('note-editor-title')), findsOneWidget);
+    expect(find.byKey(const ValueKey('note-add-label')), findsOneWidget);
+  });
+
   testWidgets('checked rows animate below the add row and back up',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

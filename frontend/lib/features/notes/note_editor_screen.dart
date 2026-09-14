@@ -33,10 +33,16 @@ class NoteEditorScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomViewInset = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AppCanvas(
-        child: SafeArea(child: NoteEditorPanel(note: note)),
+        child: SafeArea(
+          child: NoteEditorPanel(
+            note: note,
+            bottomViewInset: bottomViewInset,
+          ),
+        ),
       ),
     );
   }
@@ -47,10 +53,12 @@ class NoteEditorPanel extends ConsumerStatefulWidget {
     super.key,
     required this.note,
     this.embedded = false,
+    this.bottomViewInset,
   });
 
   final PlainNote note;
   final bool embedded;
+  final double? bottomViewInset;
 
   @override
   ConsumerState<NoteEditorPanel> createState() => _NoteEditorPanelState();
@@ -84,6 +92,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
   late DateTime? _reminderAt;
   late EditorHistory<_EditorSnapshot> _history;
   bool _restoringHistory = false;
+  bool _checklistItemFocused = false;
   Timer? _autosave;
 
   static const _colors = brandNoteColors;
@@ -109,6 +118,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       _bodyChanges.cancel();
       _title.dispose();
       _body.dispose();
+      _checklistItemFocused = false;
       _hydrate(widget.note);
     }
   }
@@ -157,6 +167,10 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     final width = MediaQuery.sizeOf(context).width;
     final bottomToolbar = width < 700;
     final desktop = width >= 900;
+    final compactChecklistKeyboard = bottomToolbar &&
+        _checklistMode &&
+        _checklistItemFocused &&
+        (widget.bottomViewInset ?? MediaQuery.viewInsetsOf(context).bottom) > 0;
     final surfaceColor = desktop
         ? brandNoteSurfaceColor(context, _color)
         : effectiveNoteSurfaceColor(context, _color);
@@ -175,6 +189,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       canUndo: _checklistMode ? _history.canUndo : _body.hasUndo,
       canRedo: _checklistMode ? _history.canRedo : _body.hasRedo,
       activeActions: _activeFormattingActions(),
+      compact: compactChecklistKeyboard,
     );
     final titleField = TextField(
       key: const ValueKey('note-editor-title'),
@@ -257,9 +272,13 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                     Padding(
                       padding: EdgeInsets.fromLTRB(
                         bottomToolbar ? 14 : 24,
-                        bottomToolbar ? 16 : 24,
+                        compactChecklistKeyboard
+                            ? 6
+                            : bottomToolbar
+                                ? 16
+                                : 24,
                         bottomToolbar ? 10 : 20,
-                        10,
+                        compactChecklistKeyboard ? 4 : 10,
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -276,13 +295,42 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                                       Navigator.of(context).maybePop();
                                     },
                                   ),
-                                const Spacer(),
+                                if (compactChecklistKeyboard)
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      child: Text(
+                                        _title.text.trim().isEmpty
+                                            ? l10n.t('title')
+                                            : _title.text.trim(),
+                                        key: const ValueKey(
+                                          'checklist-compact-title',
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  const Spacer(),
                                 _PresenceDots(presence: presence),
                                 headerActions,
                               ],
                             ),
-                            SizedBox(height: bottomToolbar ? 16 : 20),
-                            titleField,
+                            if (!compactChecklistKeyboard) ...[
+                              SizedBox(height: bottomToolbar ? 16 : 20),
+                              titleField,
+                            ],
                           ] else
                             Row(
                               key: const ValueKey('desktop-editor-title-row'),
@@ -315,15 +363,16 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                         ],
                       ),
                     ),
-                    _LabelEditorRow(
-                      labels: _labels,
-                      l10n: l10n,
-                      onAdd: _promptAddLabel,
-                      onRemove: (label) => _recordMutation(
-                        () => _labels = [..._labels]..remove(label),
-                        immediate: true,
+                    if (!compactChecklistKeyboard)
+                      _LabelEditorRow(
+                        labels: _labels,
+                        l10n: l10n,
+                        onAdd: _promptAddLabel,
+                        onRemove: (label) => _recordMutation(
+                          () => _labels = [..._labels]..remove(label),
+                          immediate: true,
+                        ),
                       ),
-                    ),
                     if (!bottomToolbar) toolbar,
                     Expanded(
                       child: LayoutBuilder(
@@ -336,6 +385,11 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                           );
                           final checklist = _ChecklistEditor(
                             items: _checklist,
+                            keyboardCompact: compactChecklistKeyboard,
+                            onItemFocusChanged: (focused) {
+                              if (_checklistItemFocused == focused) return;
+                              setState(() => _checklistItemFocused = focused);
+                            },
                             onChanged: (items) {
                               _recordMutation(
                                 () => _checklist = orderChecklistItems(items),
@@ -364,8 +418,11 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
                                   child: _checklistMode
                                       ? Padding(
                                           key: const ValueKey('checklist'),
-                                          padding: const EdgeInsets.fromLTRB(
-                                              24, 20, 24, 20),
+                                          padding: compactChecklistKeyboard
+                                              ? const EdgeInsets.fromLTRB(
+                                                  16, 4, 16, 4)
+                                              : const EdgeInsets.fromLTRB(
+                                                  24, 20, 24, 20),
                                           child: checklist,
                                         )
                                       : Padding(
@@ -822,6 +879,7 @@ class _Toolbar extends StatelessWidget {
     required this.canUndo,
     required this.canRedo,
     required this.activeActions,
+    this.compact = false,
   });
 
   final AppL10n l10n;
@@ -833,6 +891,7 @@ class _Toolbar extends StatelessWidget {
   final bool canUndo;
   final bool canRedo;
   final Set<String> activeActions;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -856,7 +915,10 @@ class _Toolbar extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadii.xxl),
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 6 : 8,
+          vertical: compact ? 2 : 7,
+        ),
         child: Row(
           children: [
             Expanded(
@@ -899,7 +961,9 @@ class _Toolbar extends StatelessWidget {
       ),
     );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      padding: compact
+          ? const EdgeInsets.fromLTRB(12, 4, 12, 6)
+          : const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: nativeGlass
           ? LiquidGlassContainer(
               key: const ValueKey('ios-editor-formatting-glass'),
@@ -1487,10 +1551,14 @@ class _ChecklistEditor extends ConsumerStatefulWidget {
   const _ChecklistEditor({
     required this.items,
     required this.onChanged,
+    required this.keyboardCompact,
+    required this.onItemFocusChanged,
   });
 
   final List<ChecklistItem> items;
   final ValueChanged<List<ChecklistItem>> onChanged;
+  final bool keyboardCompact;
+  final ValueChanged<bool> onItemFocusChanged;
 
   @override
   ConsumerState<_ChecklistEditor> createState() => _ChecklistEditorState();
@@ -1498,16 +1566,48 @@ class _ChecklistEditor extends ConsumerStatefulWidget {
 
 class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
   String? _focusItemId;
+  String? _focusedItemId;
+  final _scrollController = ScrollController();
+  final _itemKeys = <String, GlobalKey>{};
+  double _lastKeyboardInset = 0;
 
   static const _rowHeight = 42.0;
   static const _addHeight = 44.0;
   static const _completedHeaderHeight = 38.0;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    if (keyboardInset != _lastKeyboardInset) {
+      _lastKeyboardInset = keyboardInset;
+      _scheduleFocusedItemVisibility();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChecklistEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.keyboardCompact != widget.keyboardCompact) {
+      _scheduleFocusedItemVisibility();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final unchecked = widget.items.where((item) => !item.done).toList();
     final checked = widget.items.where((item) => item.done).toList();
+    final itemIds = widget.items.map((item) => item.id).toSet();
+    _itemKeys.removeWhere((id, _) => !itemIds.contains(id));
     return SingleChildScrollView(
+      key: const ValueKey('checklist-scroll-view'),
+      controller: _scrollController,
       child: _buildAnimatedItems(context, unchecked, checked),
     );
   }
@@ -1557,26 +1657,29 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                       targetId: item.id,
                     ),
                   ),
-                  builder: (context, candidates, _) => _ChecklistRow(
-                    key: ValueKey(item.id),
-                    item: item,
-                    l10n: l10n,
-                    autofocus: item.id == _focusItemId,
-                    dropTargeted: candidates.isNotEmpty,
-                    onChanged: (updated) => widget.onChanged(
-                      updateChecklistItem(widget.items, updated),
+                  builder: (context, candidates, _) => KeyedSubtree(
+                    key: _itemKeys.putIfAbsent(item.id, GlobalKey.new),
+                    child: _ChecklistRow(
+                      key: ValueKey(item.id),
+                      item: item,
+                      l10n: l10n,
+                      autofocus: item.id == _focusItemId,
+                      dropTargeted: candidates.isNotEmpty,
+                      onChanged: (updated) => widget.onChanged(
+                        updateChecklistItem(widget.items, updated),
+                      ),
+                      onDelete: () {
+                        _handleItemFocusChanged(item.id, false);
+                        widget.onChanged(
+                          widget.items
+                              .where((candidate) => candidate.id != item.id)
+                              .toList(),
+                        );
+                      },
+                      onInsertAfter: () => _insertItem(after: item),
+                      onFocusChanged: (focused) =>
+                          _handleItemFocusChanged(item.id, focused),
                     ),
-                    onDelete: () => widget.onChanged(
-                      widget.items
-                          .where((candidate) => candidate.id != item.id)
-                          .toList(),
-                    ),
-                    onInsertAfter: () => _insertItem(after: item),
-                    onFocused: () {
-                      if (_focusItemId == item.id) {
-                        setState(() => _focusItemId = null);
-                      }
-                    },
                   ),
                 ),
               ),
@@ -1630,6 +1733,40 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
       afterItemId: after?.done == false ? after!.id : null,
     ));
   }
+
+  void _handleItemFocusChanged(String itemId, bool focused) {
+    if (focused) {
+      _focusedItemId = itemId;
+      if (_focusItemId == itemId) {
+        setState(() => _focusItemId = null);
+      }
+      widget.onItemFocusChanged(true);
+      _scheduleFocusedItemVisibility();
+      return;
+    }
+    if (_focusedItemId != itemId) return;
+    _focusedItemId = null;
+    widget.onItemFocusChanged(false);
+  }
+
+  void _scheduleFocusedItemVisibility() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final itemId = _focusedItemId;
+      final itemContext =
+          itemId == null ? null : _itemKeys[itemId]?.currentContext;
+      if (itemContext == null) return;
+      unawaited(
+        Scrollable.ensureVisible(
+          itemContext,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: 1,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        ),
+      );
+    });
+  }
 }
 
 class _ChecklistAddButton extends StatelessWidget {
@@ -1675,7 +1812,7 @@ class _ChecklistRow extends StatefulWidget {
     required this.onChanged,
     required this.onDelete,
     required this.onInsertAfter,
-    required this.onFocused,
+    required this.onFocusChanged,
   });
 
   final ChecklistItem item;
@@ -1685,7 +1822,7 @@ class _ChecklistRow extends StatefulWidget {
   final ValueChanged<ChecklistItem> onChanged;
   final VoidCallback onDelete;
   final VoidCallback onInsertAfter;
-  final VoidCallback onFocused;
+  final ValueChanged<bool> onFocusChanged;
 
   @override
   State<_ChecklistRow> createState() => _ChecklistRowState();
@@ -1695,9 +1832,16 @@ class _ChecklistRowState extends State<_ChecklistRow> {
   late final TextEditingController _controller = TextEditingController(
     text: widget.item.text,
   )..selection = TextSelection.collapsed(offset: widget.item.text.length);
+  final _focusNode = FocusNode();
   Offset? _swipeOrigin;
   double _swipeOffset = 0;
   bool _dragHandleActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(_handleFocusChanged);
+  }
 
   @override
   void didUpdateWidget(covariant _ChecklistRow oldWidget) {
@@ -1715,8 +1859,13 @@ class _ChecklistRowState extends State<_ChecklistRow> {
   @override
   void dispose() {
     _controller.dispose();
+    _focusNode
+      ..removeListener(_handleFocusChanged)
+      ..dispose();
     super.dispose();
   }
+
+  void _handleFocusChanged() => widget.onFocusChanged(_focusNode.hasFocus);
 
   @override
   Widget build(BuildContext context) {
@@ -1769,6 +1918,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
             child: TextField(
               autofocus: widget.autofocus,
               controller: _controller,
+              focusNode: _focusNode,
               decoration: _borderlessInput('Task'),
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     decoration:
@@ -1783,7 +1933,6 @@ class _ChecklistRowState extends State<_ChecklistRow> {
               onChanged: (value) =>
                   widget.onChanged(widget.item.copyWith(text: value)),
               onSubmitted: (_) => widget.onInsertAfter(),
-              onTap: widget.onFocused,
             ),
           ),
           if (!mobile) ...[
