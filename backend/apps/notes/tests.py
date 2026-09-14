@@ -618,6 +618,20 @@ def test_invitation_link_id_opens_recipient_acceptance_flow(db, django_user_mode
     assert note_payload["is_shared"] is True
 
 
+def test_share_invitation_locking_queryset_does_not_use_distinct(db, django_user_model):
+    user = django_user_model.objects.create_user(
+        email="locking-query@example.com", password="strong-password"
+    )
+    request = APIRequestFactory().get("/api/v1/notes/invitations/")
+    request.user = user
+    view = ShareInvitationViewSet()
+    view.request = request
+
+    queryset = view.get_queryset().select_for_update()
+
+    assert queryset.query.distinct is False
+
+
 @pytest.mark.parametrize("replays", [1, 10, 100])
 def test_share_invitation_acceptance_is_idempotent_under_retries(db, django_user_model, replays):
     from apps.notes.models import Note, NoteKeyGrant, ShareInvitation

@@ -293,9 +293,13 @@ class ShareInvitationViewSet(viewsets.ModelViewSet):
     serializer_class = ShareInvitationSerializer
 
     def get_queryset(self):
+        # These predicates only touch direct foreign keys on ShareInvitation,
+        # so they cannot produce duplicate rows. Avoid DISTINCT here because
+        # PostgreSQL rejects SELECT ... FOR UPDATE when DISTINCT is present;
+        # the decide action locks this same queryset to make retries atomic.
         return ShareInvitation.objects.filter(
             Q(sender_user=self.request.user) | Q(recipient_user=self.request.user)
-        ).distinct()
+        )
 
     @decorators.action(detail=False, methods=["get"], url_path="contacts")
     def contacts(self, request):
