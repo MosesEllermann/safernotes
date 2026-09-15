@@ -50,7 +50,6 @@
       <div class="legal-shell">
         <aside class="legal-aside" aria-label="Inhaltsnavigation">
           <strong>Auf dieser Seite</strong>
-          <a href="#status">Status</a>
           <a href="#controller">Verantwortlicher</a>
           <a href="#data">Daten und Zwecke</a>
           <a href="#encryption">Verschlüsselung</a>
@@ -61,27 +60,20 @@
         </aside>
 
         <article class="legal-content">
-          <div class="placeholder-box" id="status">
-            <strong>Stand: Entwurf</strong>
-            Name oder Firma, ladungsfähige Anschrift, Datenschutzkontakt,
-            Hosting-Anbieter und konkrete Aufbewahrungsfristen müssen noch mit
-            den tatsächlichen Betreiberangaben ergänzt und rechtlich geprüft werden.
-          </div>
-
           <section id="controller">
             <h2>Verantwortlicher</h2>
             <div class="data-table">
               <div class="data-row">
                 <strong>Name oder Firma</strong>
-                <span>[Betreiber ergänzen]</span>
+                <span>Seth-Moses Ellermann e.U., Inhaber Seth-Moses Ellermann</span>
               </div>
               <div class="data-row">
                 <strong>Anschrift</strong>
-                <span>[Ladungsfähige Anschrift ergänzen]</span>
+                <span>Pfauengasse 8/22, 1060 Wien, Österreich</span>
               </div>
               <div class="data-row">
                 <strong>Datenschutzkontakt</strong>
-                <span>[E-Mail-Adresse ergänzen]</span>
+                <span><a class="inline-link" href="mailto:support@safernotes.com">support@safernotes.com</a></span>
               </div>
             </div>
           </section>
@@ -143,14 +135,31 @@
           <section id="providers">
             <h2>Hosting und Dienstleister</h2>
             <ul>
-              <li>Website-, App- und API-Hosting: [Anbieter und Standort ergänzen]</li>
+              <li>Website-, App- und API-Hosting: Hetzner Online GmbH, Deutschland</li>
               <li>Proton Mail SMTP für Verifizierungs- und Wiederherstellungs-E-Mails</li>
-              <li>Zahlungsdienstleister: [vor Aktivierung kostenpflichtiger Pläne ergänzen]</li>
+              <li>
+                Zahlungsabwicklung: Armitage Labs OÜ (Creem), Rotermanni 14,
+                10111 Tallinn, Estland
+              </li>
             </ul>
             <p>
               Dienstleister erhalten nur die Daten, die sie für ihre jeweilige
               Aufgabe benötigen. Auftragsverarbeitung und mögliche Übermittlungen
               in Drittländer sind anhand der tatsächlichen Verträge zu dokumentieren.
+            </p>
+            <h3>Zahlungen über Creem</h3>
+            <p>
+              Für kostenpflichtige Tarife wird der Checkout auf Seiten von Creem
+              geöffnet. Creem handelt als Merchant of Record und verarbeitet dort
+              insbesondere Name, E-Mail-Adresse, Rechnungsanschrift, Zahlungsdaten,
+              gewählten Tarif und Transaktionsdaten. Safernotes übermittelt die für
+              die Zuordnung erforderliche interne Account- beziehungsweise
+              Workspace-Referenz und erhält von Creem den Zahlungs- und
+              Abonnementstatus, jedoch keine vollständigen Kartendaten.
+            </p>
+            <p>
+              Weitere Informationen enthält die
+              <a class="inline-link" href="https://www.creem.io/privacy">Datenschutzerklärung von Creem</a>.
             </p>
           </section>
 
@@ -159,8 +168,11 @@
             <p>
               Account- und Synchronisierungsdaten werden grundsätzlich für die
               Dauer des Nutzerkontos gespeichert. Nach Löschung gelten technische
-              Löschfristen und gesetzliche Aufbewahrungspflichten. Konkrete Fristen
-              für Backups, Protokolle und Abrechnungsdaten sind noch zu ergänzen.
+              Löschfristen und gesetzliche Aufbewahrungspflichten. Sicherheits- und
+              Serverprotokolle werden nur so lange aufbewahrt, wie dies für Betrieb,
+              Fehleranalyse und Missbrauchsabwehr erforderlich ist. Zahlungs- und
+              Rechnungsdaten werden von Creem nach dessen gesetzlichen und
+              vertraglichen Aufbewahrungspflichten verarbeitet.
             </p>
           </section>
 
@@ -179,7 +191,7 @@
             </p>
           </section>
 
-          <p class="legal-updated">Zuletzt aktualisiert: 20. August 2026</p>
+          <p class="legal-updated">Zuletzt aktualisiert: 15. September 2026</p>
         </article>
       </div>
     </main>
@@ -192,6 +204,8 @@
       <p>Private Notizen, sicher synchronisiert.</p>
       <nav aria-label="Footer Navigation">
         <a href="./downloads.html">Downloads</a>
+        <a href="mailto:support@safernotes.com">Support</a>
+        <a href="./terms.html">Nutzungsbedingungen</a>
         <a href="./privacy.html">Datenschutz</a>
         <a href="./impressum.html">Impressum</a>
       </nav>

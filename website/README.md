@@ -10,8 +10,9 @@ server required.
 - `downloads.js`: local device detection and platform tab switching
 - `assets/product-desktop.png`: real desktop product screenshot
 - `assets/product-mobile.png`: real mobile product screenshot
-- `privacy.html`: professionally structured privacy policy placeholder
-- `impressum.html`: professionally structured legal notice placeholder
+- `privacy.html`: privacy policy with hosting, email, and Creem disclosures
+- `impressum.html`: legal notice with operator and business details
+- `terms.html`: product and subscription terms, including Creem checkout terms
 - `styles.css`: shared responsive design system
 
 ## Preview
@@ -26,13 +27,8 @@ All links between the static pages are relative and work from the filesystem.
 
 ## Legal To-dos
 
-Replace or finalize these before publishing the legal pages:
-
-- Impressum provider details
-- Datenschutz provider details, legal bases, storage locations, and processor list
-- final legal review of all legal pages
-
-The status panels on the legal pages intentionally mark unfinished legal details.
+Obtain a final legal review of the Impressum, privacy policy, and product terms
+before enabling live payments.
 
 The website can still link to a direct Android beta APK at
 `/downloads/safernotes-android.apk`. The Play Store release workflow is handled

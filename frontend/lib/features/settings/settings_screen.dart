@@ -602,6 +602,21 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                   const SizedBox(height: 12),
                   Text(_error!, style: TextStyle(color: scheme.error)),
                 ],
+                const SizedBox(height: 20),
+                Divider(color: scheme.outlineVariant),
+                const SizedBox(height: 10),
+                Text(
+                  l10n.t('billingSupport'),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                const SelectableText(
+                  'support@safernotes.com',
+                  key: ValueKey('billing-support-email'),
+                ),
               ],
             );
           },

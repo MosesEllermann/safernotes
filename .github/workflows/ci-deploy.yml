@@ -277,6 +277,88 @@ jobs:
           PY
           REMOTE
 
+      - name: Configure production billing environment
+        if: ${{ vars.BILLING_PROVIDER == 'creem' }}
+        env:
+          API_HOST: ${{ secrets.API_HOST }}
+          API_PORT: ${{ secrets.API_PORT }}
+          API_USER: ${{ secrets.API_USER }}
+          API_SSH_KEY: ${{ secrets.API_SSH_KEY }}
+          BILLING_API_KEY: ${{ secrets.BILLING_API_KEY }}
+          BILLING_WEBHOOK_SECRET: ${{ secrets.BILLING_WEBHOOK_SECRET }}
+          BILLING_PROVIDER: ${{ vars.BILLING_PROVIDER }}
+          BILLING_API_BASE_URL: ${{ vars.BILLING_API_BASE_URL }}
+          BILLING_PRODUCT_IDS: ${{ vars.BILLING_PRODUCT_IDS }}
+          BILLING_SUCCESS_URL: ${{ vars.BILLING_SUCCESS_URL }}
+          BILLING_TESTER_EMAILS: ${{ vars.BILLING_TESTER_EMAILS }}
+        run: |
+          for variable in \
+            BILLING_API_KEY \
+            BILLING_WEBHOOK_SECRET \
+            BILLING_API_BASE_URL \
+            BILLING_PRODUCT_IDS \
+            BILLING_SUCCESS_URL; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::$variable is required when Creem billing is enabled."
+              exit 1
+            fi
+          done
+
+          if [ "$BILLING_API_BASE_URL" = "https://test-api.creem.io/v1" ] && \
+             [ -z "$BILLING_TESTER_EMAILS" ]; then
+            echo "::error::BILLING_TESTER_EMAILS is required for Test Mode on the public app."
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$API_SSH_KEY" > ~/.ssh/api_deploy_key
+          chmod 600 ~/.ssh/api_deploy_key
+          ssh-keyscan -p "${API_PORT:-22}" -H "$API_HOST" >> ~/.ssh/known_hosts
+
+          ssh -p "${API_PORT:-22}" -i ~/.ssh/api_deploy_key "$API_USER@$API_HOST" \
+            "BILLING_PROVIDER=$(printf '%q' "$BILLING_PROVIDER") BILLING_API_KEY=$(printf '%q' "$BILLING_API_KEY") BILLING_API_BASE_URL=$(printf '%q' "$BILLING_API_BASE_URL") BILLING_PRODUCT_IDS=$(printf '%q' "$BILLING_PRODUCT_IDS") BILLING_SUCCESS_URL=$(printf '%q' "$BILLING_SUCCESS_URL") BILLING_WEBHOOK_SECRET=$(printf '%q' "$BILLING_WEBHOOK_SECRET") BILLING_TESTER_EMAILS=$(printf '%q' "$BILLING_TESTER_EMAILS") bash -s" <<'REMOTE'
+          set -Eeuo pipefail
+
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import os
+          from pathlib import Path
+
+          env_file = Path("/opt/safernotes/.env.production")
+          if not env_file.exists():
+              raise SystemExit(f"Missing production env file: {env_file}")
+
+          updates = {
+              "BILLING_PROVIDER": os.environ["BILLING_PROVIDER"],
+              "BILLING_API_KEY": os.environ["BILLING_API_KEY"],
+              "BILLING_API_BASE_URL": os.environ["BILLING_API_BASE_URL"],
+              "BILLING_PRODUCT_IDS": os.environ["BILLING_PRODUCT_IDS"],
+              "BILLING_SUCCESS_URL": os.environ["BILLING_SUCCESS_URL"],
+              "BILLING_WEBHOOK_SECRET": os.environ["BILLING_WEBHOOK_SECRET"],
+              "BILLING_TESTER_EMAILS": os.environ["BILLING_TESTER_EMAILS"],
+          }
+
+          lines = env_file.read_text().splitlines()
+          seen = set()
+          next_lines = []
+          for line in lines:
+              key = line.split("=", 1)[0] if "=" in line else ""
+              if key in updates:
+                  next_lines.append(f"{key}={updates[key]}")
+                  seen.add(key)
+              else:
+                  next_lines.append(line)
+
+          for key, value in updates.items():
+              if key not in seen:
+                  next_lines.append(f"{key}={value}")
+
+          env_file.write_text("\n".join(next_lines) + "\n")
+          print("Production billing environment updated.")
+          PY
+          REMOTE
+
       - name: Deploy static sites to SPanel
         env:
           SPANEL_HOST: ${{ secrets.SPANEL_HOST }}

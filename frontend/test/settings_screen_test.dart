@@ -119,6 +119,10 @@ void main() {
       find.byKey(const ValueKey('native-billing-unavailable')),
       findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey('billing-support-email')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('native billing shows status without plans or purchase links',

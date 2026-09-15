@@ -11,6 +11,20 @@ from apps.subscriptions.usage import usage_report_for_tenant
 from apps.tenants.models import Organization
 
 
+def _checkout_allowed_for_request(request) -> bool:
+    if settings.BILLING_PROVIDER != "creem":
+        return True
+    if not settings.BILLING_API_BASE_URL.startswith("https://test-api.creem.io"):
+        return True
+    tester_emails = {
+        email.strip().casefold()
+        for email in settings.BILLING_TESTER_EMAILS
+        if email.strip()
+    }
+    user_email = getattr(request.user, "email", "")
+    return request.user.is_authenticated and user_email.casefold() in tester_emails
+
+
 class TenantRequestSerializer(serializers.Serializer):
     tenant = serializers.PrimaryKeyRelatedField(queryset=Organization.objects.all())
 
@@ -38,7 +52,11 @@ class PlanCatalogView(views.APIView):
 
     def get(self, request):
         checkout_enabled_for = set()
-        if settings.BILLING_PROVIDER == "creem" and settings.BILLING_API_KEY:
+        if (
+            settings.BILLING_PROVIDER == "creem"
+            and settings.BILLING_API_KEY
+            and _checkout_allowed_for_request(request)
+        ):
             checkout_enabled_for = {
                 plan for plan in SELF_SERVICE_PLAN_KEYS if settings.BILLING_PRODUCT_IDS.get(plan)
             }
@@ -78,6 +96,11 @@ class CheckoutView(views.APIView):
         serializer = CheckoutRequestSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         tenant = serializer.validated_data["tenant"]
+        if not _checkout_allowed_for_request(request):
+            return response.Response(
+                {"detail": "Test checkout is not enabled for this account."},
+                status=403,
+            )
         if tenant.plan != "free":
             return response.Response(
                 {

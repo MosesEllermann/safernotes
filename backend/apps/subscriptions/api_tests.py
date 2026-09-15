@@ -77,6 +77,7 @@ def test_checkout_view_prevents_a_second_paid_subscription(db, tenant, owner_use
 @override_settings(
     BILLING_PROVIDER="creem",
     BILLING_API_KEY="creem_test_key",
+    BILLING_API_BASE_URL="https://api.creem.io/v1",
     BILLING_PRODUCT_IDS={"essential": "prod_essential"},
 )
 def test_plan_catalog_is_public_and_only_offers_essential_and_pro(db):
@@ -102,8 +103,51 @@ def test_plan_catalog_is_public_and_only_offers_essential_and_pro(db):
     BILLING_PROVIDER="creem",
     BILLING_API_KEY="creem_test_key",
     BILLING_API_BASE_URL="https://test-api.creem.io/v1",
+    BILLING_PRODUCT_IDS={"essential": "prod_essential", "pro": "prod_pro"},
+    BILLING_TESTER_EMAILS=["owner@example.com"],
+)
+def test_test_mode_catalog_only_enables_checkout_for_allowlisted_users(db, owner_user):
+    anonymous_request = APIRequestFactory().get("/api/v1/subscription/plans")
+    anonymous_response = PlanCatalogView.as_view()(anonymous_request)
+    assert all(
+        plan["checkout_enabled"] is False
+        for plan in anonymous_response.data["plans"]
+    )
+
+    owner_user.email = "OWNER@example.com"
+    owner_user.save(update_fields=["email"])
+    owner_request = APIRequestFactory().get("/api/v1/subscription/plans")
+    force_authenticate(owner_request, user=owner_user)
+    owner_response = PlanCatalogView.as_view()(owner_request)
+    assert all(plan["checkout_enabled"] is True for plan in owner_response.data["plans"])
+
+
+@override_settings(
+    BILLING_PROVIDER="creem",
+    BILLING_API_BASE_URL="https://test-api.creem.io/v1",
+    BILLING_TESTER_EMAILS=["tester@example.com"],
+)
+def test_test_mode_checkout_rejects_non_allowlisted_owner(db, tenant, owner_user):
+    request = APIRequestFactory().post(
+        "/api/v1/subscription/checkout",
+        {"tenant": str(tenant.id), "plan": "essential"},
+        format="json",
+    )
+    force_authenticate(request, user=owner_user)
+
+    response = CheckoutView.as_view()(request)
+
+    assert response.status_code == 403
+    assert response.data["detail"] == "Test checkout is not enabled for this account."
+
+
+@override_settings(
+    BILLING_PROVIDER="creem",
+    BILLING_API_KEY="creem_test_key",
+    BILLING_API_BASE_URL="https://test-api.creem.io/v1",
     BILLING_PRODUCT_IDS={"essential": "prod_essential"},
     BILLING_SUCCESS_URL="https://app.example/subscription/success",
+    BILLING_TESTER_EMAILS=["owner@example.com"],
 )
 def test_creem_checkout_creates_session_with_tenant_metadata(db, tenant, owner_user, monkeypatch):
     captured_payload = {}
@@ -158,6 +202,7 @@ def test_creem_checkout_creates_session_with_tenant_metadata(db, tenant, owner_u
     BILLING_API_KEY="creem_test_key",
     BILLING_API_BASE_URL="https://test-api.creem.io/v1",
     BILLING_PRODUCT_IDS={},
+    BILLING_TESTER_EMAILS=["owner@example.com"],
 )
 def test_creem_checkout_reports_missing_product_configuration(db, tenant, owner_user):
     request = APIRequestFactory().post(

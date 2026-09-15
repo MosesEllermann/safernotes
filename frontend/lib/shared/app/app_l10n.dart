@@ -291,6 +291,7 @@ const _strings = {
     'checkoutOpen': 'Open checkout',
     'copyLink': 'Copy link',
     'checkoutUnavailable': 'Checkout is not configured yet ({status}).',
+    'billingSupport': 'Billing and subscription support',
     'authIntro':
         'Private notes, checklists, and reminders stay locally encrypted and clearly organized.',
     'recoveryIntro':
@@ -585,6 +586,7 @@ const _strings = {
     'checkoutOpen': 'Checkout öffnen',
     'copyLink': 'Link kopieren',
     'checkoutUnavailable': 'Checkout ist noch nicht konfiguriert ({status}).',
+    'billingSupport': 'Hilfe zu Abrechnung und Abonnement',
     'authIntro':
         'Private Notizen, Checklisten und Erinnerungen bleiben lokal verschlüsselt und klar organisiert.',
     'recoveryIntro':
