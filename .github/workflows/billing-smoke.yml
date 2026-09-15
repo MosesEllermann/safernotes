@@ -58,7 +58,11 @@ jobs:
               url = f'{settings.BILLING_API_BASE_URL.rstrip("/")}/products/{product_id}'
               request = Request(
                   url,
-                  headers={'Accept': 'application/json', 'x-api-key': settings.BILLING_API_KEY},
+                  headers={
+                      'Accept': 'application/json',
+                      'User-Agent': 'Safernotes/1.0 (+https://safernotes.com)',
+                      'x-api-key': settings.BILLING_API_KEY,
+                  },
               )
               try:
                   with urlopen(request, timeout=15) as api_response:

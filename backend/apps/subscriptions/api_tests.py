@@ -187,6 +187,7 @@ def test_creem_checkout_creates_session_with_tenant_metadata(db, tenant, owner_u
     assert response.data["checkout_url"] == "https://checkout.creem.io/ch_1"
     assert captured_url == "https://test-api.creem.io/v1/checkouts"
     assert captured_headers["x-api-key"] == "creem_test_key"
+    assert captured_headers["user-agent"] == "Safernotes/1.0 (+https://safernotes.com)"
     assert captured_payload["product_id"] == "prod_essential"
     assert captured_payload["request_id"].startswith(f"{tenant.id}:essential:")
     assert captured_payload["customer"] == {"email": owner_user.email}

@@ -108,6 +108,8 @@ class CreemBillingProvider(BillingProvider):
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",
+                # Creem rejects urllib's default Python-urllib user agent with 403.
+                "User-Agent": "Safernotes/1.0 (+https://safernotes.com)",
                 "x-api-key": settings.BILLING_API_KEY,
             },
             method="POST",
