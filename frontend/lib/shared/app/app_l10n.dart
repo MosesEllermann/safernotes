@@ -256,6 +256,25 @@ const _strings = {
     'untitledNote': 'Untitled note',
     'plan': 'Plan',
     'currentPlan': 'Current: {plan}',
+    'freePlan': 'Free',
+    'yearlyPrice': '€{price}/year',
+    'planFeatureSummary':
+        '{storage} GB storage · {notes} notes · {history}-day version history',
+    'unlimited': 'Unlimited',
+    'plansUnavailable': 'Plans could not be loaded.',
+    'nativeBillingUnavailable':
+        'Subscription purchases and billing links are not available in this app.',
+    'manageSubscription': 'Manage subscription',
+    'checkoutInvalidUrl': 'The checkout service returned an invalid address.',
+    'checkoutOpenFailed': 'The secure checkout could not be opened.',
+    'portalUnavailable': 'Subscription management is unavailable ({status}).',
+    'portalOpenFailed': 'Subscription management could not be opened.',
+    'checkoutNotCompleted': 'Checkout was not completed.',
+    'paymentProcessing': 'Payment received. Activating your plan…',
+    'paymentComplete': 'Your plan is active.',
+    'paymentActivationPending':
+        'Payment is complete. Plan activation is still processing; refresh shortly.',
+    'refreshStatus': 'Refresh status',
     'essentialBilling': '€1.50/month, billed annually',
     'proBilling': '€5/month, more storage and collaboration',
     'essentialAnnual': '€18/year',
@@ -528,6 +547,28 @@ const _strings = {
     'untitledNote': 'Unbenannte Notiz',
     'plan': 'Plan',
     'currentPlan': 'Aktuell: {plan}',
+    'freePlan': 'Kostenlos',
+    'yearlyPrice': '{price} €/Jahr',
+    'planFeatureSummary':
+        '{storage} GB Speicher · {notes} Notizen · {history} Tage Versionsverlauf',
+    'unlimited': 'Unbegrenzt',
+    'plansUnavailable': 'Die Tarife konnten nicht geladen werden.',
+    'nativeBillingUnavailable':
+        'Abonnementkäufe und Zahlungslinks sind in dieser App nicht verfügbar.',
+    'manageSubscription': 'Abonnement verwalten',
+    'checkoutInvalidUrl':
+        'Der Zahlungsdienst hat eine ungültige Adresse zurückgegeben.',
+    'checkoutOpenFailed': 'Der sichere Checkout konnte nicht geöffnet werden.',
+    'portalUnavailable':
+        'Die Abonnementverwaltung ist nicht verfügbar ({status}).',
+    'portalOpenFailed':
+        'Die Abonnementverwaltung konnte nicht geöffnet werden.',
+    'checkoutNotCompleted': 'Der Checkout wurde nicht abgeschlossen.',
+    'paymentProcessing': 'Zahlung erhalten. Dein Tarif wird aktiviert…',
+    'paymentComplete': 'Dein Tarif ist aktiv.',
+    'paymentActivationPending':
+        'Die Zahlung ist abgeschlossen. Die Tarifaktivierung läuft noch; aktualisiere die Ansicht in Kürze.',
+    'refreshStatus': 'Status aktualisieren',
     'essentialBilling': '1,50 €/Monat, jährlich abgerechnet',
     'proBilling': '5 €/Monat, mehr Speicher und Kollaboration',
     'essentialAnnual': '18 €/Jahr',

@@ -11,7 +11,7 @@ Date: 2026-06-10
 - Subscription serializer includes plan policy.
 - Checkout request validation with tenant-owner checks.
 - Billing portal request validation with tenant-owner checks.
-- Billing provider abstraction for future Stripe/Paddle/etc. integration.
+- Billing provider abstraction, now implemented for Creem checkout and customer portal sessions.
 - Billing webhook HMAC verification scaffold.
 - Idempotent billing event storage.
 - Billing event processing status.
@@ -42,7 +42,7 @@ Supported event types:
 - `subscription.deleted`
 - `subscription.canceled`
 
-The HMAC uses `BILLING_WEBHOOK_SECRET`. Real provider adapters can map Stripe, Paddle, or another provider into this internal event shape.
+The Creem HMAC uses `BILLING_WEBHOOK_SECRET`. Creem subscription events are normalized into the internal subscription event shape.
 
 ## Privacy Notes
 
@@ -80,4 +80,3 @@ Phase 10 should focus on security hardening:
 - Dependency scanning configuration.
 - Secrets management hardening.
 - Abuse controls that do not inspect plaintext content.
-

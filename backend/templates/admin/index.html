@@ -1,0 +1,154 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block bodyclass %}{{ block.super }} dashboard safernotes-dashboard{% endblock %}
+{% block content_title %}{% endblock %}
+
+{% block content %}
+<div id="content-main" class="sn-dashboard">
+  <section class="sn-hero" aria-labelledby="dashboard-title">
+    <div>
+      <p class="sn-eyebrow">Operations overview</p>
+      <h1 id="dashboard-title">Good to see you, {{ request.user.email|default:"operator" }}.</h1>
+      <p class="sn-hero__copy">Monitor accounts, billing and sharing health without exposing encrypted note content.</p>
+    </div>
+    <div class="sn-environment">
+      <span class="sn-live-dot" aria-hidden="true"></span>
+      {{ dashboard.environment }} · Database reachable
+    </div>
+  </section>
+
+  <form class="sn-command-search" action="{% url 'owner_admin:users_user_changelist' %}" method="get">
+    <label class="visually-hidden" for="sn-account-search">Find an account</label>
+    <span aria-hidden="true">⌕</span>
+    <input id="sn-account-search" type="search" name="q" placeholder="Find an account by email…" autocomplete="off">
+    <button type="submit">Search accounts</button>
+  </form>
+
+  <section class="sn-metrics" aria-label="Key metrics">
+    <a class="sn-metric" href="{% url 'owner_admin:users_user_changelist' %}">
+      <span class="sn-metric__label">Total accounts</span>
+      <strong>{{ dashboard.users.total }}</strong>
+      <span class="sn-metric__detail">+{{ dashboard.users.new_this_week }} in the last 7 days</span>
+    </a>
+    <a class="sn-metric" href="{% url 'owner_admin:users_user_changelist' %}?is_active__exact=1">
+      <span class="sn-metric__label">Active accounts</span>
+      <strong>{{ dashboard.users.active }}</strong>
+      <span class="sn-metric__detail">{{ dashboard.users.verified }} email verified</span>
+    </a>
+    <a class="sn-metric" href="{% url 'owner_admin:subscriptions_subscription_changelist' %}?health=healthy">
+      <span class="sn-metric__label">Active subscriptions</span>
+      <strong>{{ dashboard.subscriptions.active }}</strong>
+      <span class="sn-metric__detail{% if dashboard.subscriptions.attention %} sn-metric__detail--warning{% endif %}">{{ dashboard.subscriptions.attention }} need attention</span>
+    </a>
+    <a class="sn-metric" href="{% url 'owner_admin:notes_shareinvitation_changelist' %}?status=pending">
+      <span class="sn-metric__label">Pending invites</span>
+      <strong>{{ dashboard.invitations.pending }}</strong>
+      <span class="sn-metric__detail{% if dashboard.invitations.stale %} sn-metric__detail--warning{% endif %}">{{ dashboard.invitations.stale }} older than 24 hours</span>
+    </a>
+    <div class="sn-metric">
+      <span class="sn-metric__label">Encrypted notes</span>
+      <strong>{{ dashboard.notes }}</strong>
+      <span class="sn-metric__detail">{{ dashboard.storage }} attachment storage</span>
+    </div>
+  </section>
+
+  <div class="sn-dashboard-grid">
+    <section class="sn-panel sn-panel--wide">
+      <header class="sn-panel__header">
+        <div>
+          <p class="sn-eyebrow">Accounts</p>
+          <h2>Recently registered</h2>
+        </div>
+        <a href="{% url 'owner_admin:users_user_changelist' %}">View all <span aria-hidden="true">→</span></a>
+      </header>
+      <div class="sn-list">
+        {% for account in dashboard.recent_users %}
+          <a class="sn-list__row" href="{{ account.url }}">
+            <span class="sn-avatar" aria-hidden="true">{{ account.email|first|upper }}</span>
+            <span class="sn-list__main">
+              <strong>{{ account.email }}</strong>
+              <small>Joined {{ account.created_at|timesince }} ago</small>
+            </span>
+            <span class="sn-badge {% if account.status == 'active' %}sn-badge--positive{% else %}sn-badge--warning{% endif %}">{{ account.status }}</span>
+          </a>
+        {% empty %}
+          <p class="sn-empty">No accounts yet.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="sn-panel">
+      <header class="sn-panel__header">
+        <div>
+          <p class="sn-eyebrow">Billing</p>
+          <h2>Plan mix</h2>
+        </div>
+        <a href="{% url 'owner_admin:subscriptions_subscription_changelist' %}">Manage</a>
+      </header>
+      <div class="sn-plan-list">
+        {% for plan in dashboard.plans %}
+          <div class="sn-plan-row">
+            <div><strong>{{ plan.plan|title }}</strong><span>{{ plan.total }}</span></div>
+            <div class="sn-progress" aria-label="{{ plan.percentage }} percent"><span style="width: {{ plan.percentage }}%"></span></div>
+          </div>
+        {% empty %}
+          <p class="sn-empty">No subscriptions configured.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="sn-panel">
+      <header class="sn-panel__header">
+        <div>
+          <p class="sn-eyebrow">Shortcuts</p>
+          <h2>Common tasks</h2>
+        </div>
+      </header>
+      <nav class="sn-actions" aria-label="Common admin tasks">
+        <a href="{% url 'owner_admin:users_user_changelist' %}?email_verified=no"><span class="sn-action-icon">@</span><span><strong>Review unverified accounts</strong><small>Filter accounts awaiting verification</small></span><span>→</span></a>
+        <a href="{% url 'owner_admin:notes_shareinvitation_changelist' %}?status=pending"><span class="sn-action-icon">↗</span><span><strong>Inspect sharing invites</strong><small>Diagnose pending collaboration links</small></span><span>→</span></a>
+        <a href="{% url 'owner_admin:subscriptions_subscription_add' %}"><span class="sn-action-icon">+</span><span><strong>Create subscription</strong><small>Add a manually managed plan</small></span><span>→</span></a>
+      </nav>
+    </section>
+
+    <section class="sn-panel sn-panel--wide">
+      <header class="sn-panel__header">
+        <div>
+          <p class="sn-eyebrow">Security trail</p>
+          <h2>Recent activity</h2>
+        </div>
+        <span class="sn-secure-label">Signed events</span>
+      </header>
+      <div class="sn-activity-list">
+        {% for event in dashboard.recent_events %}
+          <div class="sn-activity-row">
+            <span class="sn-activity-dot" aria-hidden="true"></span>
+            <span class="sn-list__main">
+              <strong>{{ event.event_type }}</strong>
+              <small>{{ event.actor_user.email|default:"System" }} · {{ event.target_type }}</small>
+            </span>
+            <time datetime="{{ event.created_at|date:'c' }}">{{ event.created_at|timesince }} ago</time>
+          </div>
+        {% empty %}
+          <p class="sn-empty">No audit activity recorded yet.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <section class="sn-panel sn-applications">
+    <header class="sn-panel__header">
+      <div>
+        <p class="sn-eyebrow">Data management</p>
+        <h2>Administration</h2>
+      </div>
+    </header>
+    {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+  </section>
+
+  <p class="sn-dashboard-updated">Updated {{ dashboard.generated_at|date:"DATETIME_FORMAT" }}</p>
+</div>
+{% endblock %}
+
+{% block sidebar %}{% endblock %}

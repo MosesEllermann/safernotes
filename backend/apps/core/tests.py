@@ -171,10 +171,11 @@ def test_code_emails_have_production_safe_links_in_every_locale(
     SECRET_KEY="unsafe-dev-secret-change-me",
     DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
     EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
-    BILLING_PROVIDER="paddle",
+    BILLING_PROVIDER="creem",
     BILLING_API_KEY="",
+    BILLING_API_BASE_URL="https://test-api.creem.io/v1",
     BILLING_WEBHOOK_SECRET="",
-    BILLING_PRICE_IDS={},
+    BILLING_PRODUCT_IDS={},
     CORS_ALLOWED_ORIGINS=["http://localhost:3000"],
 )
 def test_production_configuration_check_flags_unsafe_launch_settings():
@@ -184,6 +185,7 @@ def test_production_configuration_check_flags_unsafe_launch_settings():
     assert "safernotes.E002" in issue_ids
     assert "safernotes.E003" in issue_ids
     assert "safernotes.E004" in issue_ids
+    assert "safernotes.E006" in issue_ids
     assert "safernotes.W001" in issue_ids
 
 
@@ -216,10 +218,11 @@ def test_production_configuration_check_flags_incomplete_smtp_settings():
     EMAIL_HOST_PASSWORD="smtp-secret",
     EMAIL_USE_TLS=True,
     EMAIL_USE_SSL=False,
-    BILLING_PROVIDER="paddle",
-    BILLING_API_KEY="pdl_sdbx_apikey_test",
+    BILLING_PROVIDER="creem",
+    BILLING_API_KEY="creem_live_test",
+    BILLING_API_BASE_URL="https://api.creem.io/v1",
     BILLING_WEBHOOK_SECRET="webhook-secret",
-    BILLING_PRICE_IDS={"essential": "pri_essential", "pro": "pri_pro"},
+    BILLING_PRODUCT_IDS={"essential": "prod_essential", "pro": "prod_pro"},
     CORS_ALLOWED_ORIGINS=["https://app.example.com"],
 )
 def test_production_configuration_check_accepts_safe_launch_settings():

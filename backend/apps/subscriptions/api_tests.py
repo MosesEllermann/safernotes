@@ -5,8 +5,9 @@ import json
 from django.test import override_settings
 from rest_framework.test import APIRequestFactory, force_authenticate
 
+from apps.subscriptions.models import Subscription
 from apps.subscriptions.plans import policy_for_plan
-from apps.subscriptions.views import CheckoutView, UsageView
+from apps.subscriptions.views import CheckoutView, PlanCatalogView, PortalView, UsageView
 
 
 def test_usage_view_requires_tenant_membership(db, owner_user):
@@ -44,12 +45,89 @@ def test_checkout_view_rejects_invalid_plan(db, tenant, owner_user):
     assert response.status_code == 400
 
 
+def test_checkout_view_rejects_non_self_service_plan(db, tenant, owner_user):
+    request = APIRequestFactory().post(
+        "/api/v1/subscription/checkout",
+        {"tenant": str(tenant.id), "plan": "team"},
+        format="json",
+    )
+    force_authenticate(request, user=owner_user)
+
+    response = CheckoutView.as_view()(request)
+
+    assert response.status_code == 400
+
+
+def test_checkout_view_prevents_a_second_paid_subscription(db, tenant, owner_user):
+    tenant.plan = "pro"
+    tenant.save(update_fields=["plan"])
+    request = APIRequestFactory().post(
+        "/api/v1/subscription/checkout",
+        {"tenant": str(tenant.id), "plan": "essential"},
+        format="json",
+    )
+    force_authenticate(request, user=owner_user)
+
+    response = CheckoutView.as_view()(request)
+
+    assert response.status_code == 409
+    assert "already has a paid plan" in response.data["detail"]
+
+
 @override_settings(
-    BILLING_PROVIDER="paddle",
-    BILLING_CHECKOUT_URLS={"essential": "https://checkout.example/essential"},
-    BILLING_PORTAL_URL="",
+    BILLING_PROVIDER="creem",
+    BILLING_API_KEY="creem_test_key",
+    BILLING_PRODUCT_IDS={"essential": "prod_essential"},
 )
-def test_checkout_view_returns_configured_hosted_checkout_url(db, tenant, owner_user):
+def test_plan_catalog_is_public_and_only_offers_essential_and_pro(db):
+    request = APIRequestFactory().get("/api/v1/subscription/plans")
+
+    response = PlanCatalogView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data["currency"] == "EUR"
+    assert [plan["key"] for plan in response.data["plans"]] == ["essential", "pro"]
+    essential, pro = response.data["plans"]
+    assert essential["pricing"] == {
+        "monthly_equivalent_cents": 150,
+        "yearly_cents": 1800,
+        "billing_interval": "year",
+    }
+    assert essential["limits"]["storage_bytes"] == 5 * 1024 * 1024 * 1024
+    assert essential["checkout_enabled"] is True
+    assert pro["checkout_enabled"] is False
+
+
+@override_settings(
+    BILLING_PROVIDER="creem",
+    BILLING_API_KEY="creem_test_key",
+    BILLING_API_BASE_URL="https://test-api.creem.io/v1",
+    BILLING_PRODUCT_IDS={"essential": "prod_essential"},
+    BILLING_SUCCESS_URL="https://app.example/subscription/success",
+)
+def test_creem_checkout_creates_session_with_tenant_metadata(db, tenant, owner_user, monkeypatch):
+    captured_payload = {}
+    captured_url = ""
+    captured_headers = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"id":"ch_1","checkout_url":"https://checkout.creem.io/ch_1"}'
+
+    def fake_urlopen(request, timeout):
+        nonlocal captured_url
+        captured_url = request.full_url
+        captured_payload.update(json.loads(request.data.decode("utf-8")))
+        captured_headers.update({key.lower(): value for key, value in request.header_items()})
+        return FakeResponse()
+
+    monkeypatch.setattr("apps.subscriptions.providers.urlopen", fake_urlopen)
     request = APIRequestFactory().post(
         "/api/v1/subscription/checkout",
         {"tenant": str(tenant.id), "plan": "essential"},
@@ -60,22 +138,56 @@ def test_checkout_view_returns_configured_hosted_checkout_url(db, tenant, owner_
 
     assert response.status_code == 200
     assert response.data["status"] == "ready"
-    assert response.data["provider"] == "paddle"
-    assert response.data["target_plan"] == "essential"
-    assert response.data["checkout_url"].startswith("https://checkout.example/essential?")
-    assert f"tenant_id={tenant.id}" in response.data["checkout_url"]
-    assert "plan=essential" in response.data["checkout_url"]
+    assert response.data["provider"] == "creem"
+    assert response.data["provider_checkout_id"] == "ch_1"
+    assert response.data["checkout_url"] == "https://checkout.creem.io/ch_1"
+    assert captured_url == "https://test-api.creem.io/v1/checkouts"
+    assert captured_headers["x-api-key"] == "creem_test_key"
+    assert captured_payload["product_id"] == "prod_essential"
+    assert captured_payload["request_id"].startswith(f"{tenant.id}:essential:")
+    assert captured_payload["customer"] == {"email": owner_user.email}
+    assert captured_payload["metadata"] == {
+        "tenant_id": str(tenant.id),
+        "plan": "essential",
+    }
+    assert captured_payload["success_url"] == "https://app.example/subscription/success"
 
 
 @override_settings(
-    BILLING_PROVIDER="paddle",
-    BILLING_API_KEY="test-key",
-    BILLING_API_BASE_URL="https://sandbox-api.paddle.com",
-    BILLING_PRICE_IDS={"essential": "pri_essential"},
-    BILLING_CHECKOUT_URLS={},
-    BILLING_PORTAL_URL="",
+    BILLING_PROVIDER="creem",
+    BILLING_API_KEY="creem_test_key",
+    BILLING_API_BASE_URL="https://test-api.creem.io/v1",
+    BILLING_PRODUCT_IDS={},
 )
-def test_paddle_checkout_creates_transaction_with_custom_data(db, tenant, owner_user, monkeypatch):
+def test_creem_checkout_reports_missing_product_configuration(db, tenant, owner_user):
+    request = APIRequestFactory().post(
+        "/api/v1/subscription/checkout",
+        {"tenant": str(tenant.id), "plan": "essential"},
+        format="json",
+    )
+    force_authenticate(request, user=owner_user)
+
+    response = CheckoutView.as_view()(request)
+
+    assert response.status_code == 200
+    assert response.data["status"] == "checkout-api-not-configured"
+    assert response.data["checkout_url"] is None
+
+
+@override_settings(
+    BILLING_PROVIDER="creem",
+    BILLING_API_KEY="creem_test_key",
+    BILLING_API_BASE_URL="https://test-api.creem.io/v1",
+)
+def test_creem_portal_uses_stored_customer_id(db, tenant, owner_user, monkeypatch):
+    Subscription.objects.create(
+        tenant=tenant,
+        plan="pro",
+        status="active",
+        billing_provider="creem",
+        provider_customer_id="cust_1",
+        provider_subscription_id="sub_1",
+    )
     captured_payload = {}
     captured_url = ""
 
@@ -87,7 +199,7 @@ def test_paddle_checkout_creates_transaction_with_custom_data(db, tenant, owner_
             return False
 
         def read(self):
-            return b'{"data":{"id":"txn_1","checkout":{"url":"https://checkout.paddle.com/txn_1"}}}'
+            return b'{"customer_portal_link":"https://creem.io/portal/cust_1"}'
 
     def fake_urlopen(request, timeout):
         nonlocal captured_url
@@ -97,67 +209,19 @@ def test_paddle_checkout_creates_transaction_with_custom_data(db, tenant, owner_
 
     monkeypatch.setattr("apps.subscriptions.providers.urlopen", fake_urlopen)
     request = APIRequestFactory().post(
-        "/api/v1/subscription/checkout",
-        {"tenant": str(tenant.id), "plan": "essential"},
+        "/api/v1/subscription/portal",
+        {"tenant": str(tenant.id)},
         format="json",
     )
     force_authenticate(request, user=owner_user)
-    response = CheckoutView.as_view()(request)
+
+    response = PortalView.as_view()(request)
 
     assert response.status_code == 200
     assert response.data["status"] == "ready"
-    assert response.data["provider_transaction_id"] == "txn_1"
-    assert response.data["checkout_url"] == "https://checkout.paddle.com/txn_1"
-    assert captured_url == "https://sandbox-api.paddle.com/transactions"
-    assert captured_payload["collection_mode"] == "automatic"
-    assert captured_payload["items"] == [{"price_id": "pri_essential", "quantity": 1}]
-    assert captured_payload["custom_data"] == {
-        "tenant_id": str(tenant.id),
-        "plan": "essential",
-        "owner_email": owner_user.email,
-    }
-
-
-@override_settings(
-    BILLING_PROVIDER="lemonsqueezy",
-    BILLING_API_KEY="test-key",
-    BILLING_STORE_ID="store_1",
-    BILLING_VARIANT_IDS={"pro": "variant_1"},
-    BILLING_CHECKOUT_URLS={},
-    BILLING_PORTAL_URL="",
-    BILLING_SUCCESS_URL="https://app.example/subscription/success",
-)
-def test_lemonsqueezy_checkout_includes_tenant_custom_data(db, tenant, owner_user, monkeypatch):
-    captured_payload = {}
-
-    class FakeResponse:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def read(self):
-            return b'{"data":{"attributes":{"url":"https://checkout.example/generated"}}}'
-
-    def fake_urlopen(request, timeout):
-        captured_payload.update(json.loads(request.data.decode("utf-8")))
-        return FakeResponse()
-
-    monkeypatch.setattr("apps.subscriptions.providers.urlopen", fake_urlopen)
-    request = APIRequestFactory().post(
-        "/api/v1/subscription/checkout",
-        {"tenant": str(tenant.id), "plan": "pro"},
-        format="json",
-    )
-    force_authenticate(request, user=owner_user)
-    response = CheckoutView.as_view()(request)
-
-    checkout_data = captured_payload["data"]["attributes"]["checkout_data"]
-    assert response.status_code == 200
-    assert response.data["checkout_url"] == "https://checkout.example/generated"
-    assert checkout_data["custom"] == {"tenant_id": str(tenant.id), "plan": "pro"}
-    assert checkout_data["email"] == owner_user.email
+    assert response.data["portal_url"] == "https://creem.io/portal/cust_1"
+    assert captured_url == "https://test-api.creem.io/v1/customers/billing"
+    assert captured_payload == {"customer_id": "cust_1"}
 
 
 def test_plan_policy_exposes_launch_pricing_metadata():

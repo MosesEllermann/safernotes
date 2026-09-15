@@ -322,6 +322,13 @@ class ApiClient {
     return SubscriptionInfo.fromJson(_decode(response));
   }
 
+  Future<BillingPlanCatalog> fetchBillingPlans({
+    required String accessToken,
+  }) async {
+    final json = await _get('/api/v1/subscription/plans', accessToken);
+    return BillingPlanCatalog.fromJson(json);
+  }
+
   Future<SubscriptionUsage> fetchSubscriptionUsage({
     required String accessToken,
     required String tenant,
@@ -348,6 +355,18 @@ class ApiClient {
       accessToken: accessToken,
     );
     return CheckoutSession.fromJson(json);
+  }
+
+  Future<PortalSession> createBillingPortal({
+    required String accessToken,
+    required String tenant,
+  }) async {
+    final json = await _post(
+      '/api/v1/subscription/portal',
+      {'tenant': tenant},
+      accessToken: accessToken,
+    );
+    return PortalSession.fromJson(json);
   }
 
   Future<Map<String, dynamic>> _get(String path, String accessToken) async {
@@ -493,6 +512,77 @@ class SubscriptionInfo {
   }
 }
 
+class BillingPlanCatalog {
+  const BillingPlanCatalog({
+    required this.currency,
+    required this.plans,
+  });
+
+  final String currency;
+  final List<BillingPlan> plans;
+
+  factory BillingPlanCatalog.fromJson(Map<String, dynamic> json) {
+    return BillingPlanCatalog(
+      currency: json['currency'] as String? ?? 'EUR',
+      plans: (json['plans'] as List? ?? const [])
+          .map(
+            (value) => BillingPlan.fromJson(
+              Map<String, dynamic>.from(value as Map),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class BillingPlan {
+  const BillingPlan({
+    required this.key,
+    required this.name,
+    required this.currency,
+    required this.monthlyEquivalentCents,
+    required this.yearlyCents,
+    required this.storageBytes,
+    required this.maxNotes,
+    required this.maxCollaboratorsPerNote,
+    required this.versionHistoryDays,
+    required this.checkoutEnabled,
+  });
+
+  final String key;
+  final String name;
+  final String currency;
+  final int monthlyEquivalentCents;
+  final int yearlyCents;
+  final int storageBytes;
+  final int? maxNotes;
+  final int maxCollaboratorsPerNote;
+  final int versionHistoryDays;
+  final bool checkoutEnabled;
+
+  factory BillingPlan.fromJson(Map<String, dynamic> json) {
+    final pricing =
+        Map<String, dynamic>.from(json['pricing'] as Map? ?? const {});
+    final limits =
+        Map<String, dynamic>.from(json['limits'] as Map? ?? const {});
+    final features =
+        Map<String, dynamic>.from(json['features'] as Map? ?? const {});
+    return BillingPlan(
+      key: json['key'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      currency: json['currency'] as String? ?? 'EUR',
+      monthlyEquivalentCents: _jsonInt(pricing['monthly_equivalent_cents']),
+      yearlyCents: _jsonInt(pricing['yearly_cents']),
+      storageBytes: _jsonInt(limits['storage_bytes']),
+      maxNotes:
+          limits['max_notes'] == null ? null : _jsonInt(limits['max_notes']),
+      maxCollaboratorsPerNote: _jsonInt(limits['max_collaborators_per_note']),
+      versionHistoryDays: _jsonInt(features['version_history_days']),
+      checkoutEnabled: json['checkout_enabled'] as bool? ?? false,
+    );
+  }
+}
+
 class SubscriptionUsage {
   const SubscriptionUsage({
     required this.plan,
@@ -574,6 +664,23 @@ class CheckoutSession {
       provider: json['provider'] as String? ?? 'unconfigured',
       targetPlan: json['target_plan'] as String? ?? '',
       checkoutUrl: json['checkout_url'] as String?,
+    );
+  }
+}
+
+class PortalSession {
+  const PortalSession({
+    required this.status,
+    this.portalUrl,
+  });
+
+  final String status;
+  final String? portalUrl;
+
+  factory PortalSession.fromJson(Map<String, dynamic> json) {
+    return PortalSession(
+      status: json['status'] as String? ?? 'unknown',
+      portalUrl: json['portal_url'] as String?,
     );
   }
 }

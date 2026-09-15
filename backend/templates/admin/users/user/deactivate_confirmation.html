@@ -1,0 +1,30 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block content %}
+<div class="sn-confirmation">
+  <div class="sn-confirmation__icon" aria-hidden="true">!</div>
+  <p class="sn-eyebrow">Account access</p>
+  <h1>Deactivate selected accounts?</h1>
+  <p>These users will be signed out and will no longer be able to log in. Their encrypted data remains untouched, and the accounts can be reactivated later.</p>
+
+  <div class="sn-confirmation__accounts">
+    {% for account in accounts %}
+      <div><span class="sn-avatar">{{ account.email|first|upper }}</span><strong>{{ account.email }}</strong></div>
+    {% empty %}
+      <p>No eligible accounts were selected. Superuser accounts cannot be deactivated here.</p>
+    {% endfor %}
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    {% for account in accounts %}
+      <input type="hidden" name="{{ action_checkbox_name }}" value="{{ account.pk }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="{{ action_name }}">
+    <input type="hidden" name="apply" value="yes">
+    <a class="button sn-button--secondary" href="{% url 'owner_admin:users_user_changelist' %}">Cancel</a>
+    {% if accounts %}<button class="button sn-button--danger" type="submit">Deactivate accounts</button>{% endif %}
+  </form>
+</div>
+{% endblock %}

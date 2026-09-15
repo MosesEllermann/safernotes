@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/auth/recovery_key_dialog.dart';
@@ -14,11 +14,17 @@ import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
 enum _SettingsPage { appearance, plan, security }
 
+const pendingBillingPlanPreferenceKey = 'billing.pending_plan';
+
 final _settingsPageProvider =
-    StateProvider.autoDispose<_SettingsPage>((ref) => _SettingsPage.appearance);
+    StateProvider.autoDispose.family<_SettingsPage, _SettingsPage>(
+  (ref, initialPage) => initialPage,
+);
 
 class SettingsScreen extends ConsumerWidget {
-  const SettingsScreen({super.key});
+  const SettingsScreen({super.key, this.openPlan = false});
+
+  final bool openPlan;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,7 +34,10 @@ class SettingsScreen extends ConsumerWidget {
     final session = ref.watch(authControllerProvider).valueOrNull;
     final wide = MediaQuery.sizeOf(context).width >= 940;
     if (wide) {
-      final page = ref.watch(_settingsPageProvider);
+      final pageProvider = _settingsPageProvider(
+        openPlan ? _SettingsPage.plan : _SettingsPage.appearance,
+      );
+      final page = ref.watch(pageProvider);
       return Scaffold(
         key: const ValueKey('desktop-settings'),
         backgroundColor: Colors.transparent,
@@ -71,7 +80,7 @@ class SettingsScreen extends ConsumerWidget {
                                 label: l10n.t('appearance'),
                                 selected: page == _SettingsPage.appearance,
                                 onTap: () => ref
-                                    .read(_settingsPageProvider.notifier)
+                                    .read(pageProvider.notifier)
                                     .state = _SettingsPage.appearance,
                               ),
                               const SizedBox(height: 4),
@@ -81,7 +90,7 @@ class SettingsScreen extends ConsumerWidget {
                                 label: l10n.t('plan'),
                                 selected: page == _SettingsPage.plan,
                                 onTap: () => ref
-                                    .read(_settingsPageProvider.notifier)
+                                    .read(pageProvider.notifier)
                                     .state = _SettingsPage.plan,
                               ),
                               const SizedBox(height: 4),
@@ -91,7 +100,7 @@ class SettingsScreen extends ConsumerWidget {
                                 label: l10n.t('security'),
                                 selected: page == _SettingsPage.security,
                                 onTap: () => ref
-                                    .read(_settingsPageProvider.notifier)
+                                    .read(pageProvider.notifier)
                                     .state = _SettingsPage.security,
                               ),
                             ],
@@ -398,14 +407,23 @@ class _BillingPanel extends ConsumerStatefulWidget {
 }
 
 class _BillingPanelState extends ConsumerState<_BillingPanel> {
-  late Future<SubscriptionInfo?> _subscriptionFuture;
+  late Future<_BillingData?> _billingFuture;
   String? _busyPlan;
   String? _error;
+  String? _notice;
+  bool _noticeIsError = false;
+  bool _checkoutReturnHandled = false;
+  bool _activationPending = false;
 
   @override
   void initState() {
     super.initState();
-    _subscriptionFuture = _loadSubscription();
+    _billingFuture = _loadBillingData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (ref.read(webBillingEnabledProvider)) {
+        _handleCheckoutReturn();
+      }
+    });
   }
 
   @override
@@ -413,16 +431,35 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.accessToken != widget.accessToken ||
         oldWidget.tenant != widget.tenant) {
-      _subscriptionFuture = _loadSubscription();
+      _billingFuture = _loadBillingData();
+      if (widget.accessToken.isNotEmpty &&
+          widget.tenant.isNotEmpty &&
+          ref.read(webBillingEnabledProvider)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _handleCheckoutReturn();
+        });
+      }
     }
   }
 
-  Future<SubscriptionInfo?> _loadSubscription() async {
+  Future<_BillingData?> _loadBillingData() async {
     if (widget.accessToken.isEmpty || widget.tenant.isEmpty) return null;
-    return ref.read(apiClientProvider).fetchSubscription(
-          accessToken: widget.accessToken,
-          tenant: widget.tenant,
-        );
+    final api = ref.read(apiClientProvider);
+    final subscription = await api.fetchSubscription(
+      accessToken: widget.accessToken,
+      tenant: widget.tenant,
+    );
+    final catalog = await api.fetchBillingPlans(
+      accessToken: widget.accessToken,
+    );
+    return _BillingData(subscription: subscription, catalog: catalog);
+  }
+
+  void _refresh() {
+    setState(() {
+      _error = null;
+      _billingFuture = _loadBillingData();
+    });
   }
 
   @override
@@ -433,11 +470,14 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
       padding: widget.inset,
       child: Container(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
-        child: FutureBuilder<SubscriptionInfo?>(
-          future: _subscriptionFuture,
+        child: FutureBuilder<_BillingData?>(
+          future: _billingFuture,
           builder: (context, snapshot) {
-            final subscription = snapshot.data;
+            final data = snapshot.data;
+            final subscription = data?.subscription;
             final plan = subscription?.plan ?? 'free';
+            final hasPaidPlan = plan != 'free';
+            final webBilling = ref.watch(webBillingEnabledProvider);
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -467,34 +507,97 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  _planTitle(plan, l10n),
+                  _planTitle(plan, data?.catalog, l10n),
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: scheme.onSurfaceVariant,
                         fontWeight: FontWeight.w700,
                       ),
                 ),
-                const SizedBox(height: 18),
-                _PlanOptionCard(
-                  title: 'Essential',
-                  price: l10n.t('essentialAnnual'),
-                  description: l10n.t('essentialBilling'),
-                  icon: AppIcons.badgeCheck,
-                  selected: plan == 'essential',
-                  busy: _busyPlan == 'essential',
-                  onPressed: plan == 'essential'
-                      ? null
-                      : () => _startCheckout('essential'),
-                ),
-                const SizedBox(height: 10),
-                _PlanOptionCard(
-                  title: 'Pro',
-                  price: l10n.t('proAnnual'),
-                  description: l10n.t('proBilling'),
-                  icon: AppIcons.crown,
-                  selected: plan == 'pro',
-                  busy: _busyPlan == 'pro',
-                  onPressed: plan == 'pro' ? null : () => _startCheckout('pro'),
-                ),
+                if (snapshot.hasError) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    l10n.t('plansUnavailable'),
+                    style: TextStyle(color: scheme.error),
+                  ),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _refresh,
+                      icon: const Icon(AppIcons.refreshCw, size: 16),
+                      label: Text(l10n.t('retry')),
+                    ),
+                  ),
+                ] else if (data != null && webBilling) ...[
+                  const SizedBox(height: 18),
+                  for (var index = 0;
+                      index < data.catalog.plans.length;
+                      index++) ...[
+                    if (index > 0) const SizedBox(height: 10),
+                    _PlanOptionCard(
+                      key: ValueKey(
+                          'billing-plan-${data.catalog.plans[index].key}'),
+                      title: data.catalog.plans[index].name,
+                      price: _yearlyPrice(data.catalog.plans[index], l10n),
+                      description:
+                          _planDescription(data.catalog.plans[index], l10n),
+                      icon: data.catalog.plans[index].key == 'pro'
+                          ? AppIcons.crown
+                          : AppIcons.badgeCheck,
+                      selected: plan == data.catalog.plans[index].key,
+                      busy: _busyPlan == data.catalog.plans[index].key,
+                      onPressed: hasPaidPlan ||
+                              plan == data.catalog.plans[index].key ||
+                              !data.catalog.plans[index].checkoutEnabled
+                          ? null
+                          : () => _startCheckout(data.catalog.plans[index].key),
+                    ),
+                  ],
+                  if (plan != 'free') ...[
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      key: const ValueKey('manage-subscription'),
+                      onPressed: _busyPlan == 'portal' ? null : _openPortal,
+                      icon: _busyPlan == 'portal'
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(AppIcons.creditCard, size: 17),
+                      label: Text(l10n.t('manageSubscription')),
+                    ),
+                  ],
+                ] else if (data != null) ...[
+                  const SizedBox(height: 14),
+                  Text(
+                    l10n.t('nativeBillingUnavailable'),
+                    key: const ValueKey('native-billing-unavailable'),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ],
+                if (_notice != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _notice!,
+                    key: const ValueKey('billing-notice'),
+                    style: TextStyle(
+                      color: _noticeIsError ? scheme.error : scheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (_activationPending)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _retryActivation,
+                        icon: const Icon(AppIcons.refreshCw, size: 16),
+                        label: Text(l10n.t('refreshStatus')),
+                      ),
+                    ),
+                ],
                 if (_error != null) ...[
                   const SizedBox(height: 12),
                   Text(_error!, style: TextStyle(color: scheme.error)),
@@ -507,18 +610,43 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
     );
   }
 
-  String _planTitle(String plan, AppL10n l10n) {
-    final name = switch (plan) {
-      'essential' => 'Essential',
-      'pro' => 'Pro',
-      'team' => 'Team',
-      'enterprise' => 'Enterprise',
-      _ => 'Free',
-    };
+  String _planTitle(
+    String plan,
+    BillingPlanCatalog? catalog,
+    AppL10n l10n,
+  ) {
+    final name = catalog?.plans
+            .where((candidate) => candidate.key == plan)
+            .firstOrNull
+            ?.name ??
+        (plan == 'free' ? l10n.t('freePlan') : plan);
     return l10n.t('currentPlan', params: {'plan': name});
   }
 
+  String _yearlyPrice(BillingPlan plan, AppL10n l10n) {
+    final amount = plan.yearlyCents / 100;
+    final formatted = amount == amount.roundToDouble()
+        ? amount.toStringAsFixed(0)
+        : amount.toStringAsFixed(2);
+    return l10n.t('yearlyPrice', params: {'price': formatted});
+  }
+
+  String _planDescription(BillingPlan plan, AppL10n l10n) {
+    final storageGb = plan.storageBytes ~/ (1024 * 1024 * 1024);
+    final notes =
+        plan.maxNotes == null ? l10n.t('unlimited') : plan.maxNotes.toString();
+    return l10n.t(
+      'planFeatureSummary',
+      params: {
+        'storage': storageGb,
+        'notes': notes,
+        'history': plan.versionHistoryDays,
+      },
+    );
+  }
+
   Future<void> _startCheckout(String plan) async {
+    if (!ref.read(webBillingEnabledProvider)) return;
     setState(() {
       _busyPlan = plan;
       _error = null;
@@ -539,7 +667,21 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
         });
         return;
       }
-      await _showCheckoutDialog(session.checkoutUrl!);
+      final checkoutUri = Uri.tryParse(session.checkoutUrl!);
+      if (checkoutUri == null || checkoutUri.scheme != 'https') {
+        setState(() => _error = ref.read(l10nProvider).t('checkoutInvalidUrl'));
+        return;
+      }
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(pendingBillingPlanPreferenceKey, plan);
+      final opened = await ref.read(webUrlLauncherProvider)(checkoutUri);
+      if (!opened) {
+        await preferences.remove(pendingBillingPlanPreferenceKey);
+        if (mounted) {
+          setState(
+              () => _error = ref.read(l10nProvider).t('checkoutOpenFailed'));
+        }
+      }
     } catch (error) {
       if (mounted) {
         setState(
@@ -550,42 +692,127 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
     }
   }
 
-  Future<void> _showCheckoutDialog(String checkoutUrl) {
-    return showDialog<void>(
-      context: context,
-      builder: (context) {
-        final l10n = ref.read(l10nProvider);
-        final scheme = Theme.of(context).colorScheme;
-        return AlertDialog(
-          title: Text(l10n.t('checkoutOpen')),
-          content: SelectableText(
-            checkoutUrl,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(l10n.t('close')),
-            ),
-            FilledButton.icon(
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: checkoutUrl));
-                if (context.mounted) Navigator.of(context).pop();
-              },
-              icon: const Icon(AppIcons.copy, size: 16),
-              label: Text(l10n.t('copyLink')),
-            ),
-          ],
+  Future<void> _openPortal() async {
+    if (!ref.read(webBillingEnabledProvider)) return;
+    setState(() {
+      _busyPlan = 'portal';
+      _error = null;
+    });
+    try {
+      final portal = await ref.read(apiClientProvider).createBillingPortal(
+            accessToken: widget.accessToken,
+            tenant: widget.tenant,
+          );
+      final portalUri = Uri.tryParse(portal.portalUrl ?? '');
+      if (portalUri == null || portalUri.scheme != 'https') {
+        if (mounted) {
+          setState(() {
+            _error = ref.read(l10nProvider).t(
+              'portalUnavailable',
+              params: {'status': portal.status},
+            );
+          });
+        }
+        return;
+      }
+      final opened = await ref.read(webUrlLauncherProvider)(portalUri);
+      if (!opened && mounted) {
+        setState(() => _error = ref.read(l10nProvider).t('portalOpenFailed'));
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.toString().replaceFirst('Exception: ', ''),
         );
-      },
-    );
+      }
+    } finally {
+      if (mounted) setState(() => _busyPlan = null);
+    }
   }
+
+  Future<void> _handleCheckoutReturn() async {
+    if (_checkoutReturnHandled ||
+        widget.accessToken.isEmpty ||
+        widget.tenant.isEmpty) {
+      return;
+    }
+    _checkoutReturnHandled = true;
+    await _resolveCheckoutReturn();
+  }
+
+  Future<void> _resolveCheckoutReturn() async {
+    final preferences = await SharedPreferences.getInstance();
+    final pendingPlan = preferences.getString(pendingBillingPlanPreferenceKey);
+    final completed = ref.read(billingReturnStatusProvider) == 'success';
+    if (pendingPlan == null && !completed) return;
+
+    if (!completed) {
+      await preferences.remove(pendingBillingPlanPreferenceKey);
+      if (mounted) {
+        setState(() {
+          _notice = ref.read(l10nProvider).t('checkoutNotCompleted');
+          _noticeIsError = true;
+          _activationPending = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _notice = ref.read(l10nProvider).t('paymentProcessing');
+        _noticeIsError = false;
+        _activationPending = false;
+      });
+    }
+    try {
+      final data = await _loadBillingData();
+      if (!mounted || data == null) return;
+      setState(() {
+        _billingFuture = Future.value(data);
+        if (pendingPlan == null || data.subscription.plan == pendingPlan) {
+          _notice = ref.read(l10nProvider).t('paymentComplete');
+          _activationPending = false;
+        } else {
+          _notice = ref.read(l10nProvider).t('paymentActivationPending');
+          _activationPending = true;
+        }
+      });
+      if (pendingPlan == null || data.subscription.plan == pendingPlan) {
+        await preferences.remove(pendingBillingPlanPreferenceKey);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _notice = ref.read(l10nProvider).t('paymentActivationPending');
+          _activationPending = true;
+        });
+      }
+    }
+  }
+
+  Future<void> _retryActivation() async {
+    setState(() {
+      _notice = ref.read(l10nProvider).t('paymentProcessing');
+      _activationPending = false;
+    });
+    await _resolveCheckoutReturn();
+  }
+}
+
+class _BillingData {
+  const _BillingData({
+    required this.subscription,
+    required this.catalog,
+  });
+
+  final SubscriptionInfo subscription;
+  final BillingPlanCatalog catalog;
 }
 
 class _PlanOptionCard extends StatelessWidget {
   const _PlanOptionCard({
+    super.key,
     required this.title,
     required this.price,
     required this.description,

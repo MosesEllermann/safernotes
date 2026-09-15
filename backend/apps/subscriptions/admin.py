@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import csv
+
 from django import forms
 from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.html import format_html
 
 from apps.audit.events import record_audit_event
 from apps.subscriptions.models import Subscription
@@ -24,6 +28,21 @@ SUBSCRIPTION_STATUSES = (
     "expired",
 )
 INACTIVE_STATUSES = {"canceled", "cancelled", "expired"}
+
+
+class SubscriptionHealthFilter(admin.SimpleListFilter):
+    title = "billing health"
+    parameter_name = "health"
+
+    def lookups(self, request, model_admin):
+        return (("healthy", "Healthy"), ("attention", "Needs attention"))
+
+    def queryset(self, request, queryset):
+        if self.value() == "healthy":
+            return queryset.filter(status__in=("active", "trialing", "on_trial"))
+        if self.value() == "attention":
+            return queryset.filter(status__in=("past_due", "unpaid"))
+        return queryset
 
 
 class SubscriptionAdminForm(forms.ModelForm):
@@ -51,17 +70,25 @@ class SubscriptionAdmin(admin.ModelAdmin):
     list_display = (
         "owner_email",
         "tenant_id_display",
-        "plan",
-        "status",
+        "plan_badge",
+        "status_badge",
         "provider_display",
         "current_period_end",
         "updated_at",
     )
-    list_filter = ("plan", "status", "billing_provider", "created_at")
+    list_filter = (
+        SubscriptionHealthFilter,
+        "plan",
+        "status",
+        "billing_provider",
+        "created_at",
+    )
     search_fields = ("tenant__owner_user__email", "plan", "status", "billing_provider")
     ordering = ("-updated_at",)
     list_per_page = 50
-    actions = None
+    list_max_show_all = 200
+    show_full_result_count = False
+    actions = ("export_subscriptions_csv",)
     fields = (
         "tenant",
         "owner_email",
@@ -100,6 +127,53 @@ class SubscriptionAdmin(admin.ModelAdmin):
     @admin.display(description="Provider", ordering="billing_provider")
     def provider_display(self, obj):
         return obj.billing_provider or "Manual"
+
+    @admin.display(description="Plan", ordering="plan")
+    def plan_badge(self, obj):
+        tone = "accent" if obj.plan != "free" else "neutral"
+        return format_html('<span class="sn-badge sn-badge--{}">{}</span>', tone, obj.plan)
+
+    @admin.display(description="Status", ordering="status")
+    def status_badge(self, obj):
+        if obj.status in ("active", "trialing", "on_trial"):
+            tone = "positive"
+        elif obj.status in ("past_due", "unpaid"):
+            tone = "danger"
+        else:
+            tone = "neutral"
+        return format_html('<span class="sn-badge sn-badge--{}">{}</span>', tone, obj.status)
+
+    @admin.action(description="Export selected subscriptions as CSV")
+    def export_subscriptions_csv(self, request, queryset):
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="safernotes-subscriptions.csv"'
+        writer = csv.writer(response)
+        writer.writerow(
+            (
+                "owner_email",
+                "tenant_id",
+                "plan",
+                "status",
+                "provider",
+                "current_period_end",
+                "updated_at",
+            )
+        )
+        for subscription in queryset.iterator():
+            writer.writerow(
+                (
+                    self.owner_email(subscription),
+                    subscription.tenant_id,
+                    subscription.plan,
+                    subscription.status,
+                    self.provider_display(subscription),
+                    subscription.current_period_end.isoformat()
+                    if subscription.current_period_end
+                    else "",
+                    subscription.updated_at.isoformat(),
+                )
+            )
+        return response
 
     @transaction.atomic
     def save_model(self, request, obj, form, change):

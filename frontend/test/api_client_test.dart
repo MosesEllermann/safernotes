@@ -161,6 +161,80 @@ void main() {
     expect(usage.maxNotes, 500);
   });
 
+  test('billing plans come from the public subscription catalogue', () async {
+    late http.Request captured;
+    final client = ApiClient(
+      baseUrl: 'http://example.test',
+      httpClient: MockClient((request) async {
+        captured = request;
+        return http.Response(
+          jsonEncode({
+            'currency': 'EUR',
+            'plans': [
+              {
+                'key': 'essential',
+                'name': 'Essential',
+                'currency': 'EUR',
+                'pricing': {
+                  'monthly_equivalent_cents': 150,
+                  'yearly_cents': 1800,
+                  'billing_interval': 'year',
+                },
+                'limits': {
+                  'storage_bytes': 5368709120,
+                  'max_notes': 5000,
+                  'max_collaborators_per_note': 5,
+                },
+                'features': {'version_history_days': 90},
+                'checkout_enabled': true,
+              },
+            ],
+          }),
+          200,
+        );
+      }),
+    );
+
+    final catalog = await client.fetchBillingPlans(
+      accessToken: 'access-token',
+    );
+
+    expect(captured.method, 'GET');
+    expect(captured.url.path, '/api/v1/subscription/plans');
+    expect(captured.headers['Authorization'], 'Bearer access-token');
+    expect(catalog.currency, 'EUR');
+    expect(catalog.plans.single.key, 'essential');
+    expect(catalog.plans.single.yearlyCents, 1800);
+    expect(catalog.plans.single.storageBytes, 5368709120);
+    expect(catalog.plans.single.checkoutEnabled, isTrue);
+  });
+
+  test('billing portal uses the authenticated tenant endpoint', () async {
+    late http.Request captured;
+    final client = ApiClient(
+      baseUrl: 'http://example.test',
+      httpClient: MockClient((request) async {
+        captured = request;
+        return http.Response(
+          '{"status":"ready","portal_url":"https://creem.io/portal/1"}',
+          200,
+        );
+      }),
+    );
+
+    final portal = await client.createBillingPortal(
+      accessToken: 'access-token',
+      tenant: 'tenant-id',
+    );
+
+    expect(captured.method, 'POST');
+    expect(captured.url.path, '/api/v1/subscription/portal');
+    expect(captured.headers['Authorization'], 'Bearer access-token');
+    expect(jsonDecode(captured.body), {'tenant': 'tenant-id'});
+    expect(portal.status, 'ready');
+    expect(portal.portalUrl, 'https://creem.io/portal/1');
+  });
+
   test('empty trash uses the authenticated bulk endpoint', () async {
     late http.Request captured;
     final client = ApiClient(

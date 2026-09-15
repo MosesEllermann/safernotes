@@ -54,21 +54,28 @@ def production_configuration_check(app_configs, **kwargs):
                 )
             )
 
-    if settings.BILLING_PROVIDER == "paddle":
+    if settings.BILLING_PROVIDER == "creem":
         missing = []
         if not settings.BILLING_API_KEY:
             missing.append("BILLING_API_KEY")
         if not settings.BILLING_WEBHOOK_SECRET:
             missing.append("BILLING_WEBHOOK_SECRET")
         for plan in ("essential", "pro"):
-            if plan not in settings.BILLING_PRICE_IDS:
-                missing.append(f"BILLING_PRICE_IDS.{plan}")
+            if plan not in settings.BILLING_PRODUCT_IDS:
+                missing.append(f"BILLING_PRODUCT_IDS.{plan}")
         if missing:
             issues.append(
                 Error(
-                    "Paddle billing is enabled but required settings are missing: "
+                    "Creem billing is enabled but required settings are missing: "
                     + ", ".join(missing),
                     id="safernotes.E004",
+                )
+            )
+        if settings.BILLING_API_BASE_URL != "https://api.creem.io/v1":
+            issues.append(
+                Error(
+                    "Production Creem billing must use https://api.creem.io/v1.",
+                    id="safernotes.E006",
                 )
             )
 

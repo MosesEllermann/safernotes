@@ -5,14 +5,16 @@
 
 {% block extrahead %}
   {{ block.super }}
-  <link rel="stylesheet" href="{% static 'admin/safernotes-admin.css' %}">
+  <link rel="stylesheet" href="{% static 'admin/safernotes-admin.css' %}?v=5">
 {% endblock %}
 
 {% block branding %}
-  <div class="safernotes-brand">
-    <span class="safernotes-brand__name">Safernotes</span>
-    <span class="safernotes-brand__label">Operations</span>
-  </div>
+  <a class="safernotes-brand" href="{% url 'owner_admin:index' %}">
+    <span class="safernotes-brand__mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" role="img"><path d="M9 4.5h11.3L25 9.2v17.3a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 7 26.5V6a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M20 4.8V10h5M11.5 15h9M11.5 19.5h9M11.5 24h5.5"/></svg>
+    </span>
+    <span><span class="safernotes-brand__name">Safernotes</span><span class="safernotes-brand__label">Operations</span></span>
+  </a>
 {% endblock %}
 
 {% block nav-global %}{% endblock %}

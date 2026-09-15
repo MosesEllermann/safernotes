@@ -1,0 +1,8 @@
+Neu in Version 0.1.6:
+
+• Checklisten nutzen den Platz über der Tastatur besser und halten den aktuellen Eintrag sichtbar.
+• Sanfte Übergänge beim Öffnen und Schließen der Tastatur.
+• Einladungslinks für geteilte Notizen öffnen zuverlässiger direkt in der App.
+• Anmeldung und Registrierung funktionieren jetzt auch über die Enter-Taste.
+• Verbesserte Sortierung in der Listenansicht.
+• Weitere Korrekturen für Stabilität, Geschwindigkeit und Geräte mit geringerer Leistung.

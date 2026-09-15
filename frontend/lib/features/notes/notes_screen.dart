@@ -111,6 +111,19 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       if (notes != null) _scheduleReminders(notes);
     }, fireImmediately: true);
     _scheduleInvitationReview();
+    _scheduleBillingReturnReview();
+  }
+
+  Future<void> _scheduleBillingReturnReview() async {
+    if (!kIsWeb) return;
+    final preferences = await SharedPreferences.getInstance();
+    final hasPendingCheckout =
+        preferences.getString(pendingBillingPlanPreferenceKey) != null;
+    final completed = ref.read(billingReturnStatusProvider) == 'success';
+    if (!mounted || (!hasPendingCheckout && !completed)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openSettings(context, ref, openPlan: true);
+    });
   }
 
   @override
@@ -8051,11 +8064,15 @@ class _AccountButton extends ConsumerWidget {
   }
 }
 
-void _openSettings(BuildContext context, WidgetRef ref) {
+void _openSettings(
+  BuildContext context,
+  WidgetRef ref, {
+  bool openPlan = false,
+}) {
   final reset = ref.read(_noteOverviewResetProvider.notifier);
   final route = Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => const SettingsScreen(),
+      builder: (_) => SettingsScreen(openPlan: openPlan),
     ),
   );
   unawaited(route.whenComplete(() {

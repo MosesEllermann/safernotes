@@ -7,7 +7,7 @@ from apps.attachments.models import Attachment, TenantStorageUsage
 from apps.audit.models import AuditEvent
 from apps.authentication.models import EmailVerificationCode, KeyMaterial, RecoveryCode, Session
 from apps.devices.models import Device
-from apps.notes.models import Note, NoteConflict, NoteKeyGrant
+from apps.notes.models import Note, NoteConflict, NoteKeyGrant, ShareInvitation
 from apps.subscriptions.models import Subscription
 from apps.users.admin_site import owner_admin_site
 from apps.users.models import Profile
@@ -79,6 +79,72 @@ def test_owner_admin_requires_superuser_access(client, django_user_model):
     assert b"safernotes-brand__label" in owner_response.content
 
 
+def test_owner_dashboard_shows_operational_health_without_encrypted_content(
+    client,
+    django_user_model,
+    owner_user,
+    recipient_user,
+    tenant,
+    note,
+    encrypted_payload,
+):
+    configure_account(owner_user, tenant)
+    ShareInvitation.objects.create(
+        note=note,
+        sender_user=owner_user,
+        recipient_user=recipient_user,
+        role="editor",
+        encrypted_note_key={**encrypted_payload, "ciphertext": "share-key-secret"},
+        invitation_signature=b"invite-signature-secret",
+    )
+    client.force_login(create_owner_admin(django_user_model))
+
+    response = client.get(reverse("owner_admin:index"))
+    page = response.content.decode()
+
+    assert response.status_code == 200
+    assert "Operations overview" in page
+    assert "Pending invites" in page
+    assert "Encrypted notes" in page
+    assert "Inspect sharing invites" in page
+    assert owner_user.email in page
+    assert "share-key-secret" not in page
+    assert "invite-signature-secret" not in page
+
+
+def test_share_invitation_admin_is_read_only_and_hides_crypto_material(
+    client,
+    django_user_model,
+    owner_user,
+    recipient_user,
+    note,
+    encrypted_payload,
+):
+    invitation = ShareInvitation.objects.create(
+        note=note,
+        sender_user=owner_user,
+        recipient_user=recipient_user,
+        role="editor",
+        encrypted_note_key={**encrypted_payload, "ciphertext": "share-key-secret"},
+        invitation_signature=b"invite-signature-secret",
+    )
+    client.force_login(create_owner_admin(django_user_model))
+
+    responses = (
+        client.get(reverse("owner_admin:notes_shareinvitation_changelist")),
+        client.get(reverse("owner_admin:notes_shareinvitation_change", args=(invitation.pk,))),
+    )
+    rendered = "\n".join(response.content.decode() for response in responses)
+
+    assert all(response.status_code == 200 for response in responses)
+    assert owner_user.email in rendered
+    assert recipient_user.email in rendered
+    assert "share-key-secret" not in rendered
+    assert "invite-signature-secret" not in rendered
+    assert "encrypted_note_key" not in rendered
+    assert "invitation_signature" not in rendered
+
+
 def test_user_admin_shows_only_operational_metadata(
     client,
     django_user_model,
@@ -99,6 +165,70 @@ def test_user_admin_shows_only_operational_metadata(
     assert "manual" in page
     assert "1.0 KB" in page
     assert ">1<" in page
+
+
+def test_account_deactivation_requires_confirmation_and_is_reversible(
+    client,
+    django_user_model,
+    owner_user,
+):
+    client.force_login(create_owner_admin(django_user_model))
+    changelist_url = reverse("owner_admin:users_user_changelist")
+    action_payload = {
+        "action": "deactivate_accounts",
+        "_selected_action": str(owner_user.pk),
+        "index": "0",
+    }
+
+    confirmation = client.post(changelist_url, action_payload)
+    owner_user.refresh_from_db()
+    assert confirmation.status_code == 200
+    assert b"Confirm account deactivation" in confirmation.content
+    assert owner_user.is_active
+
+    deactivated = client.post(changelist_url, {**action_payload, "apply": "yes"})
+    owner_user.refresh_from_db()
+    assert deactivated.status_code == 302
+    assert not owner_user.is_active
+    assert owner_user.status == "suspended"
+    assert AuditEvent.objects.filter(event_type="admin.account.deactivated").exists()
+
+    activated = client.post(
+        changelist_url,
+        {
+            "action": "activate_accounts",
+            "_selected_action": str(owner_user.pk),
+            "index": "0",
+        },
+    )
+    owner_user.refresh_from_db()
+    assert activated.status_code == 302
+    assert owner_user.is_active
+    assert owner_user.status == "active"
+    assert AuditEvent.objects.filter(event_type="admin.account.activated").exists()
+
+
+def test_account_export_contains_metadata_but_no_auth_material(
+    client,
+    django_user_model,
+    owner_user,
+):
+    client.force_login(create_owner_admin(django_user_model))
+
+    response = client.post(
+        reverse("owner_admin:users_user_changelist"),
+        {
+            "action": "export_accounts_csv",
+            "_selected_action": str(owner_user.pk),
+            "index": "0",
+        },
+    )
+
+    csv_export = response.content.decode()
+    assert response.status_code == 200
+    assert response["Content-Type"] == "text/csv"
+    assert owner_user.email in csv_export
+    assert owner_user.password not in csv_export
 
 
 def test_subscription_plan_change_is_validated_synced_and_audited(

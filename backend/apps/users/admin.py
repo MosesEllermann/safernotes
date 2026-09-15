@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from django.contrib import admin
+import csv
+
+from django.contrib import admin, messages
+from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
+from django.db import transaction
 from django.db.models import Count
+from django.http import HttpResponse
+from django.template.response import TemplateResponse
 from django.urls import reverse
 from django.utils.html import format_html
 
+from apps.audit.events import record_audit_event
 from apps.users.admin_site import owner_admin_site
 from apps.users.models import User
 
@@ -30,10 +37,10 @@ class SafeUserAdmin(admin.ModelAdmin):
 
     list_display = (
         "email",
-        "status",
+        "status_badge",
         "verification_state",
-        "subscription_plan",
-        "subscription_status",
+        "subscription_plan_badge",
+        "subscription_status_badge",
         "billing_provider",
         "notes_count",
         "storage_usage",
@@ -56,7 +63,9 @@ class SafeUserAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
     date_hierarchy = "created_at"
     list_per_page = 50
-    actions = None
+    list_max_show_all = 200
+    show_full_result_count = False
+    actions = ("export_accounts_csv", "activate_accounts", "deactivate_accounts")
     fields = (
         "id",
         "email",
@@ -92,6 +101,11 @@ class SafeUserAdmin(admin.ModelAdmin):
     def verification_state(self, obj):
         return obj.email_verified_at is not None
 
+    @admin.display(description="Status", ordering="status")
+    def status_badge(self, obj):
+        tone = "positive" if obj.is_active and obj.status == "active" else "warning"
+        return self._badge(obj.status, tone)
+
     @admin.display(description="Default tenant")
     def default_tenant_id_display(self, obj):
         return str(obj.default_tenant_id) if obj.default_tenant_id else "-"
@@ -103,10 +117,27 @@ class SafeUserAdmin(admin.ModelAdmin):
             return subscription.plan
         return obj.default_tenant.plan if obj.default_tenant_id else "-"
 
+    @admin.display(description="Plan", ordering="default_tenant__subscription__plan")
+    def subscription_plan_badge(self, obj):
+        value = self.subscription_plan(obj)
+        tone = "accent" if value not in ("-", "free") else "neutral"
+        return self._badge(value, tone)
+
     @admin.display(description="Subscription", ordering="default_tenant__subscription__status")
     def subscription_status(self, obj):
         subscription = self._subscription(obj)
         return subscription.status if subscription else "Not configured"
+
+    @admin.display(description="Subscription", ordering="default_tenant__subscription__status")
+    def subscription_status_badge(self, obj):
+        value = self.subscription_status(obj)
+        if value in ("active", "trialing", "on_trial"):
+            tone = "positive"
+        elif value in ("past_due", "unpaid"):
+            tone = "danger"
+        else:
+            tone = "neutral"
+        return self._badge(value, tone)
 
     @admin.display(
         description="Provider", ordering="default_tenant__subscription__billing_provider"
@@ -147,6 +178,103 @@ class SafeUserAdmin(admin.ModelAdmin):
             '<a class="button" href="{}?tenant={}">Create subscription</a>',
             url,
             obj.default_tenant_id,
+        )
+
+    @admin.action(description="Export selected accounts as CSV")
+    def export_accounts_csv(self, request, queryset):
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="safernotes-accounts.csv"'
+        writer = csv.writer(response)
+        writer.writerow(
+            (
+                "email",
+                "account_status",
+                "active",
+                "email_verified",
+                "plan",
+                "subscription_status",
+                "provider",
+                "notes",
+                "storage",
+                "created_at",
+            )
+        )
+        for account in queryset.iterator():
+            writer.writerow(
+                (
+                    account.email,
+                    account.status,
+                    account.is_active,
+                    account.email_verified_at is not None,
+                    self.subscription_plan(account),
+                    self.subscription_status(account),
+                    self.billing_provider(account),
+                    self.notes_count(account),
+                    self.storage_usage(account),
+                    account.created_at.isoformat(),
+                )
+            )
+        return response
+
+    @admin.action(description="Activate selected accounts")
+    def activate_accounts(self, request, queryset):
+        accounts = list(queryset.filter(is_superuser=False, is_active=False))
+        with transaction.atomic():
+            for account in accounts:
+                previous_status = account.status
+                account.is_active = True
+                account.status = "active"
+                account.save(update_fields=("is_active", "status", "updated_at"))
+                self._audit_account_action(request, account, "activated", previous_status)
+        self.message_user(
+            request,
+            f"Activated {len(accounts)} account(s).",
+            messages.SUCCESS,
+        )
+
+    @admin.action(description="Deactivate selected accounts (reversible)")
+    def deactivate_accounts(self, request, queryset):
+        accounts = queryset.filter(is_superuser=False, is_active=True)
+        if "apply" not in request.POST:
+            return TemplateResponse(
+                request,
+                "admin/users/user/deactivate_confirmation.html",
+                {
+                    **self.admin_site.each_context(request),
+                    "title": "Confirm account deactivation",
+                    "opts": self.model._meta,
+                    "accounts": accounts,
+                    "action_checkbox_name": ACTION_CHECKBOX_NAME,
+                    "action_name": "deactivate_accounts",
+                },
+            )
+
+        accounts = list(accounts)
+        with transaction.atomic():
+            for account in accounts:
+                previous_status = account.status
+                account.is_active = False
+                account.status = "suspended"
+                account.save(update_fields=("is_active", "status", "updated_at"))
+                self._audit_account_action(request, account, "deactivated", previous_status)
+        self.message_user(
+            request,
+            f"Deactivated {len(accounts)} account(s). Superuser accounts were skipped.",
+            messages.SUCCESS,
+        )
+
+    @staticmethod
+    def _audit_account_action(request, account, action, previous_status):
+        record_audit_event(
+            event_type=f"admin.account.{action}",
+            actor_user=request.user,
+            tenant=account.default_tenant,
+            target_type="user",
+            metadata={
+                "account_id": account.pk,
+                "previous_status": previous_status,
+                "source": "django-admin",
+            },
         )
 
     def has_add_permission(self, request):
@@ -192,3 +320,11 @@ class SafeUserAdmin(admin.ModelAdmin):
                 return f"{amount:.0f} {unit}" if unit == "B" else f"{amount:.1f} {unit}"
             amount /= 1024
         return f"{value} B"
+
+    @staticmethod
+    def _badge(value, tone):
+        return format_html(
+            '<span class="sn-badge sn-badge--{}">{}</span>',
+            tone,
+            value,
+        )

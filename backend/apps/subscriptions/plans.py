@@ -101,6 +101,42 @@ PLAN_POLICIES = {
     ),
 }
 
+SELF_SERVICE_PLAN_KEYS = ("essential", "pro")
+
+
+def public_plan_catalog(*, checkout_enabled_for: set[str] | None = None) -> list[dict]:
+    enabled = checkout_enabled_for or set()
+    catalog = []
+    for key in SELF_SERVICE_PLAN_KEYS:
+        policy = PLAN_POLICIES[key]
+        catalog.append(
+            {
+                "key": key,
+                "name": key.title(),
+                "currency": "EUR",
+                "pricing": {
+                    "monthly_equivalent_cents": policy.monthly_price_eur_cents,
+                    "yearly_cents": policy.yearly_price_eur_cents,
+                    "billing_interval": "year",
+                },
+                "limits": {
+                    "storage_bytes": policy.storage_bytes,
+                    "max_notes": policy.max_notes,
+                    "max_attachment_bytes": policy.max_attachment_bytes,
+                    "max_collaborators_per_note": policy.max_collaborators_per_note,
+                },
+                "features": {
+                    "version_history_days": policy.version_history_days,
+                    "team_workspaces": policy.team_workspaces,
+                    "sso_ready": policy.sso_ready,
+                    "audit_controls": policy.audit_controls,
+                    "data_residency": policy.data_residency,
+                },
+                "checkout_enabled": key in enabled,
+            }
+        )
+    return catalog
+
 
 def policy_for_plan(plan: str) -> PlanPolicy:
     return PLAN_POLICIES.get(plan, PLAN_POLICIES["free"])

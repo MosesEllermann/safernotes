@@ -1,24 +1,24 @@
 # Production launch runbook
 
-## 1. Paddle sandbox
+## 1. Creem Test Mode
 
-Create these Paddle catalog entries:
+Create these recurring SaaS products in the Creem Test Mode catalog:
 
 - Essential yearly: 18 EUR per year
 - Pro yearly: 60 EUR per year
-- Team yearly: 150 EUR per year per workspace
 
 Required backend environment:
 
 ```env
-BILLING_PROVIDER=paddle
-BILLING_API_KEY=pdl_sdbx_apikey_...
-BILLING_API_BASE_URL=https://sandbox-api.paddle.com
-BILLING_PRICE_IDS={"essential":"pri_...","pro":"pri_...","team":"pri_..."}
+BILLING_PROVIDER=creem
+BILLING_API_KEY=creem_test_...
+BILLING_API_BASE_URL=https://test-api.creem.io/v1
+BILLING_PRODUCT_IDS={"essential":"prod_...","pro":"prod_..."}
+BILLING_SUCCESS_URL=https://app.safernotes.com/?billing=success
 BILLING_WEBHOOK_SECRET=...
 ```
 
-Configure Paddle webhook destination:
+Configure the Creem Test Mode webhook destination:
 
 ```text
 https://api.example.com/api/v1/billing/webhook
@@ -26,20 +26,42 @@ https://api.example.com/api/v1/billing/webhook
 
 Subscribe at least to:
 
-- `subscription.created`
-- `subscription.activated`
-- `subscription.updated`
+- `checkout.completed`
+- `subscription.active`
+- `subscription.paid`
+- `subscription.update`
+- `subscription.scheduled_cancel`
+- `subscription.past_due`
+- `subscription.unpaid`
 - `subscription.canceled`
+- `subscription.expired`
 - `subscription.paused`
+- `subscription.trialing`
+- `refund.created`
+- `dispute.created`
 
-Sandbox acceptance test:
+Test Mode acceptance test:
 
 1. Create a test user.
 2. Start Essential checkout from the app.
-3. Complete the Paddle sandbox payment.
+3. Complete the Creem Test Mode payment with a Creem test card.
 4. Confirm the tenant plan changes from `free` to `essential`.
-5. Cancel the sandbox subscription in Paddle.
-6. Confirm the tenant plan returns to `free`.
+5. Confirm the Creem receipt email contains customer invoice and portal access.
+6. Open the portal from the API and confirm subscription management works.
+7. Schedule cancellation and confirm access remains active through the paid period.
+8. Send an expiry event and confirm access remains active during Creem's payment-retry window.
+9. Send a terminal cancellation event and confirm the tenant returns to `free`.
+10. Resend a webhook and confirm it is handled idempotently.
+11. Confirm invalid signatures are rejected and valid events receive HTTP 200.
+
+Production cutover:
+
+1. Complete the Creem account review and payout verification.
+2. Recreate products in the live catalog and replace all Test Mode product IDs.
+3. Change `BILLING_API_BASE_URL` to `https://api.creem.io/v1`.
+4. Replace the test API key and webhook secret with live credentials.
+5. Register the production webhook separately in the live Creem dashboard.
+6. Run a low-value live purchase and verify the customer invoice, webhook, portal, reverse invoice, EUR balance, refund, and payout records.
 
 ## 2. Hosting
 
@@ -93,10 +115,10 @@ Before live payments:
 - privacy policy
 - terms of service
 - processor list
-- data processing agreements for hosting, email, and Paddle
+- data processing agreements for hosting, email, and Creem
 - support contact
 
-Privacy policy must state that note content is encrypted client-side and not sent to Paddle.
+Privacy policy must state that note content is encrypted client-side and not sent to Creem.
 
 ## 5. Release gate
 
