@@ -227,3 +227,49 @@ def test_production_configuration_check_flags_incomplete_smtp_settings():
 )
 def test_production_configuration_check_accepts_safe_launch_settings():
     assert production_configuration_check(None) == []
+
+
+@override_settings(
+    SECRET_KEY="production-secret",
+    DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "safernotes"}},
+    EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+    EMAIL_HOST="smtp.example.com",
+    EMAIL_PORT=587,
+    EMAIL_HOST_USER="noreply@example.com",
+    EMAIL_HOST_PASSWORD="smtp-secret",
+    EMAIL_USE_TLS=True,
+    EMAIL_USE_SSL=False,
+    BILLING_PROVIDER="creem",
+    BILLING_API_KEY="creem_test_key",
+    BILLING_API_BASE_URL="https://api.creem.io/v1",
+    BILLING_WEBHOOK_SECRET="webhook-secret",
+    BILLING_PRODUCT_IDS={"essential": "prod_essential", "pro": "prod_pro"},
+    CORS_ALLOWED_ORIGINS=["https://app.example.com"],
+)
+def test_production_configuration_check_rejects_test_key_with_live_api():
+    issue_ids = {issue.id for issue in production_configuration_check(None)}
+
+    assert "safernotes.E007" in issue_ids
+
+
+@override_settings(
+    SECRET_KEY="production-secret",
+    DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "safernotes"}},
+    EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+    EMAIL_HOST="smtp.example.com",
+    EMAIL_PORT=587,
+    EMAIL_HOST_USER="noreply@example.com",
+    EMAIL_HOST_PASSWORD="smtp-secret",
+    EMAIL_USE_TLS=True,
+    EMAIL_USE_SSL=False,
+    BILLING_PROVIDER="creem",
+    BILLING_API_KEY="creem_live_key",
+    BILLING_API_BASE_URL="https://test-api.creem.io/v1",
+    BILLING_WEBHOOK_SECRET="webhook-secret",
+    BILLING_PRODUCT_IDS={"essential": "prod_essential", "pro": "prod_pro"},
+    CORS_ALLOWED_ORIGINS=["https://app.example.com"],
+)
+def test_production_configuration_check_rejects_live_key_with_test_api():
+    issue_ids = {issue.id for issue in production_configuration_check(None)}
+
+    assert "safernotes.E007" in issue_ids

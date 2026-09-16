@@ -54,6 +54,13 @@ jobs:
           if not settings.BILLING_API_KEY:
               raise SystemExit('The Creem API key is missing')
 
+          using_test_api = settings.BILLING_API_BASE_URL.startswith(
+              'https://test-api.creem.io'
+          )
+          using_test_key = settings.BILLING_API_KEY.startswith('creem_test_')
+          if using_test_api != using_test_key:
+              raise SystemExit('Creem API key and endpoint environment do not match')
+
           for plan, product_id in sorted(settings.BILLING_PRODUCT_IDS.items()):
               url = f'{settings.BILLING_API_BASE_URL.rstrip("/")}/products/{product_id}'
               request = Request(

@@ -310,6 +310,23 @@ jobs:
             exit 1
           fi
 
+          case "$BILLING_API_BASE_URL:$BILLING_API_KEY" in
+            https://test-api.creem.io/v1:creem_test_*) ;;
+            https://api.creem.io/v1:creem_test_*)
+              echo "::error::A Creem Test Mode key cannot be deployed with the live API endpoint."
+              exit 1
+              ;;
+            https://test-api.creem.io/v1:*)
+              echo "::error::The Creem Test Mode endpoint requires a Test Mode API key."
+              exit 1
+              ;;
+            https://api.creem.io/v1:*) ;;
+            *)
+              echo "::error::Unsupported Creem API endpoint."
+              exit 1
+              ;;
+          esac
+
           mkdir -p ~/.ssh
           printf '%s\n' "$API_SSH_KEY" > ~/.ssh/api_deploy_key
           chmod 600 ~/.ssh/api_deploy_key

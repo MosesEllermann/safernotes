@@ -78,6 +78,17 @@ def production_configuration_check(app_configs, **kwargs):
                     id="safernotes.E006",
                 )
             )
+        using_test_api = settings.BILLING_API_BASE_URL.startswith(
+            "https://test-api.creem.io"
+        )
+        using_test_key = settings.BILLING_API_KEY.startswith("creem_test_")
+        if settings.BILLING_API_KEY and using_test_api != using_test_key:
+            issues.append(
+                Error(
+                    "Creem API key and API endpoint belong to different environments.",
+                    id="safernotes.E007",
+                )
+            )
 
     if any(origin.startswith("http://localhost") for origin in settings.CORS_ALLOWED_ORIGINS):
         issues.append(

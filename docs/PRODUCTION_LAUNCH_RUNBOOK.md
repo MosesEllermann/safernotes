@@ -57,11 +57,28 @@ Test Mode acceptance test:
 Production cutover:
 
 1. Complete the Creem account review and payout verification.
-2. Recreate products in the live catalog and replace all Test Mode product IDs.
-3. Change `BILLING_API_BASE_URL` to `https://api.creem.io/v1`.
-4. Replace the test API key and webhook secret with live credentials.
-5. Register the production webhook separately in the live Creem dashboard.
-6. Run a low-value live purchase and verify the customer invoice, webhook, portal, reverse invoice, EUR balance, refund, and payout records.
+2. Confirm that the Creem dashboard explicitly shows that live payments are enabled.
+3. Rotate the live API key that was used during setup and store the replacement only in the `BILLING_API_KEY` GitHub secret.
+4. Keep the production webhook enabled at `https://api.safernotes.com/api/v1/billing/webhook` and store its signing secret only in the `BILLING_WEBHOOK_SECRET` GitHub secret.
+5. Disable the Test Mode webhook before resetting the test purchaser, so a delayed Test Mode event cannot reactivate the test subscription.
+6. In `/owner-admin/`, find `moses.ellermann@pm.me`, open its subscription, and change it to plan `free` with status `canceled`. This preserves the billing event audit trail while allowing a live checkout.
+7. Update the repository variables together:
+
+   ```env
+   BILLING_API_BASE_URL=https://api.creem.io/v1
+   BILLING_PRODUCT_IDS={"essential":"prod_4DMoWRADZ9EkXAvu11zjaq","pro":"prod_7iezv7p8fUHQat7UYZUnix"}
+   BILLING_TESTER_EMAILS=
+   ```
+
+8. Deploy once. The deployment rejects mixed Test Mode/live API keys and endpoints before touching the server configuration.
+9. Run the `billing-smoke` GitHub Actions workflow and confirm both live products are reachable and active.
+10. Sign in as `moses.ellermann@pm.me`, buy Essential as a real transaction, and confirm that the live webhook changes the plan to Essential.
+11. Verify the customer invoice, customer portal, reverse invoice, EUR balance, refund behavior, and payout records before opening checkout to customers.
+
+Live catalog already prepared:
+
+- Essential yearly: `prod_4DMoWRADZ9EkXAvu11zjaq` (18 EUR/year, tax inclusive)
+- Pro yearly: `prod_7iezv7p8fUHQat7UYZUnix` (60 EUR/year, tax inclusive)
 
 ## 2. Hosting
 
