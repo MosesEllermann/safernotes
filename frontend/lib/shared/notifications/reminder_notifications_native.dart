@@ -35,6 +35,10 @@ Future<bool> requestReminderPermission() async {
   final android = _notifications.resolvePlatformSpecificImplementation<
       AndroidFlutterLocalNotificationsPlugin>();
   final androidGranted = await android?.requestNotificationsPermission();
+  if (androidGranted == false) return false;
+  // Exact-alarm access is optional. When it is denied, scheduling falls back
+  // to an inexact allow-while-idle alarm instead of dropping the reminder.
+  await android?.requestExactAlarmsPermission();
   final ios = _notifications.resolvePlatformSpecificImplementation<
       IOSFlutterLocalNotificationsPlugin>();
   final iosGranted = await ios?.requestPermissions(
@@ -45,11 +49,27 @@ Future<bool> requestReminderPermission() async {
   return androidGranted ?? iosGranted ?? true;
 }
 
+Future<void> openReminderNotificationSettings() async {
+  await _ensureInitialized();
+  await _notifications.openAppNotificationSettings();
+}
+
 Future<bool> showReminderNotification({
+  required String reminderId,
   required String title,
   required String body,
 }) async {
-  return false;
+  await _ensureInitialized();
+  final android = _notifications.resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>();
+  if (await android?.areNotificationsEnabled() == false) return false;
+  await _notifications.show(
+    id: _notificationId(reminderId),
+    title: title,
+    body: body,
+    notificationDetails: _notificationDetails(),
+  );
+  return true;
 }
 
 Future<void> scheduleReminderNotification({
@@ -61,26 +81,18 @@ Future<void> scheduleReminderNotification({
   return _serializeNotificationMutation(() async {
     await _ensureInitialized();
     if (!scheduledAt.isAfter(DateTime.now())) return;
-    final german = PlatformDispatcher.instance.locale.languageCode == 'de';
+    final android = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final exact = await android?.canScheduleExactNotifications() ?? false;
     await _notifications.zonedSchedule(
       id: _notificationId(reminderId),
       title: title,
       body: body,
       scheduledDate: tz.TZDateTime.from(scheduledAt.toLocal(), tz.local),
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      notificationDetails: NotificationDetails(
-        android: AndroidNotificationDetails(
-          'note_reminders',
-          german ? 'Erinnerungen' : 'Reminders',
-          icon: 'ic_notification',
-          channelDescription: german
-              ? 'Lokale Erinnerungen für Notizen'
-              : 'Local reminders for notes',
-          importance: Importance.high,
-          priority: Priority.high,
-        ),
-        iOS: DarwinNotificationDetails(),
-      ),
+      androidScheduleMode: exact
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle,
+      notificationDetails: _notificationDetails(),
     );
   });
 }
@@ -99,6 +111,23 @@ Future<void> _serializeNotificationMutation(Future<void> Function() action) {
     onError: (Object _, StackTrace __) {},
   );
   return operation;
+}
+
+NotificationDetails _notificationDetails() {
+  final german = PlatformDispatcher.instance.locale.languageCode == 'de';
+  return NotificationDetails(
+    android: AndroidNotificationDetails(
+      'note_reminders',
+      german ? 'Erinnerungen' : 'Reminders',
+      icon: 'ic_notification',
+      channelDescription: german
+          ? 'Lokale Erinnerungen für Notizen'
+          : 'Local reminders for notes',
+      importance: Importance.high,
+      priority: Priority.high,
+    ),
+    iOS: const DarwinNotificationDetails(),
+  );
 }
 
 int _notificationId(String value) {

@@ -249,6 +249,8 @@ const _strings = {
     'reminderRemoved': 'The reminder was removed.',
     'reminderDefaultBody': 'Time for your note.',
     'reminderNotificationTitle': 'Reminder: {title}',
+    'reminderPermissionRequired':
+        'Enable notifications so Safernotes can deliver this reminder.',
     'chooseNote': 'Choose a note',
     'noMatchingNote': 'No matching note found.',
     'createNoteFirst': 'Create a note first, then set a reminder for it.',
@@ -540,6 +542,8 @@ const _strings = {
     'reminderRemoved': 'Die Erinnerung wurde entfernt.',
     'reminderDefaultBody': 'Zeit für deine Notiz.',
     'reminderNotificationTitle': 'Erinnerung: {title}',
+    'reminderPermissionRequired':
+        'Aktiviere Benachrichtigungen, damit Safernotes dich erinnern kann.',
     'chooseNote': 'Notiz auswählen',
     'noMatchingNote': 'Keine passende Notiz gefunden.',
     'createNoteFirst':

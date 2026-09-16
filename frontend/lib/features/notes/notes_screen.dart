@@ -520,6 +520,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       _reminderTimers[key] = Timer(reminderAt.difference(now), () async {
         _reminderTimers.remove(key);
         final shown = await showReminderNotification(
+          reminderId: key,
           title: note.title.trim().isEmpty ? l10n.t('reminder') : note.title,
           body: _reminderBody(note),
         );
@@ -9884,7 +9885,12 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
   Future<void> _save(DateTime? reminderAt) async {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
-    if (reminderAt != null) await requestReminderPermission();
+    if (reminderAt != null && !await requestReminderPermission()) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      _showReminderPermissionRequired(context, ref, messenger: messenger);
+      return;
+    }
     if (widget.duplicateShared && reminderAt != null) {
       await ref.read(notesControllerProvider.notifier).duplicateAsReminder(
             source: widget.note,
@@ -9906,6 +9912,22 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
       messenger: messenger,
     );
   }
+}
+
+void _showReminderPermissionRequired(
+  BuildContext context,
+  WidgetRef ref, {
+  ScaffoldMessengerState? messenger,
+}) {
+  final l10n = ref.read(l10nProvider);
+  showAppInfoBar(
+    context,
+    messenger: messenger,
+    message: l10n.t('reminderPermissionRequired'),
+    actionLabel: l10n.t('settings'),
+    onAction: openReminderNotificationSettings,
+    avoidMobileNavigation: true,
+  );
 }
 
 void _showReminderFeedback(BuildContext context, WidgetRef ref, bool added,

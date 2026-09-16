@@ -869,7 +869,18 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     final selected = selection.value;
     if (!mounted) return;
     if (selected == _reminderAt) return;
-    if (selected != null) await requestReminderPermission();
+    if (selected != null && !await requestReminderPermission()) {
+      if (!mounted) return;
+      final l10n = ref.read(l10nProvider);
+      showAppInfoBar(
+        context,
+        message: l10n.t('reminderPermissionRequired'),
+        actionLabel: l10n.t('settings'),
+        onAction: openReminderNotificationSettings,
+        avoidMobileNavigation: true,
+      );
+      return;
+    }
     if (duplicateShared && selected != null) {
       await ref.read(notesControllerProvider.notifier).duplicateAsReminder(
             source: draft,

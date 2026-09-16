@@ -1,6 +1,9 @@
 Future<bool> requestReminderPermission() async => false;
 
+Future<void> openReminderNotificationSettings() async {}
+
 Future<bool> showReminderNotification({
+  required String reminderId,
   required String title,
   required String body,
 }) async {

@@ -9,7 +9,10 @@ Future<bool> requestReminderPermission() async {
   return permission == 'granted';
 }
 
+Future<void> openReminderNotificationSettings() async {}
+
 Future<bool> showReminderNotification({
+  required String reminderId,
   required String title,
   required String body,
 }) async {
