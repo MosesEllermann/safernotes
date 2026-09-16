@@ -30,9 +30,9 @@ All links between the static pages are relative and work from the filesystem.
 Obtain a final legal review of the Impressum, privacy policy, and product terms
 before enabling live payments.
 
-The website can still link to a direct Android beta APK at
-`/downloads/safernotes-android.apk`. The Play Store release workflow is handled
-from `frontend/` and produces an `.aab` for upload to Play Console.
+The website links to the Google Play listing and also offers a direct Android
+APK at `/downloads/safernotes-android.apk`. The Play Store release workflow is
+handled from `frontend/` and produces an `.aab` for upload to Play Console.
 
 ## Deployment
 
