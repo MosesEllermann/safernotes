@@ -196,6 +196,7 @@ const _strings = {
     'date': 'Date',
     'time': 'Time',
     'setReminder': 'Set reminder',
+    'createNewReminder': 'Create new reminder',
     'removeReminder': 'Remove reminder',
     'view': 'View',
     'open': 'Open',
@@ -251,6 +252,7 @@ const _strings = {
     'reminderNotificationTitle': 'Reminder: {title}',
     'reminderPermissionRequired':
         'Enable notifications so Safernotes can deliver this reminder.',
+    'reminderSaveFailed': 'The reminder could not be saved. Please try again.',
     'chooseNote': 'Choose a note',
     'noMatchingNote': 'No matching note found.',
     'createNoteFirst': 'Create a note first, then set a reminder for it.',
@@ -485,6 +487,7 @@ const _strings = {
     'date': 'Datum',
     'time': 'Uhrzeit',
     'setReminder': 'Erinnerung setzen',
+    'createNewReminder': 'Neue Erinnerung erstellen',
     'removeReminder': 'Erinnerung entfernen',
     'view': 'Ansehen',
     'open': 'Öffnen',
@@ -544,6 +547,8 @@ const _strings = {
     'reminderNotificationTitle': 'Erinnerung: {title}',
     'reminderPermissionRequired':
         'Aktiviere Benachrichtigungen, damit Safernotes dich erinnern kann.',
+    'reminderSaveFailed':
+        'Die Erinnerung konnte nicht gespeichert werden. Bitte versuche es erneut.',
     'chooseNote': 'Notiz auswählen',
     'noMatchingNote': 'Keine passende Notiz gefunden.',
     'createNoteFirst':

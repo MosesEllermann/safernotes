@@ -36,9 +36,6 @@ Future<bool> requestReminderPermission() async {
       AndroidFlutterLocalNotificationsPlugin>();
   final androidGranted = await android?.requestNotificationsPermission();
   if (androidGranted == false) return false;
-  // Exact-alarm access is optional. When it is denied, scheduling falls back
-  // to an inexact allow-while-idle alarm instead of dropping the reminder.
-  await android?.requestExactAlarmsPermission();
   final ios = _notifications.resolvePlatformSpecificImplementation<
       IOSFlutterLocalNotificationsPlugin>();
   final iosGranted = await ios?.requestPermissions(

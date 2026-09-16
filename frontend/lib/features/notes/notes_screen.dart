@@ -9400,15 +9400,15 @@ class _InviteRoleTile extends StatelessWidget {
   }
 }
 
-Future<void> _showReminderSheet(
+Future<PlainNote?> _showReminderSheet(
     BuildContext context, WidgetRef ref, PlainNote note) async {
   var duplicateShared = false;
   if (note.shared && note.reminderAt == null) {
     duplicateShared = await _confirmDuplicateReminder(context) ?? false;
-    if (!duplicateShared) return;
+    if (!duplicateShared) return null;
   }
-  if (!context.mounted) return;
-  showModalBottomSheet<void>(
+  if (!context.mounted) return null;
+  return showModalBottomSheet<PlainNote>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -9432,14 +9432,32 @@ Future<void> _startReminderFlow(BuildContext context, WidgetRef ref) async {
       if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
       return b.updatedAt.compareTo(a.updatedAt);
     });
-  final selected = await showModalBottomSheet<PlainNote>(
+  final choice = await showModalBottomSheet<_ReminderNoteChoice>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (_) => _ReminderNotePicker(notes: candidates),
   );
-  if (selected == null || !context.mounted) return;
-  await _showReminderSheet(context, ref, selected);
+  if (choice == null || !context.mounted) return;
+  if (!choice.createNew) {
+    await _showReminderSheet(context, ref, choice.note!);
+    return;
+  }
+  final note = ref.read(notesControllerProvider.notifier).createEmptyNote();
+  final saved = await _showReminderSheet(context, ref, note);
+  if (saved != null && context.mounted) {
+    _openEditor(context, ref, saved);
+  }
+}
+
+class _ReminderNoteChoice {
+  const _ReminderNoteChoice.existing(this.note) : createNew = false;
+  const _ReminderNoteChoice.createNew()
+      : note = null,
+        createNew = true;
+
+  final PlainNote? note;
+  final bool createNew;
 }
 
 class _ReminderNotePicker extends StatefulWidget {
@@ -9522,6 +9540,15 @@ class _ReminderNotePickerState extends State<_ReminderNotePicker> {
                           ],
                         ),
                         const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          key: const ValueKey('reminder-create-new'),
+                          onPressed: () => Navigator.of(context).pop(
+                            const _ReminderNoteChoice.createNew(),
+                          ),
+                          icon: const Icon(AppIcons.filePlus2),
+                          label: Text(l10n.t('createNewReminder')),
+                        ),
+                        const SizedBox(height: 10),
                         TextField(
                           key: const ValueKey('reminder-note-search'),
                           controller: _search,
@@ -9555,8 +9582,9 @@ class _ReminderNotePickerState extends State<_ReminderNotePicker> {
                                           'reminder-note-${note.localId}'),
                                       note: note,
                                       l10n: l10n,
-                                      onTap: () =>
-                                          Navigator.of(context).pop(note),
+                                      onTap: () => Navigator.of(context).pop(
+                                        _ReminderNoteChoice.existing(note),
+                                      ),
                                     );
                                   },
                                 ),
@@ -9885,32 +9913,51 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
   Future<void> _save(DateTime? reminderAt) async {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
-    if (reminderAt != null && !await requestReminderPermission()) {
+    try {
+      if (reminderAt != null && !await requestReminderPermission()) {
+        if (!mounted) return;
+        setState(() => _busy = false);
+        _showReminderPermissionRequired(context, ref, messenger: messenger);
+        return;
+      }
+      late final PlainNote saved;
+      if (widget.duplicateShared && reminderAt != null) {
+        saved = await ref
+            .read(notesControllerProvider.notifier)
+            .duplicateAsReminder(
+              source: widget.note,
+              reminderAt: reminderAt.toUtc(),
+            );
+      } else {
+        final normalized = reminderAt?.toUtc();
+        await ref.read(notesControllerProvider.notifier).setReminder(
+              widget.note,
+              normalized,
+            );
+        saved = widget.note.copyWith(
+          reminderAt: normalized,
+          clearReminder: normalized == null,
+        );
+      }
+      if (!mounted) return;
+      Navigator.of(context).pop(saved);
+      _showReminderFeedback(
+        context,
+        ref,
+        reminderAt != null,
+        duplicated: widget.duplicateShared && reminderAt != null,
+        messenger: messenger,
+      );
+    } catch (_) {
       if (!mounted) return;
       setState(() => _busy = false);
-      _showReminderPermissionRequired(context, ref, messenger: messenger);
-      return;
+      showAppInfoBar(
+        context,
+        messenger: messenger,
+        message: ref.read(l10nProvider).t('reminderSaveFailed'),
+        avoidMobileNavigation: true,
+      );
     }
-    if (widget.duplicateShared && reminderAt != null) {
-      await ref.read(notesControllerProvider.notifier).duplicateAsReminder(
-            source: widget.note,
-            reminderAt: reminderAt.toUtc(),
-          );
-    } else {
-      await ref.read(notesControllerProvider.notifier).setReminder(
-            widget.note,
-            reminderAt?.toUtc(),
-          );
-    }
-    if (!mounted) return;
-    Navigator.of(context).pop();
-    _showReminderFeedback(
-      context,
-      ref,
-      reminderAt != null,
-      duplicated: widget.duplicateShared && reminderAt != null,
-      messenger: messenger,
-    );
   }
 }
 

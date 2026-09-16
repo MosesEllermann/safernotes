@@ -1,8 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
+import 'package:safernotes_app/features/notes/note_editor_screen.dart';
 import 'package:safernotes_app/features/notes/notes_controller.dart';
 import 'package:safernotes_app/features/notes/notes_screen.dart';
 import 'package:safernotes_app/shared/models/note.dart';
@@ -75,6 +79,80 @@ void main() {
     expect(find.text('Time'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Set reminder'), findsOneWidget);
   });
+
+  testWidgets(
+      'new reminder can create a note and save without opening exact alarm settings',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    AndroidFlutterLocalNotificationsPlugin.registerWith();
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    SharedPreferences.setMockInitialValues({});
+
+    const notificationsChannel =
+        MethodChannel('dexterous.com/flutter/local_notifications');
+    final notificationCalls = <String>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(notificationsChannel, (call) async {
+      notificationCalls.add(call.method);
+      return switch (call.method) {
+        'initialize' => true,
+        'requestNotificationsPermission' => true,
+        'canScheduleExactNotifications' => false,
+        _ => null,
+      };
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(notificationsChannel, null);
+    });
+
+    final notesController = _TestNotesController(const []);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(() => notesController),
+        ],
+        child: const MaterialApp(home: NotesScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Create'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(
+      find.byKey(const ValueKey('mobile-create-reminder-action')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('reminder-create-new')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('reminder-create-new')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Untitled note'), findsOneWidget);
+    final setReminder = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Set reminder'),
+    );
+    expect(setReminder.onPressed, isNotNull);
+    setReminder.onPressed!();
+    await tester.pumpAndSettle();
+    debugDefaultTargetPlatformOverride = null;
+
+    expect(notificationCalls, contains('requestNotificationsPermission'));
+    expect(notificationCalls, isNot(contains('requestExactAlarmsPermission')));
+    expect(find.text('The reminder could not be saved. Please try again.'),
+        findsNothing);
+    expect(notesController.lastSavedReminder?.reminderAt, isNotNull);
+    expect(find.byType(NoteEditorScreen), findsOneWidget);
+  });
 }
 
 PlainNote _note({
@@ -116,7 +194,22 @@ class _TestNotesController extends NotesController {
   _TestNotesController(this.notes);
 
   final List<PlainNote> notes;
+  PlainNote? lastSavedReminder;
 
   @override
   Future<List<PlainNote>> build() async => notes;
+
+  @override
+  Future<void> setReminder(PlainNote note, DateTime? reminderAt) async {
+    final saved = note.copyWith(
+      reminderAt: reminderAt,
+      clearReminder: reminderAt == null,
+    );
+    lastSavedReminder = saved;
+    final current = state.valueOrNull ?? notes;
+    state = AsyncData([
+      saved,
+      ...current.where((item) => item.localId != saved.localId),
+    ]);
+  }
 }
