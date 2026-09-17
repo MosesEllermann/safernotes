@@ -1,0 +1,1 @@
+Erinnerungen werden jetzt sofort gespeichert, auch wenn Android nicht auf eine Berechtigungsabfrage antwortet. Lokale Benachrichtigungen und die Erinnerungsdialoge funktionieren dadurch zuverlässiger.

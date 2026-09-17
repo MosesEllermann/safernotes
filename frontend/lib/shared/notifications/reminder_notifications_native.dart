@@ -8,6 +8,7 @@ final _notifications = FlutterLocalNotificationsPlugin();
 var _initialized = false;
 Future<void>? _initialization;
 Future<void> _notificationQueue = Future.value();
+const _platformCallTimeout = Duration(seconds: 4);
 
 Future<void> _ensureInitialized() {
   if (_initialized) return Future.value();
@@ -31,19 +32,32 @@ Future<void> _initialize() async {
 }
 
 Future<bool> requestReminderPermission() async {
-  await _ensureInitialized();
-  final android = _notifications.resolvePlatformSpecificImplementation<
-      AndroidFlutterLocalNotificationsPlugin>();
-  final androidGranted = await android?.requestNotificationsPermission();
-  if (androidGranted == false) return false;
-  final ios = _notifications.resolvePlatformSpecificImplementation<
-      IOSFlutterLocalNotificationsPlugin>();
-  final iosGranted = await ios?.requestPermissions(
-    alert: true,
-    badge: true,
-    sound: true,
-  );
-  return androidGranted ?? iosGranted ?? true;
+  try {
+    await _ensureInitialized().timeout(_platformCallTimeout);
+    final android = _notifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    final androidRequest = android?.requestNotificationsPermission();
+    final androidGranted = androidRequest == null
+        ? null
+        : await androidRequest.timeout(_platformCallTimeout);
+    if (androidGranted == false) return false;
+    final ios = _notifications.resolvePlatformSpecificImplementation<
+        IOSFlutterLocalNotificationsPlugin>();
+    final iosRequest = ios?.requestPermissions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    final iosGranted = iosRequest == null
+        ? null
+        : await iosRequest.timeout(_platformCallTimeout);
+    return androidGranted ?? iosGranted ?? true;
+  } catch (_) {
+    // A platform permission activity may never report a result on some Android
+    // variants. Reminders are persisted independently and this bounded call
+    // must never leave their UI waiting indefinitely.
+    return false;
+  }
 }
 
 Future<void> openReminderNotificationSettings() async {

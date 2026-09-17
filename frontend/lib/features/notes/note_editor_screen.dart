@@ -869,18 +869,6 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
     final selected = selection.value;
     if (!mounted) return;
     if (selected == _reminderAt) return;
-    if (selected != null && !await requestReminderPermission()) {
-      if (!mounted) return;
-      final l10n = ref.read(l10nProvider);
-      showAppInfoBar(
-        context,
-        message: l10n.t('reminderPermissionRequired'),
-        actionLabel: l10n.t('settings'),
-        onAction: openReminderNotificationSettings,
-        avoidMobileNavigation: true,
-      );
-      return;
-    }
     if (duplicateShared && selected != null) {
       await ref.read(notesControllerProvider.notifier).duplicateAsReminder(
             source: draft,
@@ -888,10 +876,27 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
           );
       if (!mounted) return;
       _showReminderFeedback(true, duplicated: true);
+      unawaited(_requestReminderPermissionAfterSave());
       return;
     }
     _recordMutation(() => _reminderAt = selected, immediate: true);
     _showReminderFeedback(selected != null);
+    if (selected != null) {
+      unawaited(_requestReminderPermissionAfterSave());
+    }
+  }
+
+  Future<void> _requestReminderPermissionAfterSave() async {
+    final granted = await requestReminderPermission();
+    if (granted || !mounted) return;
+    final l10n = ref.read(l10nProvider);
+    showAppInfoBar(
+      context,
+      message: l10n.t('reminderPermissionRequired'),
+      actionLabel: l10n.t('settings'),
+      onAction: openReminderNotificationSettings,
+      avoidMobileNavigation: true,
+    );
   }
 
   Future<bool?> _confirmDuplicateReminder(BuildContext context) {

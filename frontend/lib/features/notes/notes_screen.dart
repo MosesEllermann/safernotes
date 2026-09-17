@@ -9408,7 +9408,7 @@ Future<PlainNote?> _showReminderSheet(
     if (!duplicateShared) return null;
   }
   if (!context.mounted) return null;
-  return showModalBottomSheet<PlainNote>(
+  final saved = await showModalBottomSheet<PlainNote>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -9417,6 +9417,18 @@ Future<PlainNote?> _showReminderSheet(
       duplicateShared: duplicateShared,
     ),
   );
+  if (saved?.reminderAt != null && context.mounted) {
+    unawaited(_requestReminderPermissionAfterSave(context, ref));
+  }
+  return saved;
+}
+
+Future<void> _requestReminderPermissionAfterSave(
+    BuildContext context, WidgetRef ref) async {
+  final granted = await requestReminderPermission();
+  if (!granted && context.mounted) {
+    _showReminderPermissionRequired(context, ref);
+  }
 }
 
 Future<void> _startReminderFlow(BuildContext context, WidgetRef ref) async {
@@ -9914,12 +9926,6 @@ class _ReminderSheetState extends ConsumerState<_ReminderSheet> {
     setState(() => _busy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      if (reminderAt != null && !await requestReminderPermission()) {
-        if (!mounted) return;
-        setState(() => _busy = false);
-        _showReminderPermissionRequired(context, ref, messenger: messenger);
-        return;
-      }
       late final PlainNote saved;
       if (widget.duplicateShared && reminderAt != null) {
         saved = await ref

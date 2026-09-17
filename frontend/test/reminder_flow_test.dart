@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -81,7 +83,7 @@ void main() {
   });
 
   testWidgets(
-      'new reminder can create a note and save without opening exact alarm settings',
+      'new reminder saves while the Android permission request is still pending',
       (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -95,12 +97,13 @@ void main() {
     const notificationsChannel =
         MethodChannel('dexterous.com/flutter/local_notifications');
     final notificationCalls = <String>[];
+    final permissionRequest = Completer<bool?>();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(notificationsChannel, (call) async {
       notificationCalls.add(call.method);
       return switch (call.method) {
         'initialize' => true,
-        'requestNotificationsPermission' => true,
+        'requestNotificationsPermission' => permissionRequest.future,
         'canScheduleExactNotifications' => false,
         _ => null,
       };
@@ -143,15 +146,76 @@ void main() {
     );
     expect(setReminder.onPressed, isNotNull);
     setReminder.onPressed!();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(notesController.lastSavedReminder?.reminderAt, isNotNull);
+    expect(find.byType(NoteEditorScreen), findsOneWidget);
+    expect(notificationCalls, contains('requestNotificationsPermission'));
+
+    permissionRequest.complete(true);
     await tester.pumpAndSettle();
     debugDefaultTargetPlatformOverride = null;
 
-    expect(notificationCalls, contains('requestNotificationsPermission'));
     expect(notificationCalls, isNot(contains('requestExactAlarmsPermission')));
     expect(find.text('The reminder could not be saved. Please try again.'),
         findsNothing);
-    expect(notesController.lastSavedReminder?.reminderAt, isNotNull);
-    expect(find.byType(NoteEditorScreen), findsOneWidget);
+  });
+
+  testWidgets(
+      'editor reminder saves while the Android permission request is pending',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    AndroidFlutterLocalNotificationsPlugin.registerWith();
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    SharedPreferences.setMockInitialValues({});
+
+    const notificationsChannel =
+        MethodChannel('dexterous.com/flutter/local_notifications');
+    final notificationCalls = <String>[];
+    final permissionRequest = Completer<bool?>();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(notificationsChannel, (call) async {
+      notificationCalls.add(call.method);
+      if (call.method == 'requestNotificationsPermission') {
+        return permissionRequest.future;
+      }
+      return call.method == 'initialize' ? true : null;
+    });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(notificationsChannel, null);
+    });
+
+    final note = _note(localId: 'editor-note', title: 'Editor note');
+    final notesController = _TestNotesController([note]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(() => notesController),
+        ],
+        child: MaterialApp(home: NoteEditorScreen(note: note)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Reminder'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Set reminder'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(notesController.lastSavedDraft?.reminderAt, isNotNull);
+    expect(notificationCalls, contains('requestNotificationsPermission'));
+
+    permissionRequest.complete(true);
+    await tester.pumpAndSettle();
+    debugDefaultTargetPlatformOverride = null;
   });
 }
 
@@ -195,6 +259,7 @@ class _TestNotesController extends NotesController {
 
   final List<PlainNote> notes;
   PlainNote? lastSavedReminder;
+  PlainNote? lastSavedDraft;
 
   @override
   Future<List<PlainNote>> build() async => notes;
@@ -210,6 +275,19 @@ class _TestNotesController extends NotesController {
     state = AsyncData([
       saved,
       ...current.where((item) => item.localId != saved.localId),
+    ]);
+  }
+
+  @override
+  Future<void> saveDraft({
+    required PlainNote draft,
+    bool syncImmediately = false,
+  }) async {
+    lastSavedDraft = draft;
+    final current = state.valueOrNull ?? notes;
+    state = AsyncData([
+      draft,
+      ...current.where((item) => item.localId != draft.localId),
     ]);
   }
 }
