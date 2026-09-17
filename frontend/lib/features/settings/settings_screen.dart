@@ -478,6 +478,16 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
             final plan = subscription?.plan ?? 'free';
             final hasPaidPlan = plan != 'free';
             final webBilling = ref.watch(webBillingEnabledProvider);
+            final planName = _planName(plan, data?.catalog, l10n);
+            final activePlan = data?.catalog.plans
+                .where((candidate) => candidate.key == plan)
+                .firstOrNull;
+            final activePlanPrice =
+                activePlan == null ? null : _yearlyPrice(activePlan, l10n);
+            final activeConfirmation = hasPaidPlan &&
+                !_noticeIsError &&
+                !_activationPending &&
+                _notice == l10n.t('paymentComplete');
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -505,14 +515,36 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  _planTitle(plan, data?.catalog, l10n),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w700,
-                      ),
-                ),
+                if (data != null) ...[
+                  const SizedBox(height: 16),
+                  _CurrentPlanSummary(
+                    active: hasPaidPlan,
+                    title: hasPaidPlan
+                        ? l10n.t('planActiveTitle')
+                        : l10n.t('currentPlan', params: {'plan': planName}),
+                    subtitle: hasPaidPlan
+                        ? activePlanPrice == null
+                            ? planName
+                            : l10n.t(
+                                'activePlanSummary',
+                                params: {
+                                  'plan': planName,
+                                  'price': activePlanPrice,
+                                },
+                              )
+                        : l10n.t('freePlanSummary'),
+                    badge: hasPaidPlan ? l10n.t('planActiveBadge') : null,
+                  ),
+                ] else ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    l10n.t('currentPlan', params: {'plan': planName}),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                ],
                 if (snapshot.hasError) ...[
                   const SizedBox(height: 14),
                   Text(
@@ -554,10 +586,19 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                     ),
                   ],
                   if (plan != 'free') ...[
-                    const SizedBox(height: 14),
-                    OutlinedButton.icon(
+                    const SizedBox(height: 16),
+                    FilledButton.icon(
                       key: const ValueKey('manage-subscription'),
                       onPressed: _busyPlan == 'portal' ? null : _openPortal,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(54),
+                        backgroundColor: scheme.primary,
+                        foregroundColor: scheme.onPrimary,
+                        disabledBackgroundColor:
+                            scheme.primary.withValues(alpha: 0.45),
+                        disabledForegroundColor:
+                            scheme.onPrimary.withValues(alpha: 0.72),
+                      ),
                       icon: _busyPlan == 'portal'
                           ? const SizedBox.square(
                               dimension: 16,
@@ -565,6 +606,15 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                             )
                           : const Icon(AppIcons.creditCard, size: 17),
                       label: Text(l10n.t('manageSubscription')),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      l10n.t('manageSubscriptionHint'),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
                     ),
                   ],
                 ] else if (data != null) ...[
@@ -578,7 +628,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
                         ),
                   ),
                 ],
-                if (_notice != null) ...[
+                if (_notice != null && !activeConfirmation) ...[
                   const SizedBox(height: 12),
                   Text(
                     _notice!,
@@ -625,7 +675,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
     );
   }
 
-  String _planTitle(
+  String _planName(
     String plan,
     BillingPlanCatalog? catalog,
     AppL10n l10n,
@@ -635,7 +685,7 @@ class _BillingPanelState extends ConsumerState<_BillingPanel> {
             .firstOrNull
             ?.name ??
         (plan == 'free' ? l10n.t('freePlan') : plan);
-    return l10n.t('currentPlan', params: {'plan': name});
+    return name;
   }
 
   String _yearlyPrice(BillingPlan plan, AppL10n l10n) {
@@ -825,6 +875,111 @@ class _BillingData {
   final BillingPlanCatalog catalog;
 }
 
+class _CurrentPlanSummary extends StatelessWidget {
+  const _CurrentPlanSummary({
+    required this.active,
+    required this.title,
+    required this.subtitle,
+    required this.badge,
+  });
+
+  final bool active;
+  final String title;
+  final String subtitle;
+  final String? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final accent = active ? scheme.primary : scheme.onSurfaceVariant;
+    return Container(
+      key: const ValueKey('current-plan-summary'),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: active
+              ? [
+                  scheme.primaryContainer.withValues(alpha: dark ? 0.72 : 0.9),
+                  scheme.secondaryContainer
+                      .withValues(alpha: dark ? 0.38 : 0.55),
+                ]
+              : [
+                  scheme.surfaceContainerHigh,
+                  scheme.surfaceContainer,
+                ],
+        ),
+        borderRadius: BorderRadius.circular(AppRadii.xl),
+        border: Border.all(
+          color: active
+              ? scheme.primary.withValues(alpha: 0.48)
+              : scheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: dark ? 0.2 : 0.14),
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              active ? AppIcons.check : AppIcons.sparkles,
+              size: 21,
+              color: accent,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          if (badge != null) ...[
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+              decoration: BoxDecoration(
+                color: scheme.primary.withValues(alpha: dark ? 0.2 : 0.13),
+                borderRadius: BorderRadius.circular(AppRadii.pill),
+              ),
+              child: Text(
+                badge!,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _PlanOptionCard extends StatelessWidget {
   const _PlanOptionCard({
     super.key,
@@ -851,15 +1006,22 @@ class _PlanOptionCard extends StatelessWidget {
       Localizations.localeOf(context).languageCode,
     );
     final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: selected
-            ? context.safernotesTheme.glassFill
-            : (Theme.of(context).brightness == Brightness.dark
+            ? scheme.primaryContainer.withValues(alpha: dark ? 0.32 : 0.52)
+            : (dark
                 ? Colors.white.withValues(alpha: 0.05)
                 : Colors.white.withValues(alpha: 0.55)),
         borderRadius: BorderRadius.circular(AppRadii.xl),
+        border: Border.all(
+          color: selected
+              ? scheme.primary.withValues(alpha: 0.55)
+              : scheme.outlineVariant.withValues(alpha: 0.9),
+          width: selected ? 1.4 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -893,13 +1055,42 @@ class _PlanOptionCard extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
           ),
-          const SizedBox(height: 12),
-          _SettingsActionButton(
-            label: l10n.t(selected ? 'activePlan' : 'selectPlan'),
-            icon: selected ? AppIcons.check : AppIcons.arrowUpRight,
-            busy: busy,
-            onPressed: selected ? null : onPressed,
-          ),
+          if (selected) ...[
+            const SizedBox(height: 13),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: dark ? 0.2 : 0.13),
+                  borderRadius: BorderRadius.circular(AppRadii.pill),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(AppIcons.check, size: 15, color: scheme.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      l10n.t('activePlan'),
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w800,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ] else if (onPressed != null) ...[
+            const SizedBox(height: 14),
+            _SettingsActionButton(
+              label: l10n.t('selectPlan'),
+              icon: AppIcons.arrowUpRight,
+              busy: busy,
+              onPressed: onPressed,
+            ),
+          ],
         ],
       ),
     );

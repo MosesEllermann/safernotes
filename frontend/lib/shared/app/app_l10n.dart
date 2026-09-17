@@ -269,6 +269,8 @@ const _strings = {
     'nativeBillingUnavailable':
         'Subscription purchases and billing links are not available in this app.',
     'manageSubscription': 'Manage subscription',
+    'manageSubscriptionHint':
+        'Change payment details, review invoices, or cancel securely in Creem.',
     'checkoutInvalidUrl': 'The checkout service returned an invalid address.',
     'checkoutOpenFailed': 'The secure checkout could not be opened.',
     'portalUnavailable': 'Subscription management is unavailable ({status}).',
@@ -276,6 +278,10 @@ const _strings = {
     'checkoutNotCompleted': 'Checkout was not completed.',
     'paymentProcessing': 'Payment received. Activating your plan…',
     'paymentComplete': 'Your plan is active.',
+    'planActiveTitle': 'Your plan is active',
+    'activePlanSummary': '{plan} · {price}',
+    'freePlanSummary': 'Choose the plan that fits how you use Safernotes.',
+    'planActiveBadge': 'Active',
     'paymentActivationPending':
         'Payment is complete. Plan activation is still processing; refresh shortly.',
     'refreshStatus': 'Refresh status',
@@ -566,6 +572,8 @@ const _strings = {
     'nativeBillingUnavailable':
         'Abonnementkäufe und Zahlungslinks sind in dieser App nicht verfügbar.',
     'manageSubscription': 'Abonnement verwalten',
+    'manageSubscriptionHint':
+        'Zahlungsart ändern, Rechnungen ansehen oder sicher bei Creem kündigen.',
     'checkoutInvalidUrl':
         'Der Zahlungsdienst hat eine ungültige Adresse zurückgegeben.',
     'checkoutOpenFailed': 'Der sichere Checkout konnte nicht geöffnet werden.',
@@ -576,6 +584,10 @@ const _strings = {
     'checkoutNotCompleted': 'Der Checkout wurde nicht abgeschlossen.',
     'paymentProcessing': 'Zahlung erhalten. Dein Tarif wird aktiviert…',
     'paymentComplete': 'Dein Tarif ist aktiv.',
+    'planActiveTitle': 'Dein Tarif ist aktiv',
+    'activePlanSummary': '{plan} · {price}',
+    'freePlanSummary': 'Wähle den Tarif, der zu deiner Nutzung passt.',
+    'planActiveBadge': 'Aktiv',
     'paymentActivationPending':
         'Die Zahlung ist abgeschlossen. Die Tarifaktivierung läuft noch; aktualisiere die Ansicht in Kürze.',
     'refreshStatus': 'Status aktualisieren',

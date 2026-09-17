@@ -215,16 +215,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.pump();
-    final notice = tester.widget<Text>(
-      find.byKey(const ValueKey('billing-notice')),
-    );
     expect(
-      notice.data,
-      anyOf(
-        'Payment received. Activating your plan…',
-        'Your plan is active.',
-      ),
+      find.byKey(const ValueKey('current-plan-summary')),
+      findsOneWidget,
     );
+    expect(find.text('Your plan is active'), findsOneWidget);
+    expect(find.text('Essential · €18/year'), findsOneWidget);
+    expect(find.byKey(const ValueKey('billing-notice')), findsNothing);
   });
 
   testWidgets('return without success is shown as incomplete checkout',
@@ -280,10 +277,64 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(
+      find.byKey(const ValueKey('current-plan-summary')),
+      findsOneWidget,
+    );
+    expect(find.text('Your plan is active'), findsOneWidget);
+    expect(find.text('Pro · €60/year'), findsOneWidget);
+    expect(find.text('Active plan'), findsOneWidget);
+    expect(find.text('Select'), findsNothing);
+    expect(
+      tester.widget(find.byKey(const ValueKey('manage-subscription'))),
+      isA<FilledButton>(),
+    );
+
+    final summaryTop = tester
+        .getTopLeft(find.byKey(const ValueKey('current-plan-summary')))
+        .dy;
+    final proCardTop =
+        tester.getTopLeft(find.byKey(const ValueKey('billing-plan-pro'))).dy;
+    expect(summaryTop, lessThan(proCardTop));
+
     await tester.tap(find.byKey(const ValueKey('manage-subscription')));
     await tester.pumpAndSettle();
 
     expect(launchedUri, Uri.parse('https://creem.io/portal/customer'));
+  });
+
+  testWidgets('active plan layout remains clear on a narrow screen',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_SignedInAuthController.new),
+          apiClientProvider.overrideWithValue(
+            _billingApiClient(currentPlan: 'essential'),
+          ),
+          webBillingEnabledProvider.overrideWithValue(true),
+        ],
+        child: const MaterialApp(home: SettingsScreen(openPlan: true)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('current-plan-summary')),
+      findsOneWidget,
+    );
+    expect(find.text('Your plan is active'), findsOneWidget);
+    expect(find.text('Active plan'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('manage-subscription')),
+      findsOneWidget,
+    );
   });
 }
 
