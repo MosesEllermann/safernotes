@@ -121,10 +121,11 @@ class _SafernotesAppState extends ConsumerState<SafernotesApp> {
 }
 
 String? invitationIdFromUri(Uri uri) {
-  final isPublicAppLink = (uri.scheme == 'https' || uri.scheme == 'http') &&
-      uri.host == 'app.safernotes.com';
+  final isNativeAppLink = uri.scheme == 'safernotes' && uri.host == 'invite';
+  final isCurrentWebLink =
+      kIsWeb && (uri.scheme == 'https' || uri.scheme == 'http');
   final isWebRelativeLink = kIsWeb && uri.host.isEmpty;
-  if (!isPublicAppLink && !isWebRelativeLink) return null;
+  if (!isNativeAppLink && !isCurrentWebLink && !isWebRelativeLink) return null;
   final value = uri.queryParameters['invitation']?.trim();
   if (value == null || value.isEmpty) return null;
   final uuid = RegExp(

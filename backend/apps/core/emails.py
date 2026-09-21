@@ -153,7 +153,7 @@ def _send_code_email(*, user: User, code: str, template: str) -> None:
 
 
 def public_app_url(**query: str) -> str:
-    base_url = _public_base_url("APP_BASE_URL", "https://app.safernotes.com")
+    base_url = _public_base_url("APP_BASE_URL", "http://localhost:8080")
     return f"{base_url}?{urlencode(query)}" if query else base_url
 
 

@@ -133,8 +133,8 @@ def test_send_email_does_not_silence_delivery_errors(monkeypatch):
 )
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
-    APP_BASE_URL="https://app.safernotes.com/",
-    WEBSITE_BASE_URL="https://safernotes.com/",
+    APP_BASE_URL="https://notes.example.com/",
+    WEBSITE_BASE_URL="https://notes.example.com/",
 )
 def test_code_emails_have_production_safe_links_in_every_locale(
     db,
@@ -157,11 +157,9 @@ def test_code_emails_have_production_safe_links_in_every_locale(
     message = mail.outbox[0]
     assert message.subject == expected_subject
     assert f"{expected_label}: 123456" in message.body
-    assert "https://app.safernotes.com" in message.body
-    assert "https://safernotes.com" in message.body
+    assert "https://notes.example.com" in message.body
     assert set(_html_links(message)) == {
-        "https://app.safernotes.com",
-        "https://safernotes.com",
+        "https://notes.example.com",
     }
     assert "localhost" not in message.body
     assert "localhost" not in message.alternatives[0][0]
@@ -171,11 +169,6 @@ def test_code_emails_have_production_safe_links_in_every_locale(
     SECRET_KEY="unsafe-dev-secret-change-me",
     DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
     EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
-    BILLING_PROVIDER="creem",
-    BILLING_API_KEY="",
-    BILLING_API_BASE_URL="https://test-api.creem.io/v1",
-    BILLING_WEBHOOK_SECRET="",
-    BILLING_PRODUCT_IDS={},
     CORS_ALLOWED_ORIGINS=["http://localhost:3000"],
 )
 def test_production_configuration_check_flags_unsafe_launch_settings():
@@ -184,8 +177,6 @@ def test_production_configuration_check_flags_unsafe_launch_settings():
     assert "safernotes.E001" in issue_ids
     assert "safernotes.E002" in issue_ids
     assert "safernotes.E003" in issue_ids
-    assert "safernotes.E004" in issue_ids
-    assert "safernotes.E006" in issue_ids
     assert "safernotes.W001" in issue_ids
 
 
@@ -199,7 +190,6 @@ def test_production_configuration_check_flags_unsafe_launch_settings():
     EMAIL_HOST_PASSWORD="",
     EMAIL_USE_TLS=False,
     EMAIL_USE_SSL=False,
-    BILLING_PROVIDER="manual",
     CORS_ALLOWED_ORIGINS=["https://app.example.com"],
 )
 def test_production_configuration_check_flags_incomplete_smtp_settings():
@@ -218,58 +208,7 @@ def test_production_configuration_check_flags_incomplete_smtp_settings():
     EMAIL_HOST_PASSWORD="smtp-secret",
     EMAIL_USE_TLS=True,
     EMAIL_USE_SSL=False,
-    BILLING_PROVIDER="creem",
-    BILLING_API_KEY="creem_live_test",
-    BILLING_API_BASE_URL="https://api.creem.io/v1",
-    BILLING_WEBHOOK_SECRET="webhook-secret",
-    BILLING_PRODUCT_IDS={"essential": "prod_essential", "pro": "prod_pro"},
     CORS_ALLOWED_ORIGINS=["https://app.example.com"],
 )
 def test_production_configuration_check_accepts_safe_launch_settings():
     assert production_configuration_check(None) == []
-
-
-@override_settings(
-    SECRET_KEY="production-secret",
-    DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "safernotes"}},
-    EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
-    EMAIL_HOST="smtp.example.com",
-    EMAIL_PORT=587,
-    EMAIL_HOST_USER="noreply@example.com",
-    EMAIL_HOST_PASSWORD="smtp-secret",
-    EMAIL_USE_TLS=True,
-    EMAIL_USE_SSL=False,
-    BILLING_PROVIDER="creem",
-    BILLING_API_KEY="creem_test_key",
-    BILLING_API_BASE_URL="https://api.creem.io/v1",
-    BILLING_WEBHOOK_SECRET="webhook-secret",
-    BILLING_PRODUCT_IDS={"essential": "prod_essential", "pro": "prod_pro"},
-    CORS_ALLOWED_ORIGINS=["https://app.example.com"],
-)
-def test_production_configuration_check_rejects_test_key_with_live_api():
-    issue_ids = {issue.id for issue in production_configuration_check(None)}
-
-    assert "safernotes.E007" in issue_ids
-
-
-@override_settings(
-    SECRET_KEY="production-secret",
-    DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "safernotes"}},
-    EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
-    EMAIL_HOST="smtp.example.com",
-    EMAIL_PORT=587,
-    EMAIL_HOST_USER="noreply@example.com",
-    EMAIL_HOST_PASSWORD="smtp-secret",
-    EMAIL_USE_TLS=True,
-    EMAIL_USE_SSL=False,
-    BILLING_PROVIDER="creem",
-    BILLING_API_KEY="creem_live_key",
-    BILLING_API_BASE_URL="https://test-api.creem.io/v1",
-    BILLING_WEBHOOK_SECRET="webhook-secret",
-    BILLING_PRODUCT_IDS={"essential": "prod_essential", "pro": "prod_pro"},
-    CORS_ALLOWED_ORIGINS=["https://app.example.com"],
-)
-def test_production_configuration_check_rejects_live_key_with_test_api():
-    issue_ids = {issue.id for issue in production_configuration_check(None)}
-
-    assert "safernotes.E007" in issue_ids

@@ -6,7 +6,7 @@ Safernotes is a zero-knowledge encrypted note-taking application. The backend st
 
 ## Repository Layout
 
-- `backend/`: Django backend, REST APIs, authentication, encrypted notes, sync, sharing, realtime primitives, billing/subscription placeholders.
+- `backend/`: self-hosted Django backend for authentication, encrypted notes, sync, sharing, and realtime primitives.
 - `frontend/`: Flutter client app.
 - `infra/`: Kubernetes and Helm starter manifests.
 - `.github/workflows/`: CI for backend/security checks.
@@ -70,4 +70,3 @@ Last known good checks:
 - Django system check: passing.
 - Django migrations check: clean.
 - Backend tests: `38 passed`.
-

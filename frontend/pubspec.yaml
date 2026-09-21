@@ -20,7 +20,6 @@ dependencies:
   phosphor_icons: ^3.0.1
   flutter_local_notifications: ^22.3.0
   timezone: ^0.11.0
-  url_launcher: ^6.3.2
   hashlib: ^2.3.4
   flutter_quill: ^11.5.1
   dynamic_color: ^2.1.0

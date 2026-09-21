@@ -54,42 +54,6 @@ def production_configuration_check(app_configs, **kwargs):
                 )
             )
 
-    if settings.BILLING_PROVIDER == "creem":
-        missing = []
-        if not settings.BILLING_API_KEY:
-            missing.append("BILLING_API_KEY")
-        if not settings.BILLING_WEBHOOK_SECRET:
-            missing.append("BILLING_WEBHOOK_SECRET")
-        for plan in ("essential", "pro"):
-            if plan not in settings.BILLING_PRODUCT_IDS:
-                missing.append(f"BILLING_PRODUCT_IDS.{plan}")
-        if missing:
-            issues.append(
-                Error(
-                    "Creem billing is enabled but required settings are missing: "
-                    + ", ".join(missing),
-                    id="safernotes.E004",
-                )
-            )
-        if settings.BILLING_API_BASE_URL != "https://api.creem.io/v1":
-            issues.append(
-                Error(
-                    "Production Creem billing must use https://api.creem.io/v1.",
-                    id="safernotes.E006",
-                )
-            )
-        using_test_api = settings.BILLING_API_BASE_URL.startswith(
-            "https://test-api.creem.io"
-        )
-        using_test_key = settings.BILLING_API_KEY.startswith("creem_test_")
-        if settings.BILLING_API_KEY and using_test_api != using_test_key:
-            issues.append(
-                Error(
-                    "Creem API key and API endpoint belong to different environments.",
-                    id="safernotes.E007",
-                )
-            )
-
     if any(origin.startswith("http://localhost") for origin in settings.CORS_ALLOWED_ORIGINS):
         issues.append(
             Warning(

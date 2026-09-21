@@ -4,9 +4,9 @@ import 'package:safernotes_app/features/notes/notes_screen.dart';
 import 'package:safernotes_app/main.dart';
 
 void main() {
-  test('reads a valid invitation UUID from a public app URL', () {
+  test('reads a valid invitation UUID from the native app URL', () {
     final uri = Uri.parse(
-      'https://app.safernotes.com/?invitation=123e4567-e89b-42d3-a456-426614174000',
+      'safernotes://invite?invitation=123e4567-e89b-42d3-a456-426614174000',
     );
 
     expect(
@@ -18,13 +18,13 @@ void main() {
   test('rejects malformed invitation identifiers and ignores other data', () {
     expect(
       invitationIdFromUri(
-        Uri.parse('https://app.safernotes.com/?invitation=secret-token'),
+        Uri.parse('safernotes://invite?invitation=secret-token'),
       ),
       isNull,
     );
     expect(
       invitationIdFromUri(
-        Uri.parse('https://app.safernotes.com/?note=plaintext'),
+        Uri.parse('safernotes://invite?note=plaintext'),
       ),
       isNull,
     );
@@ -38,9 +38,9 @@ void main() {
     );
   });
 
-  test('normalizes repeated Android app links without exposing note data', () {
+  test('normalizes repeated Android links without exposing note data', () {
     final uri = Uri.parse(
-      'http://app.safernotes.com/?invitation=123E4567-E89B-42D3-A456-426614174000',
+      'safernotes://invite?invitation=123E4567-E89B-42D3-A456-426614174000',
     );
 
     for (var index = 0; index < 1000; index += 1) {

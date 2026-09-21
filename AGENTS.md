@@ -6,6 +6,9 @@ This repository is a zero-knowledge encrypted notes product with a Django backen
 
 - Backend: `backend/`, Django REST API, encrypted payload boundary.
 - Frontend: `frontend/`, Flutter app for web, Android, and iOS.
+- Runtime modes: first-class offline-only vault or optional self-hosted sync.
+- Community deployment: `docker-compose.yml` serves the web client, API,
+  PostgreSQL, Redis, and MinIO.
 - Local docs and phase summaries: `outputs/`.
 - Infrastructure starters: `docker-compose.yml`, `infra/`.
 
@@ -42,7 +45,7 @@ Frontend checks:
 ```sh
 cd frontend
 ./tool/flutterw analyze
-./tool/flutterw build web --dart-define=API_BASE_URL=https://api.safernotes.com --no-wasm-dry-run
+./tool/flutterw build web --dart-define=API_BASE_URL=http://127.0.0.1:8000 --no-wasm-dry-run
 ./tool/build_android_release.sh
 ```
 
@@ -53,7 +56,9 @@ Flutter widget tests may fail inside restricted sandboxes because Flutter opens 
 
 ## Important Caveats
 
-- Default app builds must use the online API `https://api.safernotes.com`. Local API URLs are only for deliberate debugging and must not be used for release APKs.
+- Offline-only sessions must not start sync timers or make API requests.
+- Docker web builds use `API_BASE_URL=same-origin`; native self-hosted server
+  selection still needs a user-facing configuration flow.
 - New password-derived key wrapping uses Argon2id. The client keeps PBKDF2-SHA256 unlock support for older test accounts.
 - Near-real-time collaboration is currently autosave plus polling/presence refresh. The backend has encrypted WebSocket collaboration primitives, but the Flutter client does not yet use a CRDT/WebSocket editor.
 - Share invitations require recipient user IDs in the current UI.

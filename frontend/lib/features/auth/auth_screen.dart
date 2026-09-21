@@ -7,6 +7,7 @@ import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/auth/recovery_key_dialog.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
+import 'package:safernotes_app/shared/app/sync_server_settings.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
 import 'package:safernotes_app/shared/widgets/app_canvas.dart';
 import 'package:safernotes_app/shared/widgets/safernotes_logo.dart';
@@ -27,6 +28,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _code = TextEditingController();
   final _recoveryKey = TextEditingController();
   final _newPassword = TextEditingController();
+  final _serverUrl = TextEditingController();
   var _registering = false;
   var _recovering = false;
   var _recoveryRequested = false;
@@ -35,6 +37,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   var _obscure = true;
   RecoveryChallenge? _challenge;
   String? _localError;
+  var _serverUrlInitialized = false;
 
   @override
   void dispose() {
@@ -44,6 +47,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     _code.dispose();
     _recoveryKey.dispose();
     _newPassword.dispose();
+    _serverUrl.dispose();
     super.dispose();
   }
 
@@ -56,6 +60,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
     _workspaceDefault = workspaceDefault;
     final auth = ref.watch(authControllerProvider);
+    final serverUrl = ref.watch(syncServerUrlProvider).valueOrNull;
+    if (!_serverUrlInitialized && serverUrl != null) {
+      _serverUrl.text = serverUrl;
+      _serverUrlInitialized = true;
+    }
     final busy = auth.isLoading || _recoveryBusy || _submitBusy;
     final error = _localError ?? auth.asError?.error.toString();
     final title = _registering
@@ -100,10 +109,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           code: _code,
           recoveryKey: _recoveryKey,
           newPassword: _newPassword,
+          serverUrl: _serverUrl,
+          serverUrlLocked: syncServerUrlIsLocked,
           error: error == null ? null : _cleanError(error, l10n, _recovering),
           onModeChanged: (value) => setState(() => _registering = value),
           onTogglePassword: _togglePassword,
           onSubmit: _submit,
+          onUseOffline: _useOffline,
           onToggleRecovery: _toggleRecoveryMode,
         );
     return Scaffold(
@@ -144,6 +156,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   void _togglePassword() => setState(() => _obscure = !_obscure);
 
+  Future<void> _useOffline() async {
+    if (_submitBusy || ref.read(authControllerProvider).isLoading) return;
+    setState(() {
+      _submitBusy = true;
+      _localError = null;
+    });
+    try {
+      await ref.read(authControllerProvider.notifier).createOfflineVault();
+    } finally {
+      if (mounted) setState(() => _submitBusy = false);
+    }
+  }
+
   void _toggleRecoveryMode() {
     setState(() {
       _recovering = !_recovering;
@@ -166,6 +191,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     });
     await WidgetsBinding.instance.endOfFrame;
     try {
+      await ref.read(syncServerUrlProvider.notifier).setUrl(_serverUrl.text);
       if (_recovering) {
         if (_recoveryRequested) {
           await _completeRecovery();
@@ -249,6 +275,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         value.contains('Server unreachable') ||
         value.contains('timed out')) {
       return l10n.t('serverUnreachable');
+    }
+    if (value.contains('No sync server is configured')) {
+      return l10n.t('serverNotConfigured');
     }
     if (value.contains('Invalid credentials')) return l10n.t('badCredentials');
     if (value.contains('Invalid recovery code')) {
@@ -424,9 +453,12 @@ class _AuthPanel extends StatelessWidget {
     required this.code,
     required this.recoveryKey,
     required this.newPassword,
+    required this.serverUrl,
+    required this.serverUrlLocked,
     required this.onModeChanged,
     required this.onTogglePassword,
     required this.onSubmit,
+    required this.onUseOffline,
     required this.onToggleRecovery,
     this.error,
   });
@@ -450,9 +482,12 @@ class _AuthPanel extends StatelessWidget {
   final TextEditingController code;
   final TextEditingController recoveryKey;
   final TextEditingController newPassword;
+  final TextEditingController serverUrl;
+  final bool serverUrlLocked;
   final ValueChanged<bool> onModeChanged;
   final VoidCallback onTogglePassword;
   final VoidCallback onSubmit;
+  final VoidCallback onUseOffline;
   final VoidCallback onToggleRecovery;
   final String? error;
 
@@ -526,6 +561,26 @@ class _AuthPanel extends StatelessWidget {
                     ),
                     const SizedBox(height: 20),
                   ],
+                  _AuthTextField(
+                    controller: serverUrl,
+                    label: l10n.t('syncServerUrl'),
+                    icon: AppIcons.globe,
+                    enabled: !serverUrlLocked && !busy,
+                    keyboardType: TextInputType.url,
+                    textInputAction: TextInputAction.next,
+                    validator: (value) {
+                      if ((value ?? '').trim().isEmpty) {
+                        return l10n.t('enterSyncServerUrl');
+                      }
+                      try {
+                        normalizeSyncServerUrl(value!);
+                        return null;
+                      } on FormatException {
+                        return l10n.t('invalidSyncServerUrl');
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   _AuthTextField(
                     controller: email,
                     label: l10n.t('email'),
@@ -662,6 +717,30 @@ class _AuthPanel extends StatelessWidget {
                       label: Text(actionLabel),
                     ),
                   ),
+                  if (!recovering) ...[
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      key: const ValueKey('use-offline-only'),
+                      onPressed: busy ? null : onUseOffline,
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadii.xl),
+                        ),
+                      ),
+                      icon: const Icon(AppIcons.hardDrive),
+                      label: Text(l10n.t('useOfflineOnly')),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      l10n.t('offlineOnlyDescription'),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ],
                   AnimatedSwitcher(
                     duration: const Duration(milliseconds: 180),
                     child: busy
@@ -884,6 +963,7 @@ class _AuthTextField extends StatelessWidget {
     this.textInputAction,
     this.autofillHints,
     this.onFieldSubmitted,
+    this.enabled = true,
     this.obscureText = false,
     this.suffix,
     this.validator,
@@ -896,6 +976,7 @@ class _AuthTextField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final Iterable<String>? autofillHints;
   final ValueChanged<String>? onFieldSubmitted;
+  final bool enabled;
   final bool obscureText;
   final Widget? suffix;
   final FormFieldValidator<String>? validator;
@@ -914,6 +995,7 @@ class _AuthTextField extends StatelessWidget {
     final radius = BorderRadius.circular(AppRadii.pill);
     return TextFormField(
       controller: controller,
+      enabled: enabled,
       keyboardType: keyboardType,
       textInputAction: textInputAction,
       autofillHints: autofillHints,

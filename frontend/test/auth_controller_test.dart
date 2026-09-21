@@ -7,6 +7,25 @@ import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/storage/offline_store.dart';
 
 void main() {
+  test('creates and persists an offline-only vault without server credentials',
+      () async {
+    final store = _MemoryOfflineStore(null);
+    final container = ProviderContainer(
+      overrides: [offlineStoreProvider.overrideWithValue(store)],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(authControllerProvider.future);
+    await container.read(authControllerProvider.notifier).createOfflineVault();
+
+    final session = container.read(authControllerProvider).requireValue!;
+    expect(session.isOfflineOnly, isTrue);
+    expect(session.accessToken, isEmpty);
+    expect(session.defaultTenant, isEmpty);
+    expect(session.masterKey, hasLength(32));
+    expect(store.session?['mode'], 'offline');
+  });
+
   test('refreshing verification updates state and the stored session',
       () async {
     final store = _MemoryOfflineStore({

@@ -42,6 +42,8 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
 
   @override
   Future<List<PlainNote>> build() async {
+    final offlineOnly =
+        ref.read(authControllerProvider).valueOrNull?.isOfflineOnly ?? false;
     final binding = WidgetsFlutterBinding.ensureInitialized();
     binding.addObserver(this);
     ref.onDispose(() {
@@ -49,13 +51,19 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
       _syncTimer?.cancel();
       _debounce?.cancel();
     });
-    _syncTimer = Timer.periodic(_automaticSyncInterval, (_) {
-      if (_canRunAutomaticSync()) {
-        unawaited(syncNow(pullAfterPush: true));
-      }
-    });
+    if (!offlineOnly) {
+      _syncTimer = Timer.periodic(_automaticSyncInterval, (_) {
+        if (_canRunAutomaticSync()) {
+          unawaited(syncNow(pullAfterPush: true));
+        }
+      });
+    }
     final notes = await ref.watch(offlineStoreProvider).loadNotes();
-    unawaited(syncNow(pullAfterPush: true));
+    if (offlineOnly) {
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
+    } else {
+      unawaited(syncNow(pullAfterPush: true));
+    }
     return notes;
   }
 
@@ -91,7 +99,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
       pinned: false,
       color: 0xffffffff,
       sortOrder: -DateTime.now().toUtc().microsecondsSinceEpoch,
-      dirty: true,
+      dirty: !_offlineOnly,
       version: 1,
       state: 'active',
       reminderAt: reminderAt,
@@ -156,7 +164,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
         remoteId: remoteId,
         title: draft.title.trim(),
         updatedAt: DateTime.now().toUtc(),
-        dirty: true,
+        dirty: !_offlineOnly,
         version: version,
         conflicted: false,
       );
@@ -167,6 +175,10 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
     }
     next.sort(_sortNotes);
     await _persist(next);
+    if (_offlineOnly) {
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
+      return;
+    }
     ref.read(syncStatusProvider.notifier).state = SyncStatus.saving;
     if (_syncFuture != null) {
       _syncRequested = true;
@@ -182,6 +194,9 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
   }
 
   Future<PlainNote> ensureSynced(PlainNote draft) async {
+    if (_offlineOnly) {
+      throw StateError('Sharing is unavailable in an offline-only vault.');
+    }
     await saveDraft(draft: draft, syncImmediately: false);
     _debounce?.cancel();
     await syncNow(pullAfterPush: true);
@@ -199,7 +214,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
 
   Future<void> pullRemote({String? requiredNoteId}) async {
     final session = ref.read(authControllerProvider).valueOrNull;
-    if (session == null) return;
+    if (session == null || session.isOfflineOnly) return;
     ref.read(syncStatusProvider.notifier).state = SyncStatus.syncing;
     try {
       final remote =
@@ -297,6 +312,10 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
   }
 
   Future<void> syncNow({bool pullAfterPush = false}) {
+    if (_offlineOnly) {
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
+      return Future.value();
+    }
     _syncRequested = true;
     _pullAfterPushRequested |= pullAfterPush;
 
@@ -338,7 +357,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
 
   Future<_SyncOutcome> _syncOnce() async {
     final session = ref.read(authControllerProvider).valueOrNull;
-    if (session == null) return _SyncOutcome.skipped;
+    if (session == null || session.isOfflineOnly) return _SyncOutcome.skipped;
     final notes =
         state.valueOrNull ?? await ref.read(offlineStoreProvider).loadNotes();
     final dirty = notes.where((note) => note.dirty).toList();
@@ -435,13 +454,17 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
         note;
     final updated = current.copyWith(
       state: nextState,
-      dirty: current.remoteId == null,
+      dirty: !_offlineOnly && current.remoteId == null,
     );
     final next = [
       updated,
       ...existing.where((item) => item.localId != note.localId),
     ]..sort(_sortNotes);
     await _persist(next);
+    if (_offlineOnly) {
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
+      return;
+    }
     if (current.remoteId == null) return;
 
     final session = ref.read(authControllerProvider).valueOrNull;
@@ -476,6 +499,18 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
     if (trashed.isEmpty) return 0;
 
     final session = ref.read(authControllerProvider).valueOrNull;
+    if (session?.isOfflineOnly ?? false) {
+      final next = [
+        for (final note in existing)
+          if (note.state == 'trashed')
+            note.copyWith(state: 'deleted', dirty: false)
+          else
+            note,
+      ]..sort(_sortNotes);
+      await _persist(next);
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
+      return trashed.length;
+    }
     final hasRemoteNotes = trashed.any((note) => note.remoteId != null);
     if (hasRemoteNotes && session == null) {
       throw StateError(ref.read(l10nProvider).t('emptyTrashFailed'));
@@ -531,7 +566,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
       title: source.title,
       updatedAt: DateTime.now().toUtc(),
       sortOrder: -DateTime.now().toUtc().microsecondsSinceEpoch,
-      dirty: true,
+      dirty: !_offlineOnly,
       version: 1,
       state: 'active',
       reminderAt: reminderAt,
@@ -548,7 +583,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
       pinned: duplicate.pinned,
       color: duplicate.color,
       sortOrder: duplicate.sortOrder,
-      dirty: true,
+      dirty: !_offlineOnly,
       version: 1,
       state: 'active',
       reminderAt: reminderAt,
@@ -582,7 +617,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
       reordered[note.localId] = note.copyWith(
         sortOrder: index * 1000,
         updatedAt: now,
-        dirty: true,
+        dirty: !_offlineOnly,
         conflicted: false,
       );
     }
@@ -599,6 +634,10 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
       state = AsyncData(existing);
       rethrow;
     }
+    if (_offlineOnly) {
+      ref.read(syncStatusProvider.notifier).state = SyncStatus.saved;
+      return;
+    }
     ref.read(syncStatusProvider.notifier).state = SyncStatus.saving;
     if (_syncFuture != null) {
       _syncRequested = true;
@@ -612,7 +651,7 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
 
   Future<void> refreshPresence() async {
     final session = ref.read(authControllerProvider).valueOrNull;
-    if (session == null) return;
+    if (session == null || session.isOfflineOnly) return;
     try {
       final all =
           await ref.read(apiClientProvider).fetchPresence(session.accessToken);
@@ -628,7 +667,10 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
     required String role,
   }) async {
     final session = ref.read(authControllerProvider).valueOrNull;
-    if (session == null || note.remoteId == null) return;
+    if (session == null || session.isOfflineOnly) {
+      throw StateError('Sharing is unavailable in an offline-only vault.');
+    }
+    if (note.remoteId == null) return;
     if (session.privateEncryptionKey.isEmpty ||
         session.publicEncryptionKey.isEmpty) {
       throw StateError('Please sign in again before sharing a note.');
@@ -684,6 +726,9 @@ class NotesController extends AsyncNotifier<List<PlainNote>>
     await ref.read(offlineStoreProvider).saveNotes(notes);
     state = AsyncData(notes);
   }
+
+  bool get _offlineOnly =>
+      ref.read(authControllerProvider).valueOrNull?.isOfflineOnly ?? false;
 
   bool _canRunAutomaticSync() {
     final lifecycle = WidgetsFlutterBinding.ensureInitialized().lifecycleState;

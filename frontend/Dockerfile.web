@@ -1,0 +1,22 @@
+FROM ghcr.io/cirruslabs/flutter:stable AS build
+
+WORKDIR /src
+COPY pubspec.yaml pubspec.lock ./
+COPY third_party ./third_party
+RUN flutter pub get
+
+COPY . .
+RUN flutter build web \
+    --release \
+    --dart-define=API_BASE_URL=same-origin \
+    --no-wasm-dry-run
+
+FROM nginx:1.27-alpine
+
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /src/build/web /usr/share/nginx/html
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=5 \
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1

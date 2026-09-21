@@ -5,14 +5,15 @@ server required.
 
 ## Files
 
-- `index.html`: product landing page with desktop/mobile preview, platform availability, security, pricing, and CTA
+- `index.html`: product landing page with desktop/mobile preview, security, offline use, and self-hosting
 - `downloads.html`: device-aware download recommendations for web, Android, and iOS
+- `docs.html`: installation, self-hosting, operations, troubleshooting, and Q&A
 - `downloads.js`: local device detection and platform tab switching
 - `assets/product-desktop.png`: real desktop product screenshot
 - `assets/product-mobile.png`: real mobile product screenshot
-- `privacy.html`: privacy policy with hosting, email, and Creem disclosures
+- `privacy.html`: privacy information for offline and self-hosted operation
 - `impressum.html`: legal notice with operator and business details
-- `terms.html`: product and subscription terms, including Creem checkout terms
+- `terms.html`: open-source software usage information
 - `styles.css`: shared responsive design system
 
 ## Preview

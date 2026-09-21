@@ -18,8 +18,6 @@ urlpatterns = [
     path("api/v1/notes/", include("apps.notes.urls")),
     path("api/v1/attachments/", include("apps.attachments.urls")),
     path("api/v1/collaboration/", include("apps.collaboration.urls")),
-    path("api/v1/subscription/", include("apps.subscriptions.urls")),
-    path("api/v1/billing/", include("apps.billing.urls")),
     path("api/v1/notifications/", include("apps.notifications.urls")),
     path("api/v1/search/", include("apps.search.urls")),
 ]

@@ -1,7 +1,6 @@
 apiVersion: v2
 name: safernotes
-description: Zero-knowledge notes SaaS backend
+description: Self-hosted zero-knowledge notes backend
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-

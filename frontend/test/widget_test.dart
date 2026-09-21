@@ -60,17 +60,44 @@ void main() {
 
     expect(find.text('Welcome back'), findsWidgets);
     expect(find.text('Login'), findsWidgets);
+    expect(find.byKey(const ValueKey('use-offline-only')), findsOneWidget);
+  });
+
+  testWidgets('offline-only entry does not validate account fields',
+      (tester) async {
+    final auth = _KeyboardAuthController();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [authControllerProvider.overrideWith(() => auth)],
+        child: const MaterialApp(home: AuthScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final offlineButton = find.byKey(const ValueKey('use-offline-only'));
+    await tester.ensureVisible(offlineButton);
+    await tester.tap(offlineButton);
+    await tester.pump();
+
+    expect(auth.offlineVaultCreations, 1);
+    expect(find.text('Enter a valid email'), findsNothing);
   });
 
   testWidgets('login supports autofill and keyboard submission',
       (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'safernotes.sync_server_url': 'https://notes.example.test',
+    });
     await tester.pumpWidget(const ProviderScope(child: SafernotesApp()));
     await tester.pumpAndSettle();
 
     final fields = tester.widgetList<TextField>(find.byType(TextField));
-    final email = fields.first;
-    final password = fields.elementAt(1);
+    final email = fields.firstWhere(
+      (field) => field.autofillHints?.contains(AutofillHints.email) ?? false,
+    );
+    final password = fields.firstWhere(
+      (field) => field.autofillHints?.contains(AutofillHints.password) ?? false,
+    );
     expect(email.autofillHints, contains(AutofillHints.email));
     expect(password.autofillHints, contains(AutofillHints.password));
     expect(password.textInputAction, TextInputAction.done);
@@ -83,6 +110,9 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      'safernotes.sync_server_url': 'https://notes.example.test',
+    });
     final auth = _KeyboardAuthController();
     await tester.pumpWidget(
       ProviderScope(
@@ -93,12 +123,12 @@ void main() {
     await tester.pumpAndSettle();
 
     final fields = find.byType(TextFormField);
-    await tester.enterText(fields.at(0), 'person@example.test');
-    await tester.enterText(fields.at(1), 'correct horse battery staple');
+    await tester.enterText(fields.at(1), 'person@example.test');
+    await tester.enterText(fields.at(2), 'correct horse battery staple');
 
     // Password managers commonly leave focus in the username field after
     // filling both values. Enter should submit there as well as on password.
-    await tester.tap(fields.at(0));
+    await tester.tap(fields.at(1));
     await tester.testTextInput.receiveAction(TextInputAction.next);
     await tester.pump();
 
@@ -112,6 +142,9 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferences.setMockInitialValues({
+      'safernotes.sync_server_url': 'https://notes.example.test',
+    });
     final auth = _KeyboardAuthController();
     await tester.pumpWidget(
       ProviderScope(
@@ -124,14 +157,14 @@ void main() {
     await tester.pumpAndSettle();
 
     final fields = find.byType(TextFormField);
-    await tester.enterText(fields.at(0), 'person@example.test');
-    await tester.enterText(fields.at(1), 'correct horse battery staple');
+    await tester.enterText(fields.at(1), 'person@example.test');
+    await tester.enterText(fields.at(2), 'correct horse battery staple');
     expect(
-      tester.widget<TextField>(find.byType(TextField).at(1)).textInputAction,
+      tester.widget<TextField>(find.byType(TextField).at(2)).textInputAction,
       TextInputAction.done,
     );
 
-    await tester.tap(fields.at(1));
+    await tester.tap(fields.at(2));
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -176,6 +209,7 @@ void main() {
 class _KeyboardAuthController extends AuthController {
   int loginCalls = 0;
   int registrationPreparations = 0;
+  int offlineVaultCreations = 0;
   String? lastEmail;
 
   @override
@@ -185,6 +219,11 @@ class _KeyboardAuthController extends AuthController {
   Future<void> login({required String email, required String password}) async {
     loginCalls += 1;
     lastEmail = email;
+  }
+
+  @override
+  Future<void> createOfflineVault() async {
+    offlineVaultCreations += 1;
   }
 
   @override

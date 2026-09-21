@@ -31,9 +31,13 @@ class AuthController extends AsyncNotifier<AppSession?> {
       publicEncryptionKey: saved['publicEncryptionKey'] as String? ?? '',
       privateEncryptionKey: saved['privateEncryptionKey'] as String? ?? '',
       emailVerified: saved['emailVerified'] as bool? ?? true,
+      mode: saved['mode'] == AppSessionMode.offline.name
+          ? AppSessionMode.offline
+          : AppSessionMode.server,
     );
-    if (session.privateEncryptionKey.isEmpty ||
-        session.publicEncryptionKey.isEmpty) {
+    if (!session.isOfflineOnly &&
+        (session.privateEncryptionKey.isEmpty ||
+            session.publicEncryptionKey.isEmpty)) {
       try {
         final me =
             await ref.read(apiClientProvider).fetchMe(session.accessToken);
@@ -55,9 +59,28 @@ class AuthController extends AsyncNotifier<AppSession?> {
     return session;
   }
 
+  Future<void> createOfflineVault() async {
+    state = const AsyncLoading();
+    state = await AsyncValue.guard(() async {
+      final session = AppSession(
+        email: '',
+        accessToken: '',
+        refreshToken: '',
+        defaultTenant: '',
+        masterKey: ref.read(cryptoServiceProvider).randomBytes(32),
+        mode: AppSessionMode.offline,
+      );
+      await ref.read(offlineStoreProvider).saveSessionJson(session.toJson());
+      return session;
+    });
+  }
+
   Future<AppSession> ensureEncryptionKeys() async {
     final current = state.valueOrNull;
     if (current == null) throw StateError('Not signed in.');
+    if (current.isOfflineOnly) {
+      throw StateError('Sharing is unavailable in an offline-only vault.');
+    }
     if (current.privateEncryptionKey.isNotEmpty &&
         current.publicEncryptionKey.isNotEmpty) {
       return current;

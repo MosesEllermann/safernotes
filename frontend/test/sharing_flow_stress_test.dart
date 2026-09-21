@@ -119,20 +119,6 @@ class _FlakyInvitationApi extends ApiClient {
       },
     };
   }
-
-  @override
-  Future<SubscriptionUsage> fetchSubscriptionUsage({
-    required String accessToken,
-    required String tenant,
-  }) async {
-    return const SubscriptionUsage(
-      plan: 'free',
-      storageBytesUsed: 0,
-      storageBytesLimit: 524288000,
-      notesCount: 1,
-      maxNotes: 500,
-    );
-  }
 }
 
 class _DelayedSharedNoteController extends NotesController {

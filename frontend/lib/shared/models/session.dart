@@ -1,5 +1,7 @@
 import 'package:safernotes_app/shared/models/encrypted_envelope.dart';
 
+enum AppSessionMode { server, offline }
+
 class AppSession {
   const AppSession({
     required this.email,
@@ -11,6 +13,7 @@ class AppSession {
     this.publicEncryptionKey = '',
     this.privateEncryptionKey = '',
     this.emailVerified = true,
+    this.mode = AppSessionMode.server,
   });
 
   final String email;
@@ -22,6 +25,9 @@ class AppSession {
   final String publicEncryptionKey;
   final String privateEncryptionKey;
   final bool emailVerified;
+  final AppSessionMode mode;
+
+  bool get isOfflineOnly => mode == AppSessionMode.offline;
 
   Map<String, dynamic> toJson() => {
         'email': email,
@@ -33,6 +39,7 @@ class AppSession {
         'publicEncryptionKey': publicEncryptionKey,
         'privateEncryptionKey': privateEncryptionKey,
         'emailVerified': emailVerified,
+        'mode': mode.name,
       };
 
   AppSession copyWith({
@@ -45,6 +52,7 @@ class AppSession {
     String? publicEncryptionKey,
     String? privateEncryptionKey,
     bool? emailVerified,
+    AppSessionMode? mode,
   }) {
     return AppSession(
       email: email ?? this.email,
@@ -56,6 +64,7 @@ class AppSession {
       publicEncryptionKey: publicEncryptionKey ?? this.publicEncryptionKey,
       privateEncryptionKey: privateEncryptionKey ?? this.privateEncryptionKey,
       emailVerified: emailVerified ?? this.emailVerified,
+      mode: mode ?? this.mode,
     );
   }
 }

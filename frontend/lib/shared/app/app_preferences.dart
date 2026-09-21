@@ -107,7 +107,7 @@ class AppPreferencesController extends AsyncNotifier<AppPreferences> {
 
   Future<void> _syncLanguage(String languageCode) async {
     final session = ref.read(authControllerProvider).valueOrNull;
-    if (session == null) return;
+    if (session == null || session.isOfflineOnly) return;
     try {
       await ref.read(apiClientProvider).updatePreferences(
             accessToken: session.accessToken,

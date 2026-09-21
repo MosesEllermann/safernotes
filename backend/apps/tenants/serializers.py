@@ -11,8 +11,8 @@ class OrganizationSerializer(RejectPlaintextMixin, serializers.ModelSerializer):
 
     class Meta:
         model = Organization
-        fields = ["id", "name_ciphertext", "plan", "owner_user", "created_at", "updated_at"]
-        read_only_fields = ["id", "plan", "owner_user", "created_at", "updated_at"]
+        fields = ["id", "name_ciphertext", "owner_user", "created_at", "updated_at"]
+        read_only_fields = ["id", "owner_user", "created_at", "updated_at"]
 
     def create(self, validated_data):
         validated_data["owner_user"] = self.context["request"].user
@@ -24,4 +24,3 @@ class MembershipSerializer(serializers.ModelSerializer):
         model = Membership
         fields = ["id", "tenant", "user", "role", "status", "created_at", "updated_at"]
         read_only_fields = ["id", "created_at", "updated_at"]
-

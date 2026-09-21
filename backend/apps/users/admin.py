@@ -8,7 +8,6 @@ from django.db import transaction
 from django.db.models import Count
 from django.http import HttpResponse
 from django.template.response import TemplateResponse
-from django.urls import reverse
 from django.utils.html import format_html
 
 from apps.audit.events import record_audit_event
@@ -39,9 +38,6 @@ class SafeUserAdmin(admin.ModelAdmin):
         "email",
         "status_badge",
         "verification_state",
-        "subscription_plan_badge",
-        "subscription_status_badge",
-        "billing_provider",
         "notes_count",
         "storage_usage",
         "created_at",
@@ -56,9 +52,6 @@ class SafeUserAdmin(admin.ModelAdmin):
     search_fields = (
         "email",
         "status",
-        "default_tenant__subscription__plan",
-        "default_tenant__subscription__status",
-        "default_tenant__subscription__billing_provider",
     )
     ordering = ("-created_at",)
     date_hierarchy = "created_at"
@@ -75,10 +68,6 @@ class SafeUserAdmin(admin.ModelAdmin):
         "is_staff",
         "is_superuser",
         "default_tenant_id_display",
-        "subscription_management",
-        "subscription_plan",
-        "subscription_status",
-        "billing_provider",
         "notes_count",
         "storage_usage",
         "attachment_count",
@@ -93,7 +82,7 @@ class SafeUserAdmin(admin.ModelAdmin):
         return (
             super()
             .get_queryset(request)
-            .select_related("default_tenant__subscription", "default_tenant__storage_usage")
+            .select_related("default_tenant__storage_usage")
             .annotate(admin_notes_count=Count("default_tenant__notes", distinct=True))
         )
 
@@ -109,42 +98,6 @@ class SafeUserAdmin(admin.ModelAdmin):
     @admin.display(description="Default tenant")
     def default_tenant_id_display(self, obj):
         return str(obj.default_tenant_id) if obj.default_tenant_id else "-"
-
-    @admin.display(description="Plan", ordering="default_tenant__subscription__plan")
-    def subscription_plan(self, obj):
-        subscription = self._subscription(obj)
-        if subscription:
-            return subscription.plan
-        return obj.default_tenant.plan if obj.default_tenant_id else "-"
-
-    @admin.display(description="Plan", ordering="default_tenant__subscription__plan")
-    def subscription_plan_badge(self, obj):
-        value = self.subscription_plan(obj)
-        tone = "accent" if value not in ("-", "free") else "neutral"
-        return self._badge(value, tone)
-
-    @admin.display(description="Subscription", ordering="default_tenant__subscription__status")
-    def subscription_status(self, obj):
-        subscription = self._subscription(obj)
-        return subscription.status if subscription else "Not configured"
-
-    @admin.display(description="Subscription", ordering="default_tenant__subscription__status")
-    def subscription_status_badge(self, obj):
-        value = self.subscription_status(obj)
-        if value in ("active", "trialing", "on_trial"):
-            tone = "positive"
-        elif value in ("past_due", "unpaid"):
-            tone = "danger"
-        else:
-            tone = "neutral"
-        return self._badge(value, tone)
-
-    @admin.display(
-        description="Provider", ordering="default_tenant__subscription__billing_provider"
-    )
-    def billing_provider(self, obj):
-        subscription = self._subscription(obj)
-        return subscription.billing_provider or "Manual" if subscription else "-"
 
     @admin.display(description="Notes")
     def notes_count(self, obj):
@@ -162,24 +115,6 @@ class SafeUserAdmin(admin.ModelAdmin):
         usage = self._storage_usage(obj)
         return usage.attachments_count if usage else 0
 
-    @admin.display(description="Manage subscription")
-    def subscription_management(self, obj):
-        if not obj.default_tenant_id:
-            return "No default tenant"
-        subscription = self._subscription(obj)
-        if subscription:
-            url = reverse(
-                "owner_admin:subscriptions_subscription_change",
-                args=(subscription.pk,),
-            )
-            return format_html('<a class="button" href="{}">Edit subscription</a>', url)
-        url = reverse("owner_admin:subscriptions_subscription_add")
-        return format_html(
-            '<a class="button" href="{}?tenant={}">Create subscription</a>',
-            url,
-            obj.default_tenant_id,
-        )
-
     @admin.action(description="Export selected accounts as CSV")
     def export_accounts_csv(self, request, queryset):
         response = HttpResponse(content_type="text/csv")
@@ -191,9 +126,6 @@ class SafeUserAdmin(admin.ModelAdmin):
                 "account_status",
                 "active",
                 "email_verified",
-                "plan",
-                "subscription_status",
-                "provider",
                 "notes",
                 "storage",
                 "created_at",
@@ -206,9 +138,6 @@ class SafeUserAdmin(admin.ModelAdmin):
                     account.status,
                     account.is_active,
                     account.email_verified_at is not None,
-                    self.subscription_plan(account),
-                    self.subscription_status(account),
-                    self.billing_provider(account),
                     self.notes_count(account),
                     self.storage_usage(account),
                     account.created_at.isoformat(),
@@ -291,16 +220,6 @@ class SafeUserAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return self.has_view_permission(request, obj)
-
-    @staticmethod
-    def _subscription(obj):
-        tenant = obj.default_tenant
-        if tenant is None:
-            return None
-        try:
-            return tenant.subscription
-        except tenant._meta.apps.get_model("subscriptions", "Subscription").DoesNotExist:
-            return None
 
     @staticmethod
     def _storage_usage(obj):

@@ -7,7 +7,6 @@ from apps.core.models import EncryptedJSONField, TimeStampedUUIDModel
 
 class Organization(TimeStampedUUIDModel):
     name_ciphertext = EncryptedJSONField()
-    plan = models.CharField(max_length=32, default="free")
     owner_user = models.ForeignKey("users.User", on_delete=models.PROTECT, related_name="owned_tenants")
 
 
@@ -21,4 +20,3 @@ class Membership(TimeStampedUUIDModel):
         constraints = [
             models.UniqueConstraint(fields=["tenant", "user"], name="unique_tenant_membership")
         ]
-

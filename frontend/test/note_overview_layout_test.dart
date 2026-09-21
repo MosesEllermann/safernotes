@@ -280,12 +280,14 @@ void main() {
       find.byKey(const ValueKey('notes-glass-header-light-haze')),
       findsNothing,
     );
-    final darkNavFill = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('mobile-nav-drawer-fill')),
-    );
+    final darkNavFillFinder =
+        find.byKey(const ValueKey('mobile-nav-drawer-fill'));
+    final darkNavFill = tester.widget<DecoratedBox>(darkNavFillFinder);
     expect(
       (darkNavFill.decoration as ShapeDecoration).color,
-      AppChromeGlass.darkTint,
+      Theme.of(tester.element(darkNavFillFinder))
+          .colorScheme
+          .surfaceContainerHigh,
     );
     final darkCountBadge = tester.widget<Container>(
       find.byKey(const ValueKey('note-filter-count-badge')),
@@ -435,14 +437,18 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(
       find.byKey(const ValueKey('mobile-bottom-nav-backdrop')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile-bottom-nav-opaque')),
       findsOneWidget,
     );
     final navFill = tester.widget<DecoratedBox>(
       find.byKey(const ValueKey('mobile-nav-drawer-fill')),
     );
     expect(
-      (navFill.decoration as ShapeDecoration).color,
-      AppChromeGlass.lightTint,
+      (navFill.decoration as ShapeDecoration).color?.a,
+      1,
     );
     expect(
       find.ancestor(
@@ -749,10 +755,18 @@ void main() {
     expect(tester.getSize(guard).height, 32);
     expect(
       find.byKey(const ValueKey('mobile-bottom-nav-backdrop')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.byKey(const ValueKey('mobile-header-button-backdrop')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile-bottom-nav-opaque')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('mobile-header-button-opaque')),
       findsNWidgets(2),
     );
     final gesture = await tester.startGesture(const Offset(4, 845));
@@ -767,28 +781,6 @@ void main() {
         .first;
     expect(tester.state<ScrollableState>(scrollable).position.pixels, 0);
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
-
-  testWidgets('account usage shows MB from local notes while offline',
-      (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    tester.view.physicalSize = const Size(430, 850);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await _pumpNotesWithController(
-      tester,
-      _TestNotesController([
-        _note('note-one', 'First note', 'A local encrypted preview.'),
-      ]),
-      apiClient: _FailingUsageApiClient(),
-    );
-
-    await tester.tap(find.byKey(const ValueKey('mobile-account-menu')));
-    await tester.pumpAndSettle();
-    expect(find.text('Calculated from local notes'), findsOneWidget);
-    expect(find.text('0.01 MB of 500 MB'), findsOneWidget);
-    expect(find.text('1 of 500 notes'), findsOneWidget);
-  });
 
   testWidgets('iOS mobile chrome uses native glass and native symbols',
       (tester) async {
@@ -1490,10 +1482,6 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('mobile-sidebar-quota-card')),
-      findsOneWidget,
-    );
-    expect(
       find.byKey(const ValueKey('mobile-sidebar-navigation')),
       findsOneWidget,
     );
@@ -1529,8 +1517,6 @@ void main() {
       (settingsSurface.decoration! as BoxDecoration).color,
       sideSheetScheme.surfaceContainerHighest.withValues(alpha: 0.4),
     );
-    expect(find.text('12 MB of 500 MB'), findsOneWidget);
-    expect(find.text('42 of 500 notes'), findsOneWidget);
     expect(find.byType(BackdropFilter), findsWidgets);
     expect(find.byKey(const ValueKey('mobile-note-list')), findsOneWidget);
   });
@@ -2218,31 +2204,7 @@ PlainNote _note(String localId, String title, String body) {
   );
 }
 
-class _TestApiClient extends ApiClient {
-  @override
-  Future<SubscriptionUsage> fetchSubscriptionUsage({
-    required String accessToken,
-    required String tenant,
-  }) async {
-    return const SubscriptionUsage(
-      plan: 'free',
-      storageBytesUsed: 12582912,
-      storageBytesLimit: 524288000,
-      notesCount: 42,
-      maxNotes: 500,
-    );
-  }
-}
-
-class _FailingUsageApiClient extends ApiClient {
-  @override
-  Future<SubscriptionUsage> fetchSubscriptionUsage({
-    required String accessToken,
-    required String tenant,
-  }) {
-    throw ApiException('offline', 0);
-  }
-}
+class _TestApiClient extends ApiClient {}
 
 class _TestAuthController extends AuthController {
   @override

@@ -434,6 +434,75 @@ void main() {
     );
   });
 
+  testWidgets('enter adds a checklist row without dropping text focus',
+      (tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    SharedPreferences.setMockInitialValues({});
+    final note = _checklistNote();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider.overrideWith(
+            () => _TestNotesController([note]),
+          ),
+        ],
+        child: MaterialApp(
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            quill.FlutterQuillLocalizations.delegate,
+          ],
+          home: NoteEditorScreen(note: note),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final openFinder = find.widgetWithText(TextField, 'Open');
+    await tester.tap(openFinder);
+    await tester.pump();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 1170);
+    await tester.pumpAndSettle();
+
+    final openField = tester.widget<TextField>(openFinder);
+    expect(openField.focusNode!.hasFocus, isTrue);
+    expect(openField.textInputAction, TextInputAction.next);
+    expect(
+      find.byKey(const ValueKey('checklist-compact-title')),
+      findsOneWidget,
+    );
+
+    await tester.testTextInput.receiveAction(TextInputAction.next);
+    await tester.pump();
+
+    final emptyTaskFinder = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText == 'Task' &&
+          widget.controller?.text.isEmpty == true,
+    );
+    expect(emptyTaskFinder, findsOneWidget);
+    final emptyTaskField = tester.widget<TextField>(emptyTaskFinder);
+    expect(openField.focusNode!.hasFocus, isFalse);
+    expect(emptyTaskField.focusNode!.hasFocus, isTrue);
+    expect(
+      find.byKey(const ValueKey('checklist-compact-title')),
+      findsOneWidget,
+    );
+    expect(
+      MediaQuery.viewInsetsOf(tester.element(find.byType(NoteEditorScreen)))
+          .bottom,
+      390,
+    );
+  });
+
   testWidgets('checked rows animate below the add row and back up',
       (tester) async {
     SharedPreferences.setMockInitialValues({});

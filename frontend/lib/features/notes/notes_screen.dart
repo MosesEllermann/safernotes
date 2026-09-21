@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter, lerpDouble;
 
@@ -12,7 +11,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cupertino_native_better/cupertino_native_better.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/notes/note_editor_screen.dart';
@@ -47,33 +45,6 @@ final _dragTrashHoverProvider = StateProvider<bool>((ref) => false);
 final _noteOverviewResetProvider = StateProvider<int>((ref) => 0);
 final _selectedNoteIdsProvider =
     StateProvider.autoDispose<Set<String>>((ref) => const {});
-final _accountUsageProvider = FutureProvider.autoDispose
-    .family<SubscriptionUsage, ({String accessToken, String tenant})>(
-        (ref, credentials) async {
-  final cacheKey = 'zk.account_usage.${credentials.tenant}';
-  try {
-    final usage = await ref.read(apiClientProvider).fetchSubscriptionUsage(
-          accessToken: credentials.accessToken,
-          tenant: credentials.tenant,
-        );
-    final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(cacheKey, jsonEncode(usage.toJson()));
-    return usage;
-  } catch (error, stackTrace) {
-    final preferences = await SharedPreferences.getInstance();
-    final cached = preferences.getString(cacheKey);
-    if (cached != null) {
-      try {
-        return SubscriptionUsage.fromJson(
-          Map<String, dynamic>.from(jsonDecode(cached) as Map),
-        );
-      } catch (_) {
-        await preferences.remove(cacheKey);
-      }
-    }
-    Error.throwWithStackTrace(error, stackTrace);
-  }
-});
 
 /// The Pixel-class Android path has a tighter raster budget than iOS for
 /// several overlapping backdrop filters. Keep this centralized so expensive
@@ -111,19 +82,6 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       if (notes != null) _scheduleReminders(notes);
     }, fireImmediately: true);
     _scheduleInvitationReview();
-    _scheduleBillingReturnReview();
-  }
-
-  Future<void> _scheduleBillingReturnReview() async {
-    if (!kIsWeb) return;
-    final preferences = await SharedPreferences.getInstance();
-    final hasPendingCheckout =
-        preferences.getString(pendingBillingPlanPreferenceKey) != null;
-    final completed = ref.read(billingReturnStatusProvider) == 'success';
-    if (!mounted || (!hasPendingCheckout && !completed)) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _openSettings(context, ref, openPlan: true);
-    });
   }
 
   @override
@@ -170,6 +128,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
       _handledInvitationRevision = null;
       return;
     }
+    if (session.isOfflineOnly) return;
 
     try {
       final invitation = await _loadInvitation(
@@ -299,6 +258,9 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
     final selectedNoteIds = ref.watch(_selectedNoteIdsProvider);
     final selectionActive = selectedNoteIds.isNotEmpty;
     final session = ref.watch(authControllerProvider).valueOrNull;
+    final accountLabel = session?.isOfflineOnly == true
+        ? l10n.t('offlineVault')
+        : session?.email ?? '';
     final width = MediaQuery.sizeOf(context).width;
     final desktop = width >= 900;
     final showLogoText = width >= 620;
@@ -387,7 +349,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                           ),
                           _AccountButton(
                             key: const ValueKey('desktop-account-menu'),
-                            email: session?.email ?? '',
+                            email: accountLabel,
                           ),
                           const SizedBox(width: 8),
                         ],
@@ -402,9 +364,10 @@ class _NotesScreenState extends ConsumerState<NotesScreen> {
                   child: notes.when(
                     data: (items) => _KeepWorkspace(
                       notes: items,
-                      email: session?.email ?? '',
-                      showEmailVerification:
-                          session != null && !session.emailVerified,
+                      email: accountLabel,
+                      showEmailVerification: session != null &&
+                          !session.isOfflineOnly &&
+                          !session.emailVerified,
                       layout: noteOverviewLayout,
                     ),
                     loading: () =>
@@ -1960,6 +1923,8 @@ class _MobileHeaderGlassButtonSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
+    final scheme = Theme.of(context).colorScheme;
+    final useOpaqueAndroidSurface = _usesAndroidRasterBudget;
     final shape = RoundedSuperellipseBorder(
       borderRadius: BorderRadius.circular(_MobileBottomNavState._itemSize / 2),
     );
@@ -1969,29 +1934,34 @@ class _MobileHeaderGlassButtonSurface extends StatelessWidget {
         DecoratedBox(
           key: const ValueKey('mobile-header-button-fill'),
           decoration: ShapeDecoration(
-            color: AppChromeGlass.tint(brightness),
+            color: useOpaqueAndroidSurface
+                ? scheme.surfaceContainerHigh
+                : AppChromeGlass.tint(brightness),
             shape: shape.copyWith(
               side: BorderSide(
-                color: AppChromeGlass.outerStroke(brightness),
+                color: useOpaqueAndroidSurface
+                    ? scheme.outlineVariant
+                    : AppChromeGlass.outerStroke(brightness),
                 width: 1,
               ),
             ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.all(0.75),
-          child: DecoratedBox(
-            key: const ValueKey('mobile-header-button-highlight'),
-            decoration: ShapeDecoration(
-              shape: shape.copyWith(
-                side: BorderSide(
-                  color: AppChromeGlass.innerStroke(brightness),
-                  width: 0.55,
+        if (!useOpaqueAndroidSurface)
+          Padding(
+            padding: const EdgeInsets.all(0.75),
+            child: DecoratedBox(
+              key: const ValueKey('mobile-header-button-highlight'),
+              decoration: ShapeDecoration(
+                shape: shape.copyWith(
+                  side: BorderSide(
+                    color: AppChromeGlass.innerStroke(brightness),
+                    width: 0.55,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
         Center(child: child),
       ],
     );
@@ -2021,11 +1991,16 @@ class _MobileHeaderGlassButtonSurface extends StatelessWidget {
           ),
           child: ClipPath(
             clipper: ShapeBorderClipper(shape: shape),
-            child: BackdropFilter(
-              key: const ValueKey('mobile-header-button-backdrop'),
-              filter: _NotesChromeGlass.filter(brightness),
-              child: interactiveSurface,
-            ),
+            child: useOpaqueAndroidSurface
+                ? KeyedSubtree(
+                    key: const ValueKey('mobile-header-button-opaque'),
+                    child: interactiveSurface,
+                  )
+                : BackdropFilter(
+                    key: const ValueKey('mobile-header-button-backdrop'),
+                    filter: _NotesChromeGlass.filter(brightness),
+                    child: interactiveSurface,
+                  ),
           ),
         ),
       ),
@@ -5664,6 +5639,7 @@ class _MobileNavDrawerSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
+    final scheme = Theme.of(context).colorScheme;
     final constrainedRaster = _usesAndroidRasterBudget;
     return AnimatedBuilder(
       animation: animation,
@@ -5699,7 +5675,9 @@ class _MobileNavDrawerSurface extends StatelessWidget {
         );
         final fill = _usesIosNativeControls
             ? Colors.transparent
-            : AppChromeGlass.tint(brightness);
+            : constrainedRaster
+                ? scheme.surfaceContainerHigh
+                : AppChromeGlass.tint(brightness);
         final surface = Stack(
           fit: StackFit.expand,
           children: [
@@ -5711,30 +5689,33 @@ class _MobileNavDrawerSurface extends StatelessWidget {
                   side: BorderSide(
                     color: _usesIosNativeControls
                         ? Colors.transparent
-                        : AppChromeGlass.outerStroke(brightness),
+                        : constrainedRaster
+                            ? scheme.outlineVariant
+                            : AppChromeGlass.outerStroke(brightness),
                     width: 1,
                   ),
                 ),
               ),
             ),
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.all(0.75),
-                child: DecoratedBox(
-                  key: const ValueKey('mobile-nav-inner-highlight'),
-                  decoration: ShapeDecoration(
-                    shape: shape.copyWith(
-                      side: BorderSide(
-                        color: _usesIosNativeControls
-                            ? Colors.transparent
-                            : AppChromeGlass.innerStroke(brightness),
-                        width: 0.55,
+            if (!constrainedRaster)
+              Positioned.fill(
+                child: Padding(
+                  padding: const EdgeInsets.all(0.75),
+                  child: DecoratedBox(
+                    key: const ValueKey('mobile-nav-inner-highlight'),
+                    decoration: ShapeDecoration(
+                      shape: shape.copyWith(
+                        side: BorderSide(
+                          color: _usesIosNativeControls
+                              ? Colors.transparent
+                              : AppChromeGlass.innerStroke(brightness),
+                          width: 0.55,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
         );
         return Positioned(
@@ -5796,11 +5777,16 @@ class _MobileNavDrawerSurface extends StatelessWidget {
                         ),
                         child: surface,
                       )
-                    : BackdropFilter(
-                        key: const ValueKey('mobile-bottom-nav-backdrop'),
-                        filter: _NotesChromeGlass.filter(brightness),
-                        child: surface,
-                      ),
+                    : constrainedRaster
+                        ? KeyedSubtree(
+                            key: const ValueKey('mobile-bottom-nav-opaque'),
+                            child: surface,
+                          )
+                        : BackdropFilter(
+                            key: const ValueKey('mobile-bottom-nav-backdrop'),
+                            filter: _NotesChromeGlass.filter(brightness),
+                            child: surface,
+                          ),
               ),
             ),
           ),
@@ -7911,33 +7897,41 @@ class _SyncIndicator extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
     final status = ref.watch(syncStatusProvider);
-    final (icon, label, color) = switch (status) {
-      SyncStatus.saved => (
-          AppIcons.cloudCheck,
-          l10n.t('saved'),
-          Theme.of(context).colorScheme.tertiary
-        ),
-      SyncStatus.saving => (
-          AppIcons.clock3,
-          l10n.t('saving'),
-          Theme.of(context).colorScheme.primary
-        ),
-      SyncStatus.syncing => (
-          AppIcons.refreshCw,
-          l10n.t('syncing'),
-          Theme.of(context).colorScheme.primary
-        ),
-      SyncStatus.offline => (
-          AppIcons.cloudOff,
-          l10n.t('offline'),
-          Theme.of(context).colorScheme.error
-        ),
-      SyncStatus.conflict => (
-          AppIcons.circleAlert,
-          l10n.t('conflict'),
-          Theme.of(context).colorScheme.error
-        ),
-    };
+    final offlineOnly =
+        ref.watch(authControllerProvider).valueOrNull?.isOfflineOnly ?? false;
+    final (icon, label, color) = offlineOnly
+        ? (
+            AppIcons.hardDrive,
+            l10n.t('storedOnDevice'),
+            Theme.of(context).colorScheme.tertiary,
+          )
+        : switch (status) {
+            SyncStatus.saved => (
+                AppIcons.cloudCheck,
+                l10n.t('saved'),
+                Theme.of(context).colorScheme.tertiary
+              ),
+            SyncStatus.saving => (
+                AppIcons.clock3,
+                l10n.t('saving'),
+                Theme.of(context).colorScheme.primary
+              ),
+            SyncStatus.syncing => (
+                AppIcons.refreshCw,
+                l10n.t('syncing'),
+                Theme.of(context).colorScheme.primary
+              ),
+            SyncStatus.offline => (
+                AppIcons.cloudOff,
+                l10n.t('offline'),
+                Theme.of(context).colorScheme.error
+              ),
+            SyncStatus.conflict => (
+                AppIcons.circleAlert,
+                l10n.t('conflict'),
+                Theme.of(context).colorScheme.error
+              ),
+          };
     final content = Row(
       mainAxisSize: showLabel ? MainAxisSize.max : MainAxisSize.min,
       children: [
@@ -8067,13 +8061,12 @@ class _AccountButton extends ConsumerWidget {
 
 void _openSettings(
   BuildContext context,
-  WidgetRef ref, {
-  bool openPlan = false,
-}) {
+  WidgetRef ref,
+) {
   final reset = ref.read(_noteOverviewResetProvider.notifier);
   final route = Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => SettingsScreen(openPlan: openPlan),
+      builder: (_) => const SettingsScreen(),
     ),
   );
   unawaited(route.whenComplete(() {
@@ -8238,20 +8231,6 @@ class _AccountSideSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = ref.watch(l10nProvider);
     final session = ref.watch(authControllerProvider).valueOrNull;
-    final usageCredentials = session == null ||
-            session.accessToken.isEmpty ||
-            session.defaultTenant.isEmpty
-        ? null
-        : (
-            accessToken: session.accessToken,
-            tenant: session.defaultTenant,
-          );
-    final accountUsage = usageCredentials == null
-        ? null
-        : ref.watch(_accountUsageProvider(usageCredentials));
-    final localUsage = _localSubscriptionUsage(
-      ref.watch(notesControllerProvider).valueOrNull ?? const [],
-    );
     final initial = email.isEmpty ? '?' : email.substring(0, 1).toUpperCase();
     final scheme = Theme.of(context).colorScheme;
     final dark = scheme.brightness == Brightness.dark;
@@ -8428,17 +8407,6 @@ class _AccountSideSheet extends ConsumerWidget {
                                 ),
                                 child: const _SyncIndicator(showLabel: true),
                               ),
-                              if (accountUsage != null) ...[
-                                const SizedBox(height: 10),
-                                _AccountQuotaPanel(
-                                  usage: accountUsage,
-                                  localUsage: localUsage,
-                                  l10n: l10n,
-                                  onRetry: () => ref.invalidate(
-                                    _accountUsageProvider(usageCredentials!),
-                                  ),
-                                ),
-                              ],
                             ],
                           ),
                         ),
@@ -8452,17 +8420,19 @@ class _AccountSideSheet extends ConsumerWidget {
                           _openSettings(context, ref);
                         },
                       ),
-                      const SizedBox(height: 4),
-                      _AccountActionTile(
-                        key: const ValueKey('account-logout-action'),
-                        icon: AppIcons.logOut,
-                        label: l10n.t('logout'),
-                        destructive: true,
-                        onTap: () {
-                          Navigator.of(context).pop();
-                          ref.read(authControllerProvider.notifier).signOut();
-                        },
-                      ),
+                      if (session?.isOfflineOnly != true) ...[
+                        const SizedBox(height: 4),
+                        _AccountActionTile(
+                          key: const ValueKey('account-logout-action'),
+                          icon: AppIcons.logOut,
+                          label: l10n.t('logout'),
+                          destructive: true,
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            ref.read(authControllerProvider.notifier).signOut();
+                          },
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -8473,354 +8443,6 @@ class _AccountSideSheet extends ConsumerWidget {
       ),
     );
   }
-}
-
-class _AccountQuotaPanel extends StatelessWidget {
-  const _AccountQuotaPanel({
-    required this.usage,
-    required this.localUsage,
-    required this.l10n,
-    required this.onRetry,
-  });
-
-  final AsyncValue<SubscriptionUsage> usage;
-  final SubscriptionUsage localUsage;
-  final AppL10n l10n;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      key: const ValueKey('mobile-sidebar-quota-card'),
-      constraints: const BoxConstraints(minHeight: 74),
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.18),
-        ),
-      ),
-      child: usage.when(
-        loading: () => Row(
-          children: [
-            Icon(AppIcons.hardDrive, size: 18, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Text(
-                l10n.t('accountUsage'),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-            SizedBox.square(
-              dimension: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
-        error: (_, __) => _AccountQuotaContent(
-          usage: localUsage,
-          l10n: l10n,
-          localEstimate: true,
-          onRetry: onRetry,
-        ),
-        data: (value) => _AccountQuotaContent(
-          usage: _mergeSubscriptionUsage(value, localUsage),
-          l10n: l10n,
-        ),
-      ),
-    );
-  }
-}
-
-class _AccountQuotaContent extends StatelessWidget {
-  const _AccountQuotaContent({
-    required this.usage,
-    required this.l10n,
-    this.localEstimate = false,
-    this.onRetry,
-  });
-
-  final SubscriptionUsage usage;
-  final AppL10n l10n;
-  final bool localEstimate;
-  final VoidCallback? onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final storageRatio = _quotaRatio(
-      usage.storageBytesUsed,
-      usage.storageBytesLimit,
-    );
-    final notesRatio = usage.maxNotes == null
-        ? null
-        : _quotaRatio(usage.notesCount, usage.maxNotes!);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Icon(AppIcons.hardDrive, size: 18, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Text(
-                l10n.t('accountUsage'),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w700),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: scheme.surface.withValues(alpha: 0.48),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                _planLabel(usage.plan),
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w700,
-                    ),
-              ),
-            ),
-          ],
-        ),
-        if (localEstimate) ...[
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  l10n.t('localUsageEstimate'),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                ),
-              ),
-              SizedBox.square(
-                dimension: 28,
-                child: IconButton(
-                  tooltip: l10n.t('retry'),
-                  padding: EdgeInsets.zero,
-                  onPressed: onRetry,
-                  icon: const Icon(AppIcons.refreshCw, size: 15),
-                ),
-              ),
-            ],
-          ),
-        ],
-        const SizedBox(height: 14),
-        _AccountQuotaMeter(
-          key: const ValueKey('mobile-sidebar-storage-meter'),
-          label: l10n.t('storage'),
-          detail: l10n.t(
-            'storageQuotaSummary',
-            params: {
-              'used': _formatBytes(usage.storageBytesUsed, l10n.languageCode),
-              'limit': _formatBytes(usage.storageBytesLimit, l10n.languageCode),
-            },
-          ),
-          value: storageRatio,
-        ),
-        const SizedBox(height: 12),
-        _AccountQuotaMeter(
-          key: const ValueKey('mobile-sidebar-notes-meter'),
-          label: l10n.t('notes'),
-          detail: usage.maxNotes == null
-              ? l10n.t(
-                  'unlimitedNotesQuota',
-                  params: {
-                    'used': _formatCount(
-                      usage.notesCount,
-                      l10n.languageCode,
-                    ),
-                  },
-                )
-              : l10n.t(
-                  'notesQuotaSummary',
-                  params: {
-                    'used': _formatCount(
-                      usage.notesCount,
-                      l10n.languageCode,
-                    ),
-                    'limit': _formatCount(
-                      usage.maxNotes!,
-                      l10n.languageCode,
-                    ),
-                  },
-                ),
-          value: notesRatio,
-        ),
-      ],
-    );
-  }
-}
-
-class _AccountQuotaMeter extends StatelessWidget {
-  const _AccountQuotaMeter({
-    super.key,
-    required this.label,
-    required this.detail,
-    required this.value,
-  });
-
-  final String label;
-  final String detail;
-  final double? value;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final progressColor = switch (value) {
-      final amount? when amount >= 0.9 => scheme.error,
-      final amount? when amount >= 0.75 => scheme.tertiary,
-      _ => scheme.primary,
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const Spacer(),
-            Flexible(
-              child: Text(
-                detail,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.end,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.onSurface,
-                      fontWeight: FontWeight.w600,
-                    ),
-              ),
-            ),
-          ],
-        ),
-        if (value != null) ...[
-          const SizedBox(height: 7),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              minHeight: 6,
-              value: value,
-              backgroundColor: scheme.onSurface.withValues(alpha: 0.08),
-              color: progressColor,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-double _quotaRatio(int used, int limit) {
-  if (limit <= 0) return 0;
-  return (used / limit).clamp(0.0, 1.0);
-}
-
-SubscriptionUsage _mergeSubscriptionUsage(
-  SubscriptionUsage remote,
-  SubscriptionUsage local,
-) {
-  if (remote.storageBytesUsed > 0 || local.storageBytesUsed == 0) return remote;
-  return SubscriptionUsage(
-    plan: remote.plan,
-    storageBytesUsed: local.storageBytesUsed,
-    storageBytesLimit: remote.storageBytesLimit > 0
-        ? remote.storageBytesLimit
-        : local.storageBytesLimit,
-    notesCount: remote.notesCount > 0 ? remote.notesCount : local.notesCount,
-    maxNotes: remote.maxNotes ?? local.maxNotes,
-    notesBytesUsed: local.notesBytesUsed,
-    attachmentsBytesUsed: remote.attachmentsBytesUsed,
-  );
-}
-
-SubscriptionUsage _localSubscriptionUsage(List<PlainNote> notes) {
-  final billable = notes.where((note) => note.state != 'deleted').toList();
-  final noteBytes = billable.fold<int>(
-    0,
-    (total, note) => total + _estimatedEncryptedNoteBytes(note),
-  );
-  return SubscriptionUsage(
-    plan: 'free',
-    storageBytesUsed: noteBytes,
-    storageBytesLimit: 500 * 1024 * 1024,
-    notesCount: billable.length,
-    maxNotes: 500,
-    notesBytesUsed: noteBytes,
-  );
-}
-
-int _estimatedEncryptedNoteBytes(PlainNote note) {
-  final plaintextBytes =
-      utf8.encode(jsonEncode(note.encryptedPayloadJson())).length;
-  final ciphertextLength = ((plaintextBytes + 16) * 4 + 2) ~/ 3;
-  final envelope = <String, dynamic>{
-    'version': 1,
-    'algorithm': 'AES_256_GCM',
-    'nonce': '0' * 16,
-    'ciphertext': '0' * ciphertextLength,
-    'key_id': '0' * 36,
-  };
-  return utf8.encode(jsonEncode(envelope)).length + 32;
-}
-
-String _planLabel(String plan) => switch (plan.toLowerCase()) {
-      'essential' => 'Essential',
-      'pro' => 'Pro',
-      'team' => 'Team',
-      'enterprise' => 'Enterprise',
-      _ => 'Free',
-    };
-
-String _formatBytes(int bytes, String languageCode) {
-  const mib = 1024 * 1024;
-  const gib = mib * 1024;
-  if (bytes <= 0) return '0 MB';
-  if (bytes >= gib) {
-    return '${_formatDecimal(bytes / gib, languageCode)} GB';
-  }
-  final megabytes = math.max(bytes / mib, 0.01);
-  return '${_formatDecimal(megabytes, languageCode)} MB';
-}
-
-String _formatDecimal(double value, String languageCode) {
-  final digits = value >= 10 || value == value.roundToDouble()
-      ? 0
-      : value < 1
-          ? 2
-          : 1;
-  final text = value.toStringAsFixed(digits);
-  return languageCode == 'de' ? text.replaceFirst('.', ',') : text;
-}
-
-String _formatCount(int value, String languageCode) {
-  final separator = languageCode == 'de' ? '.' : ',';
-  final digits = value.toString();
-  final buffer = StringBuffer();
-  for (var index = 0; index < digits.length; index++) {
-    if (index > 0 && (digits.length - index) % 3 == 0) buffer.write(separator);
-    buffer.write(digits[index]);
-  }
-  return buffer.toString();
 }
 
 class _AccountActionTile extends StatefulWidget {

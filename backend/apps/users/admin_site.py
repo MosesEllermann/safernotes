@@ -29,7 +29,6 @@ class OwnerAdminSite(AdminSite):
         from apps.attachments.models import TenantStorageUsage
         from apps.audit.models import AuditEvent
         from apps.notes.models import Note, ShareInvitation, ShareInvitationStatus
-        from apps.subscriptions.models import Subscription
         from apps.users.models import User
 
         now = timezone.now()
@@ -41,10 +40,6 @@ class OwnerAdminSite(AdminSite):
             active=Count("pk", filter=Q(is_active=True)),
             verified=Count("pk", filter=Q(email_verified_at__isnull=False)),
             new_this_week=Count("pk", filter=Q(created_at__gte=last_week)),
-        )
-        subscription_totals = Subscription.objects.aggregate(
-            active=Count("pk", filter=Q(status__in=("active", "trialing", "on_trial"))),
-            attention=Count("pk", filter=Q(status__in=("past_due", "unpaid"))),
         )
         invitation_totals = ShareInvitation.objects.aggregate(
             pending=Count("pk", filter=Q(status=ShareInvitationStatus.PENDING)),
@@ -59,15 +54,6 @@ class OwnerAdminSite(AdminSite):
         storage_bytes = (
             TenantStorageUsage.objects.aggregate(total=Sum("ciphertext_bytes_used"))["total"] or 0
         )
-
-        plan_rows = list(
-            Subscription.objects.values("plan")
-            .annotate(total=Count("pk"))
-            .order_by("-total", "plan")
-        )
-        plan_total = sum(row["total"] for row in plan_rows)
-        for row in plan_rows:
-            row["percentage"] = round((row["total"] / plan_total) * 100) if plan_total else 0
 
         recent_users = []
         for user in User.objects.only("pk", "email", "status", "created_at").order_by(
@@ -91,11 +77,9 @@ class OwnerAdminSite(AdminSite):
         return {
             "dashboard": {
                 "users": user_totals,
-                "subscriptions": subscription_totals,
                 "invitations": invitation_totals,
                 "notes": Note.objects.count(),
                 "storage": self._format_bytes(storage_bytes),
-                "plans": plan_rows,
                 "recent_users": recent_users,
                 "recent_events": recent_events,
                 "generated_at": now,

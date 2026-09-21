@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import environ
@@ -22,13 +21,7 @@ env = environ.Env(
     ATTACHMENT_REGION=(str, "auto"),
     ATTACHMENT_UPLOAD_URL_TTL_SECONDS=(int, 900),
     ATTACHMENT_DOWNLOAD_URL_TTL_SECONDS=(int, 900),
-    BILLING_PROVIDER=(str, "manual"),
-    BILLING_API_KEY=(str, ""),
-    BILLING_API_BASE_URL=(str, "https://test-api.creem.io/v1"),
-    BILLING_PRODUCT_IDS=(str, "{}"),
-    BILLING_SUCCESS_URL=(str, ""),
-    BILLING_WEBHOOK_SECRET=(str, ""),
-    BILLING_TESTER_EMAILS=(list, []),
+    STORAGE_QUOTA_BYTES=(int, 0),
     EMAIL_BACKEND=(str, "django.core.mail.backends.console.EmailBackend"),
     EMAIL_HOST=(str, ""),
     EMAIL_PORT=(int, 25),
@@ -37,8 +30,8 @@ env = environ.Env(
     EMAIL_USE_TLS=(bool, False),
     EMAIL_USE_SSL=(bool, False),
     DEFAULT_FROM_EMAIL=(str, "Safernotes <noreply@localhost>"),
-    APP_BASE_URL=(str, "https://app.safernotes.com"),
-    WEBSITE_BASE_URL=(str, "https://safernotes.com"),
+    APP_BASE_URL=(str, "http://localhost:8080"),
+    WEBSITE_BASE_URL=(str, "http://localhost:8080"),
 )
 
 if (ROOT_DIR / ".env").exists():
@@ -76,8 +69,6 @@ INSTALLED_APPS = [
     "apps.notes",
     "apps.attachments",
     "apps.collaboration",
-    "apps.subscriptions",
-    "apps.billing",
     "apps.audit",
     "apps.notifications",
     "apps.search",
@@ -213,11 +204,4 @@ ATTACHMENT_STORAGE = {
     "upload_url_ttl_seconds": env("ATTACHMENT_UPLOAD_URL_TTL_SECONDS"),
     "download_url_ttl_seconds": env("ATTACHMENT_DOWNLOAD_URL_TTL_SECONDS"),
 }
-
-BILLING_PROVIDER = env("BILLING_PROVIDER")
-BILLING_API_KEY = env("BILLING_API_KEY")
-BILLING_API_BASE_URL = env("BILLING_API_BASE_URL")
-BILLING_PRODUCT_IDS = json.loads(env("BILLING_PRODUCT_IDS") or "{}")
-BILLING_SUCCESS_URL = env("BILLING_SUCCESS_URL")
-BILLING_WEBHOOK_SECRET = env("BILLING_WEBHOOK_SECRET")
-BILLING_TESTER_EMAILS = env("BILLING_TESTER_EMAILS")
+STORAGE_QUOTA_BYTES = env("STORAGE_QUOTA_BYTES")

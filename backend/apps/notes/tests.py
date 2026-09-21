@@ -447,8 +447,8 @@ def test_share_invitation_accepts_recipient_email(db, django_user_model):
 )
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
-    APP_BASE_URL="https://app.safernotes.com/",
-    WEBSITE_BASE_URL="https://safernotes.com/",
+    APP_BASE_URL="https://notes.example.com/",
+    WEBSITE_BASE_URL="https://notes.example.com/",
 )
 def test_share_invitation_email_has_safe_acceptance_link_in_every_locale(
     db,
@@ -498,17 +498,19 @@ def test_share_invitation_email_has_safe_acceptance_link_in_every_locale(
     parser = _EmailLinkParser()
     parser.feed(message.alternatives[0][0])
     invitation_links = [
-        link for link in parser.links if link.startswith("https://app.safernotes.com")
+        link
+        for link in parser.links
+        if link.startswith("https://notes.example.com?invitation=")
     ]
 
     assert message.subject == expected_subject
     assert len(invitation_links) == 1
     parsed = urlparse(invitation_links[0])
     assert parsed.scheme == "https"
-    assert parsed.netloc == "app.safernotes.com"
+    assert parsed.netloc == "notes.example.com"
     assert parse_qs(parsed.query) == {"invitation": [str(invitation.id)]}
     assert invitation_links[0] in message.body
-    assert "https://safernotes.com" in parser.links
+    assert "https://notes.example.com" in parser.links
     assert "localhost" not in message.body
     assert "localhost" not in message.alternatives[0][0]
     assert str(note.id) not in invitation_links[0]

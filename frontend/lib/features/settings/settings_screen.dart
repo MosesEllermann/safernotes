@@ -1,20 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/auth/recovery_key_dialog.dart';
-import 'package:safernotes_app/shared/api/api_client.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
 import 'package:safernotes_app/shared/app/app_preferences.dart';
+import 'package:safernotes_app/shared/app/sync_server_settings.dart';
 import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
 import 'package:safernotes_app/shared/widgets/app_canvas.dart';
 import 'package:safernotes_app/shared/widgets/animated_icon_button.dart';
 
-enum _SettingsPage { appearance, plan, security }
-
-const pendingBillingPlanPreferenceKey = 'billing.pending_plan';
+enum _SettingsPage { appearance, sync, security }
 
 final _settingsPageProvider =
     StateProvider.autoDispose.family<_SettingsPage, _SettingsPage>(
@@ -22,9 +19,7 @@ final _settingsPageProvider =
 );
 
 class SettingsScreen extends ConsumerWidget {
-  const SettingsScreen({super.key, this.openPlan = false});
-
-  final bool openPlan;
+  const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -32,11 +27,10 @@ class SettingsScreen extends ConsumerWidget {
     final prefs = ref.watch(appPreferencesProvider).valueOrNull ??
         const AppPreferences(languageCode: 'en', themeMode: ThemeMode.system);
     final session = ref.watch(authControllerProvider).valueOrNull;
+    final offlineOnly = session?.isOfflineOnly ?? false;
     final wide = MediaQuery.sizeOf(context).width >= 940;
     if (wide) {
-      final pageProvider = _settingsPageProvider(
-        openPlan ? _SettingsPage.plan : _SettingsPage.appearance,
-      );
+      final pageProvider = _settingsPageProvider(_SettingsPage.appearance);
       final page = ref.watch(pageProvider);
       return Scaffold(
         key: const ValueKey('desktop-settings'),
@@ -85,24 +79,28 @@ class SettingsScreen extends ConsumerWidget {
                               ),
                               const SizedBox(height: 4),
                               _SettingsNavigationItem(
-                                key: const ValueKey('settings-nav-plan'),
-                                icon: AppIcons.creditCard,
-                                label: l10n.t('plan'),
-                                selected: page == _SettingsPage.plan,
+                                key: const ValueKey('settings-nav-sync'),
+                                icon: AppIcons.globe,
+                                label: l10n.t('syncServer'),
+                                selected: page == _SettingsPage.sync,
                                 onTap: () => ref
                                     .read(pageProvider.notifier)
-                                    .state = _SettingsPage.plan,
+                                    .state = _SettingsPage.sync,
                               ),
-                              const SizedBox(height: 4),
-                              _SettingsNavigationItem(
-                                key: const ValueKey('settings-nav-security'),
-                                icon: AppIcons.shieldCheck,
-                                label: l10n.t('security'),
-                                selected: page == _SettingsPage.security,
-                                onTap: () => ref
-                                    .read(pageProvider.notifier)
-                                    .state = _SettingsPage.security,
-                              ),
+                              if (!offlineOnly) ...[
+                                const SizedBox(height: 4),
+                                _SettingsNavigationItem(
+                                  key: const ValueKey(
+                                    'settings-nav-security',
+                                  ),
+                                  icon: AppIcons.shieldCheck,
+                                  label: l10n.t('security'),
+                                  selected: page == _SettingsPage.security,
+                                  onTap: () => ref
+                                      .read(pageProvider.notifier)
+                                      .state = _SettingsPage.security,
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -110,39 +108,45 @@ class SettingsScreen extends ConsumerWidget {
                       Expanded(
                         child: IndexedStack(
                           key: const ValueKey('desktop-settings-pages'),
-                          index: page.index,
+                          index: offlineOnly ? 0 : page.index,
                           children: [
                             _DesktopSettingsPage(
                               key: const ValueKey('settings-page-appearance'),
-                              child: _AppearanceSettings(
-                                l10n: l10n,
-                                prefs: prefs,
-                                onThemeChanged: (value) => ref
-                                    .read(appPreferencesProvider.notifier)
-                                    .setThemeMode(value),
-                                onLanguageChanged: (value) => ref
-                                    .read(appPreferencesProvider.notifier)
-                                    .setLanguage(value),
-                                onNoteOverviewLayoutChanged: (value) => ref
-                                    .read(appPreferencesProvider.notifier)
-                                    .setNoteOverviewLayout(value),
+                              child: Column(
+                                children: [
+                                  _AppearanceSettings(
+                                    l10n: l10n,
+                                    prefs: prefs,
+                                    onThemeChanged: (value) => ref
+                                        .read(appPreferencesProvider.notifier)
+                                        .setThemeMode(value),
+                                    onLanguageChanged: (value) => ref
+                                        .read(appPreferencesProvider.notifier)
+                                        .setLanguage(value),
+                                    onNoteOverviewLayoutChanged: (value) => ref
+                                        .read(appPreferencesProvider.notifier)
+                                        .setNoteOverviewLayout(value),
+                                  ),
+                                  if (offlineOnly) ...[
+                                    const SizedBox(height: 18),
+                                    _OfflineModePanel(l10n: l10n),
+                                  ],
+                                ],
                               ),
                             ),
-                            _DesktopSettingsPage(
-                              key: const ValueKey('settings-page-plan'),
-                              child: _BillingPanel(
-                                accessToken: session?.accessToken ?? '',
-                                tenant: session?.defaultTenant ?? '',
-                                inset: EdgeInsets.zero,
-                              ),
+                            const _DesktopSettingsPage(
+                              key: ValueKey('settings-page-sync'),
+                              child: _SyncServerPanel(),
                             ),
-                            _DesktopSettingsPage(
-                              key: const ValueKey('settings-page-security'),
-                              child: _SecurityPanel(
-                                email: session?.email ?? '',
-                                inset: EdgeInsets.zero,
+                            if (!offlineOnly) ...[
+                              _DesktopSettingsPage(
+                                key: const ValueKey('settings-page-security'),
+                                child: _SecurityPanel(
+                                  email: session?.email ?? '',
+                                  inset: EdgeInsets.zero,
+                                ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ),
@@ -201,16 +205,16 @@ class SettingsScreen extends ConsumerWidget {
                             .setNoteOverviewLayout(value),
                       ),
                       const SizedBox(height: 18),
-                      _BillingPanel(
-                        accessToken: session?.accessToken ?? '',
-                        tenant: session?.defaultTenant ?? '',
-                        inset: EdgeInsets.zero,
-                      ),
+                      const _SyncServerPanel(),
                       const SizedBox(height: 18),
-                      _SecurityPanel(
-                        email: session?.email ?? '',
-                        inset: EdgeInsets.zero,
-                      ),
+                      if (offlineOnly)
+                        _OfflineModePanel(l10n: l10n)
+                      else ...[
+                        _SecurityPanel(
+                          email: session?.email ?? '',
+                          inset: EdgeInsets.zero,
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -218,6 +222,53 @@ class SettingsScreen extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _OfflineModePanel extends StatelessWidget {
+  const _OfflineModePanel({required this.l10n});
+
+  final AppL10n l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('offline-mode-panel'),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(AppRadii.xl),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(AppIcons.hardDrive, color: scheme.primary),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.t('offlineVault'),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  l10n.t('offlineOnlyDescription'),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -391,709 +442,117 @@ class _AppearanceSettings extends StatelessWidget {
   }
 }
 
-class _BillingPanel extends ConsumerStatefulWidget {
-  const _BillingPanel({
-    required this.accessToken,
-    required this.tenant,
-    required this.inset,
-  });
-
-  final String accessToken;
-  final String tenant;
-  final EdgeInsets inset;
+class _SyncServerPanel extends ConsumerStatefulWidget {
+  const _SyncServerPanel();
 
   @override
-  ConsumerState<_BillingPanel> createState() => _BillingPanelState();
+  ConsumerState<_SyncServerPanel> createState() => _SyncServerPanelState();
 }
 
-class _BillingPanelState extends ConsumerState<_BillingPanel> {
-  late Future<_BillingData?> _billingFuture;
-  String? _busyPlan;
+class _SyncServerPanelState extends ConsumerState<_SyncServerPanel> {
+  final _controller = TextEditingController();
+  var _initialized = false;
+  var _busy = false;
   String? _error;
-  String? _notice;
-  bool _noticeIsError = false;
-  bool _checkoutReturnHandled = false;
-  bool _activationPending = false;
 
   @override
-  void initState() {
-    super.initState();
-    _billingFuture = _loadBillingData();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (ref.read(webBillingEnabledProvider)) {
-        _handleCheckoutReturn();
-      }
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _BillingPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.accessToken != widget.accessToken ||
-        oldWidget.tenant != widget.tenant) {
-      _billingFuture = _loadBillingData();
-      if (widget.accessToken.isNotEmpty &&
-          widget.tenant.isNotEmpty &&
-          ref.read(webBillingEnabledProvider)) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _handleCheckoutReturn();
-        });
-      }
-    }
-  }
-
-  Future<_BillingData?> _loadBillingData() async {
-    if (widget.accessToken.isEmpty || widget.tenant.isEmpty) return null;
-    final api = ref.read(apiClientProvider);
-    final subscription = await api.fetchSubscription(
-      accessToken: widget.accessToken,
-      tenant: widget.tenant,
-    );
-    final catalog = await api.fetchBillingPlans(
-      accessToken: widget.accessToken,
-    );
-    return _BillingData(subscription: subscription, catalog: catalog);
-  }
-
-  void _refresh() {
-    setState(() {
-      _error = null;
-      _billingFuture = _loadBillingData();
-    });
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = ref.watch(l10nProvider);
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: widget.inset,
+    final configured = ref.watch(syncServerUrlProvider);
+    final value = configured.valueOrNull;
+    if (!_initialized && value != null) {
+      _controller.text = value;
+      _initialized = true;
+    }
+    return _SettingsSection(
+      icon: AppIcons.globe,
+      title: l10n.t('syncServer'),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
-        child: FutureBuilder<_BillingData?>(
-          future: _billingFuture,
-          builder: (context, snapshot) {
-            final data = snapshot.data;
-            final subscription = data?.subscription;
-            final plan = subscription?.plan ?? 'free';
-            final hasPaidPlan = plan != 'free';
-            final webBilling = ref.watch(webBillingEnabledProvider);
-            final planName = _planName(plan, data?.catalog, l10n);
-            final activePlan = data?.catalog.plans
-                .where((candidate) => candidate.key == plan)
-                .firstOrNull;
-            final activePlanPrice =
-                activePlan == null ? null : _yearlyPrice(activePlan, l10n);
-            final activeConfirmation = hasPaidPlan &&
-                !_noticeIsError &&
-                !_activationPending &&
-                _notice == l10n.t('paymentComplete');
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Icon(AppIcons.sparkles,
-                        color: scheme.onSurfaceVariant, size: 19),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        l10n.t('plan'),
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                    if (snapshot.connectionState == ConnectionState.waiting)
-                      SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
-                ),
-                if (data != null) ...[
-                  const SizedBox(height: 16),
-                  _CurrentPlanSummary(
-                    active: hasPaidPlan,
-                    title: hasPaidPlan
-                        ? l10n.t('planActiveTitle')
-                        : l10n.t('currentPlan', params: {'plan': planName}),
-                    subtitle: hasPaidPlan
-                        ? activePlanPrice == null
-                            ? planName
-                            : l10n.t(
-                                'activePlanSummary',
-                                params: {
-                                  'plan': planName,
-                                  'price': activePlanPrice,
-                                },
-                              )
-                        : l10n.t('freePlanSummary'),
-                    badge: hasPaidPlan ? l10n.t('planActiveBadge') : null,
-                  ),
-                ] else ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    l10n.t('currentPlan', params: {'plan': planName}),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ],
-                if (snapshot.hasError) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    l10n.t('plansUnavailable'),
-                    style: TextStyle(color: scheme.error),
-                  ),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: _refresh,
-                      icon: const Icon(AppIcons.refreshCw, size: 16),
-                      label: Text(l10n.t('retry')),
-                    ),
-                  ),
-                ] else if (data != null && webBilling) ...[
-                  const SizedBox(height: 18),
-                  for (var index = 0;
-                      index < data.catalog.plans.length;
-                      index++) ...[
-                    if (index > 0) const SizedBox(height: 10),
-                    _PlanOptionCard(
-                      key: ValueKey(
-                          'billing-plan-${data.catalog.plans[index].key}'),
-                      title: data.catalog.plans[index].name,
-                      price: _yearlyPrice(data.catalog.plans[index], l10n),
-                      description:
-                          _planDescription(data.catalog.plans[index], l10n),
-                      icon: data.catalog.plans[index].key == 'pro'
-                          ? AppIcons.crown
-                          : AppIcons.badgeCheck,
-                      selected: plan == data.catalog.plans[index].key,
-                      busy: _busyPlan == data.catalog.plans[index].key,
-                      onPressed: hasPaidPlan ||
-                              plan == data.catalog.plans[index].key ||
-                              !data.catalog.plans[index].checkoutEnabled
-                          ? null
-                          : () => _startCheckout(data.catalog.plans[index].key),
-                    ),
-                  ],
-                  if (plan != 'free') ...[
-                    const SizedBox(height: 16),
-                    FilledButton.icon(
-                      key: const ValueKey('manage-subscription'),
-                      onPressed: _busyPlan == 'portal' ? null : _openPortal,
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(54),
-                        backgroundColor: scheme.primary,
-                        foregroundColor: scheme.onPrimary,
-                        disabledBackgroundColor:
-                            scheme.primary.withValues(alpha: 0.45),
-                        disabledForegroundColor:
-                            scheme.onPrimary.withValues(alpha: 0.72),
-                      ),
-                      icon: _busyPlan == 'portal'
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(AppIcons.creditCard, size: 17),
-                      label: Text(l10n.t('manageSubscription')),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      l10n.t('manageSubscriptionHint'),
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                  ],
-                ] else if (data != null) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    l10n.t('nativeBillingUnavailable'),
-                    key: const ValueKey('native-billing-unavailable'),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
-                  ),
-                ],
-                if (_notice != null && !activeConfirmation) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _notice!,
-                    key: const ValueKey('billing-notice'),
-                    style: TextStyle(
-                      color: _noticeIsError ? scheme.error : scheme.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  if (_activationPending)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: _retryActivation,
-                        icon: const Icon(AppIcons.refreshCw, size: 16),
-                        label: Text(l10n.t('refreshStatus')),
-                      ),
-                    ),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!, style: TextStyle(color: scheme.error)),
-                ],
-                const SizedBox(height: 20),
-                Divider(color: scheme.outlineVariant),
-                const SizedBox(height: 10),
-                Text(
-                  l10n.t('billingSupport'),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                const SelectableText(
-                  'support@safernotes.com',
-                  key: ValueKey('billing-support-email'),
-                ),
-              ],
-            );
-          },
+        key: const ValueKey('sync-server-settings'),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Theme.of(context)
+              .colorScheme
+              .surfaceContainerHighest
+              .withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(AppRadii.xl),
         ),
-      ),
-    );
-  }
-
-  String _planName(
-    String plan,
-    BillingPlanCatalog? catalog,
-    AppL10n l10n,
-  ) {
-    final name = catalog?.plans
-            .where((candidate) => candidate.key == plan)
-            .firstOrNull
-            ?.name ??
-        (plan == 'free' ? l10n.t('freePlan') : plan);
-    return name;
-  }
-
-  String _yearlyPrice(BillingPlan plan, AppL10n l10n) {
-    final amount = plan.yearlyCents / 100;
-    final formatted = amount == amount.roundToDouble()
-        ? amount.toStringAsFixed(0)
-        : amount.toStringAsFixed(2);
-    return l10n.t('yearlyPrice', params: {'price': formatted});
-  }
-
-  String _planDescription(BillingPlan plan, AppL10n l10n) {
-    final storageGb = plan.storageBytes ~/ (1024 * 1024 * 1024);
-    final notes =
-        plan.maxNotes == null ? l10n.t('unlimited') : plan.maxNotes.toString();
-    return l10n.t(
-      'planFeatureSummary',
-      params: {
-        'storage': storageGb,
-        'notes': notes,
-        'history': plan.versionHistoryDays,
-      },
-    );
-  }
-
-  Future<void> _startCheckout(String plan) async {
-    if (!ref.read(webBillingEnabledProvider)) return;
-    setState(() {
-      _busyPlan = plan;
-      _error = null;
-    });
-    try {
-      final session = await ref.read(apiClientProvider).createCheckout(
-            accessToken: widget.accessToken,
-            tenant: widget.tenant,
-            plan: plan,
-          );
-      if (!mounted) return;
-      if (session.checkoutUrl == null || session.checkoutUrl!.isEmpty) {
-        setState(() {
-          _error = ref.read(l10nProvider).t(
-            'checkoutUnavailable',
-            params: {'status': session.status},
-          );
-        });
-        return;
-      }
-      final checkoutUri = Uri.tryParse(session.checkoutUrl!);
-      if (checkoutUri == null || checkoutUri.scheme != 'https') {
-        setState(() => _error = ref.read(l10nProvider).t('checkoutInvalidUrl'));
-        return;
-      }
-      final preferences = await SharedPreferences.getInstance();
-      await preferences.setString(pendingBillingPlanPreferenceKey, plan);
-      final opened = await ref.read(webUrlLauncherProvider)(checkoutUri);
-      if (!opened) {
-        await preferences.remove(pendingBillingPlanPreferenceKey);
-        if (mounted) {
-          setState(
-              () => _error = ref.read(l10nProvider).t('checkoutOpenFailed'));
-        }
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(
-            () => _error = error.toString().replaceFirst('Exception: ', ''));
-      }
-    } finally {
-      if (mounted) setState(() => _busyPlan = null);
-    }
-  }
-
-  Future<void> _openPortal() async {
-    if (!ref.read(webBillingEnabledProvider)) return;
-    setState(() {
-      _busyPlan = 'portal';
-      _error = null;
-    });
-    try {
-      final portal = await ref.read(apiClientProvider).createBillingPortal(
-            accessToken: widget.accessToken,
-            tenant: widget.tenant,
-          );
-      final portalUri = Uri.tryParse(portal.portalUrl ?? '');
-      if (portalUri == null || portalUri.scheme != 'https') {
-        if (mounted) {
-          setState(() {
-            _error = ref.read(l10nProvider).t(
-              'portalUnavailable',
-              params: {'status': portal.status},
-            );
-          });
-        }
-        return;
-      }
-      final opened = await ref.read(webUrlLauncherProvider)(portalUri);
-      if (!opened && mounted) {
-        setState(() => _error = ref.read(l10nProvider).t('portalOpenFailed'));
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(
-          () => _error = error.toString().replaceFirst('Exception: ', ''),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _busyPlan = null);
-    }
-  }
-
-  Future<void> _handleCheckoutReturn() async {
-    if (_checkoutReturnHandled ||
-        widget.accessToken.isEmpty ||
-        widget.tenant.isEmpty) {
-      return;
-    }
-    _checkoutReturnHandled = true;
-    await _resolveCheckoutReturn();
-  }
-
-  Future<void> _resolveCheckoutReturn() async {
-    final preferences = await SharedPreferences.getInstance();
-    final pendingPlan = preferences.getString(pendingBillingPlanPreferenceKey);
-    final completed = ref.read(billingReturnStatusProvider) == 'success';
-    if (pendingPlan == null && !completed) return;
-
-    if (!completed) {
-      await preferences.remove(pendingBillingPlanPreferenceKey);
-      if (mounted) {
-        setState(() {
-          _notice = ref.read(l10nProvider).t('checkoutNotCompleted');
-          _noticeIsError = true;
-          _activationPending = false;
-        });
-      }
-      return;
-    }
-
-    if (mounted) {
-      setState(() {
-        _notice = ref.read(l10nProvider).t('paymentProcessing');
-        _noticeIsError = false;
-        _activationPending = false;
-      });
-    }
-    try {
-      final data = await _loadBillingData();
-      if (!mounted || data == null) return;
-      setState(() {
-        _billingFuture = Future.value(data);
-        if (pendingPlan == null || data.subscription.plan == pendingPlan) {
-          _notice = ref.read(l10nProvider).t('paymentComplete');
-          _activationPending = false;
-        } else {
-          _notice = ref.read(l10nProvider).t('paymentActivationPending');
-          _activationPending = true;
-        }
-      });
-      if (pendingPlan == null || data.subscription.plan == pendingPlan) {
-        await preferences.remove(pendingBillingPlanPreferenceKey);
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _notice = ref.read(l10nProvider).t('paymentActivationPending');
-          _activationPending = true;
-        });
-      }
-    }
-  }
-
-  Future<void> _retryActivation() async {
-    setState(() {
-      _notice = ref.read(l10nProvider).t('paymentProcessing');
-      _activationPending = false;
-    });
-    await _resolveCheckoutReturn();
-  }
-}
-
-class _BillingData {
-  const _BillingData({
-    required this.subscription,
-    required this.catalog,
-  });
-
-  final SubscriptionInfo subscription;
-  final BillingPlanCatalog catalog;
-}
-
-class _CurrentPlanSummary extends StatelessWidget {
-  const _CurrentPlanSummary({
-    required this.active,
-    required this.title,
-    required this.subtitle,
-    required this.badge,
-  });
-
-  final bool active;
-  final String title;
-  final String subtitle;
-  final String? badge;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final accent = active ? scheme.primary : scheme.onSurfaceVariant;
-    return Container(
-      key: const ValueKey('current-plan-summary'),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: active
-              ? [
-                  scheme.primaryContainer.withValues(alpha: dark ? 0.72 : 0.9),
-                  scheme.secondaryContainer
-                      .withValues(alpha: dark ? 0.38 : 0.55),
-                ]
-              : [
-                  scheme.surfaceContainerHigh,
-                  scheme.surfaceContainer,
-                ],
-        ),
-        borderRadius: BorderRadius.circular(AppRadii.xl),
-        border: Border.all(
-          color: active
-              ? scheme.primary.withValues(alpha: 0.48)
-              : scheme.outlineVariant,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: dark ? 0.2 : 0.14),
-              shape: BoxShape.circle,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              syncServerUrlIsLocked
+                  ? l10n.t('syncServerSameOriginDescription')
+                  : l10n.t('syncServerDescription'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
-            alignment: Alignment.center,
-            child: Icon(
-              active ? AppIcons.check : AppIcons.sparkles,
-              size: 21,
-              color: accent,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: scheme.onSurface,
-                        fontWeight: FontWeight.w800,
-                      ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          if (badge != null) ...[
-            const SizedBox(width: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-              decoration: BoxDecoration(
-                color: scheme.primary.withValues(alpha: dark ? 0.2 : 0.13),
-                borderRadius: BorderRadius.circular(AppRadii.pill),
-              ),
-              child: Text(
-                badge!,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w800,
-                    ),
+            const SizedBox(height: 14),
+            TextField(
+              key: const ValueKey('sync-server-url-field'),
+              controller: _controller,
+              enabled: !syncServerUrlIsLocked && !_busy,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: InputDecoration(
+                labelText: l10n.t('syncServerUrl'),
+                prefixIcon: const Icon(AppIcons.link),
+                errorText: _error,
               ),
             ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _PlanOptionCard extends StatelessWidget {
-  const _PlanOptionCard({
-    super.key,
-    required this.title,
-    required this.price,
-    required this.description,
-    required this.icon,
-    required this.selected,
-    required this.busy,
-    required this.onPressed,
-  });
-
-  final String title;
-  final String price;
-  final String description;
-  final IconData icon;
-  final bool selected;
-  final bool busy;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppL10n(
-      Localizations.localeOf(context).languageCode,
-    );
-    final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: selected
-            ? scheme.primaryContainer.withValues(alpha: dark ? 0.32 : 0.52)
-            : (dark
-                ? Colors.white.withValues(alpha: 0.05)
-                : Colors.white.withValues(alpha: 0.55)),
-        borderRadius: BorderRadius.circular(AppRadii.xl),
-        border: Border.all(
-          color: selected
-              ? scheme.primary.withValues(alpha: 0.55)
-              : scheme.outlineVariant.withValues(alpha: 0.9),
-          width: selected ? 1.4 : 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: scheme.onSurface),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w800),
+            if (!syncServerUrlIsLocked) ...[
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  key: const ValueKey('save-sync-server-url'),
+                  onPressed: _busy ? null : _save,
+                  icon: _busy
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(AppIcons.check),
+                  label: Text(l10n.t('save')),
                 ),
-              ),
-              Text(
-                price,
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            description,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          if (selected) ...[
-            const SizedBox(height: 13),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
-                decoration: BoxDecoration(
-                  color: scheme.primary.withValues(alpha: dark ? 0.2 : 0.13),
-                  borderRadius: BorderRadius.circular(AppRadii.pill),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(AppIcons.check, size: 15, color: scheme.primary),
-                    const SizedBox(width: 6),
-                    Text(
-                      l10n.t('activePlan'),
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: scheme.primary,
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ] else if (onPressed != null) ...[
-            const SizedBox(height: 14),
-            _SettingsActionButton(
-              label: l10n.t('selectPlan'),
-              icon: AppIcons.arrowUpRight,
-              busy: busy,
-              onPressed: onPressed,
-            ),
           ],
-        ],
+        ),
       ),
     );
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final normalized = await ref
+          .read(syncServerUrlProvider.notifier)
+          .setUrl(_controller.text);
+      _controller.text = normalized;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(ref.read(l10nProvider).t('syncServerSaved'))),
+        );
+      }
+    } on FormatException {
+      if (mounted) {
+        setState(
+            () => _error = ref.read(l10nProvider).t('invalidSyncServerUrl'));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 

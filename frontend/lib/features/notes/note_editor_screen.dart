@@ -183,6 +183,8 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
         .where(
             (item) => item.noteId == note.remoteId && item.status == 'online')
         .toList();
+    final offlineOnly =
+        ref.watch(authControllerProvider).valueOrNull?.isOfflineOnly ?? false;
     final toolbar = _Toolbar(
       l10n: l10n,
       onFormat: _applyFormat,
@@ -209,7 +211,7 @@ class _NoteEditorPanelState extends ConsumerState<NoteEditorPanel> {
       pinned: _pinned,
       shared: note.shared,
       reminderActive: _reminderAt != null,
-      canShare: _reminderAt == null,
+      canShare: !offlineOnly && _reminderAt == null,
       onPin: () => _recordMutation(
         () => _pinned = !_pinned,
         immediate: true,
@@ -1710,10 +1712,9 @@ class _ChecklistEditor extends ConsumerStatefulWidget {
 }
 
 class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
-  String? _focusItemId;
   String? _focusedItemId;
   final _scrollController = ScrollController();
-  final _itemKeys = <String, GlobalKey>{};
+  final _itemKeys = <String, GlobalKey<_ChecklistRowState>>{};
   double _lastKeyboardInset = 0;
 
   static const _rowHeight = 42.0;
@@ -1802,29 +1803,25 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                       targetId: item.id,
                     ),
                   ),
-                  builder: (context, candidates, _) => KeyedSubtree(
+                  builder: (context, candidates, _) => _ChecklistRow(
                     key: _itemKeys.putIfAbsent(item.id, GlobalKey.new),
-                    child: _ChecklistRow(
-                      key: ValueKey(item.id),
-                      item: item,
-                      l10n: l10n,
-                      autofocus: item.id == _focusItemId,
-                      dropTargeted: candidates.isNotEmpty,
-                      onChanged: (updated) => widget.onChanged(
-                        updateChecklistItem(widget.items, updated),
-                      ),
-                      onDelete: () {
-                        _handleItemFocusChanged(item.id, false);
-                        widget.onChanged(
-                          widget.items
-                              .where((candidate) => candidate.id != item.id)
-                              .toList(),
-                        );
-                      },
-                      onInsertAfter: () => _insertItem(after: item),
-                      onFocusChanged: (focused) =>
-                          _handleItemFocusChanged(item.id, focused),
+                    item: item,
+                    l10n: l10n,
+                    dropTargeted: candidates.isNotEmpty,
+                    onChanged: (updated) => widget.onChanged(
+                      updateChecklistItem(widget.items, updated),
                     ),
+                    onDelete: () {
+                      _handleItemFocusChanged(item.id, false);
+                      widget.onChanged(
+                        widget.items
+                            .where((candidate) => candidate.id != item.id)
+                            .toList(),
+                      );
+                    },
+                    onInsertAfter: () => _insertItem(after: item),
+                    onFocusChanged: (focused) =>
+                        _handleItemFocusChanged(item.id, focused),
                   ),
                 ),
               ),
@@ -1871,20 +1868,25 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
       done: false,
       indent: after?.done == false ? after!.indent : 0,
     );
-    setState(() => _focusItemId = inserted.id);
+    // Keep the editor in its focused state while focus moves between rows. If
+    // the old row reports focus loss first, Android briefly closes the IME.
+    _focusedItemId = inserted.id;
+    widget.onItemFocusChanged(true);
     widget.onChanged(insertUncheckedItem(
       widget.items,
       inserted,
       afterItemId: after?.done == false ? after!.id : null,
     ));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _itemKeys[inserted.id]?.currentState?.requestTextFocus();
+      _scheduleFocusedItemVisibility();
+    });
   }
 
   void _handleItemFocusChanged(String itemId, bool focused) {
     if (focused) {
       _focusedItemId = itemId;
-      if (_focusItemId == itemId) {
-        setState(() => _focusItemId = null);
-      }
       widget.onItemFocusChanged(true);
       _scheduleFocusedItemVisibility();
       return;
@@ -1952,7 +1954,6 @@ class _ChecklistRow extends StatefulWidget {
     super.key,
     required this.item,
     required this.l10n,
-    required this.autofocus,
     required this.dropTargeted,
     required this.onChanged,
     required this.onDelete,
@@ -1962,7 +1963,6 @@ class _ChecklistRow extends StatefulWidget {
 
   final ChecklistItem item;
   final AppL10n l10n;
-  final bool autofocus;
   final bool dropTargeted;
   final ValueChanged<ChecklistItem> onChanged;
   final VoidCallback onDelete;
@@ -2011,6 +2011,8 @@ class _ChecklistRowState extends State<_ChecklistRow> {
   }
 
   void _handleFocusChanged() => widget.onFocusChanged(_focusNode.hasFocus);
+
+  void requestTextFocus() => _focusNode.requestFocus();
 
   @override
   Widget build(BuildContext context) {
@@ -2061,9 +2063,9 @@ class _ChecklistRowState extends State<_ChecklistRow> {
           ),
           Expanded(
             child: TextField(
-              autofocus: widget.autofocus,
               controller: _controller,
               focusNode: _focusNode,
+              textInputAction: TextInputAction.next,
               decoration: _borderlessInput('Task'),
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                     decoration:
@@ -2077,7 +2079,7 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                   ),
               onChanged: (value) =>
                   widget.onChanged(widget.item.copyWith(text: value)),
-              onSubmitted: (_) => widget.onInsertAfter(),
+              onEditingComplete: widget.onInsertAfter,
             ),
           ),
           if (!mobile) ...[

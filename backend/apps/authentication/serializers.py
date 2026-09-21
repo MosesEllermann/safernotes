@@ -55,7 +55,6 @@ class RegistrationSerializer(serializers.Serializer):
         tenant = Organization.objects.create(
             name_ciphertext=default_tenant_name_ciphertext,
             owner_user=user,
-            plan="free",
         )
         Membership.objects.create(tenant=tenant, user=user, role="owner")
         user.default_tenant = tenant

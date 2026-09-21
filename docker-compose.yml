@@ -1,20 +1,61 @@
 services:
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+    ports:
+      - "${SAFERNOTES_WEB_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+
   api:
     build:
       context: ./backend
+      dockerfile: Dockerfile.prod
+    command:
+      - /bin/sh
+      - -c
+      - python manage.py migrate --noinput && exec gunicorn config.asgi:application -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 --access-logfile - --error-logfile -
     environment:
-      DJANGO_SETTINGS_MODULE: config.settings.local
-      SECRET_KEY: local-dev-secret-change-me
+      DJANGO_SETTINGS_MODULE: config.settings.selfhost
+      SECRET_KEY: ${SECRET_KEY:-local-dev-secret-change-before-public-access}
       DATABASE_URL: postgres://safernotes:safernotes@postgres:5432/safernotes
       REDIS_URL: redis://redis:6379/0
-      ALLOWED_HOSTS: localhost,127.0.0.1,api
-      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      WEBSITE_BASE_URL: ${WEBSITE_BASE_URL:-http://localhost:8080}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-25}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-False}
+      EMAIL_USE_SSL: ${EMAIL_USE_SSL:-False}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Safernotes <noreply@localhost>}
+      STORAGE_QUOTA_BYTES: ${STORAGE_QUOTA_BYTES:-0}
+      ATTACHMENT_BUCKET: ${ATTACHMENT_BUCKET:-safernotes-local}
+      ATTACHMENT_ENDPOINT_URL: ${ATTACHMENT_ENDPOINT_URL:-http://localhost:9000}
+      ATTACHMENT_REGION: ${ATTACHMENT_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio-password}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${SAFERNOTES_API_PORT:-8000}:8000"
     depends_on:
-      - postgres
-      - redis
-      - minio
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-create-bucket:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/api/v1/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   postgres:
     image: postgres:16-alpine
@@ -26,25 +67,50 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U safernotes -d safernotes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: minio-password
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio-password}
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - minio_data:/data
 
+  minio-create-bucket:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio-password}
+      ATTACHMENT_BUCKET: ${ATTACHMENT_BUCKET:-safernotes-local}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do sleep 1; done; mc mb --ignore-existing "local/$${ATTACHMENT_BUCKET}"
+
 volumes:
   postgres_data:
+  redis_data:
   minio_data:
-

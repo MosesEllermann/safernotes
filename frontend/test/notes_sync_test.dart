@@ -13,6 +13,31 @@ import 'package:safernotes_app/shared/providers.dart';
 import 'package:safernotes_app/shared/storage/offline_store.dart';
 
 void main() {
+  test('offline-only vault persists edits without making sync requests',
+      () async {
+    final initial = _note(body: 'local', dirty: false);
+    final store = _MemoryOfflineStore([initial]);
+    final api = _VersionedApiClient(serverVersion: 1);
+    final auth = Completer<AppSession?>()..complete(_offlineSession);
+    final container = _container(store: store, api: api, auth: auth);
+    addTearDown(container.dispose);
+
+    await container.read(authControllerProvider.future);
+    await container.read(notesControllerProvider.future);
+    final controller = container.read(notesControllerProvider.notifier);
+    await controller.saveDraft(
+      draft: initial.copyWith(body: 'local edit'),
+      syncImmediately: true,
+    );
+    await controller.syncNow(pullAfterPush: true);
+
+    final saved = container.read(notesControllerProvider).requireValue.single;
+    expect(saved.body, 'local edit');
+    expect(saved.dirty, isFalse);
+    expect(api.expectedVersions, isEmpty);
+    expect(container.read(syncStatusProvider), SyncStatus.saved);
+  });
+
   test('coalesces a save during sync and advances the expected version',
       () async {
     final initial = _note(body: 'first change', dirty: true);
@@ -210,6 +235,15 @@ const _session = AppSession(
   refreshToken: 'refresh-token',
   defaultTenant: 'tenant-id',
   masterKey: [0, 1, 2, 3],
+);
+
+const _offlineSession = AppSession(
+  email: '',
+  accessToken: '',
+  refreshToken: '',
+  defaultTenant: '',
+  masterKey: [0, 1, 2, 3],
+  mode: AppSessionMode.offline,
 );
 
 PlainNote _note({

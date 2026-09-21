@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
 
 from apps.attachments.models import TenantStorageUsage
-from apps.subscriptions.plans import policy_for_plan
 
 
-def quota_for_tenant(tenant) -> int:
-    return policy_for_plan(tenant.plan).storage_bytes
+def quota_for_tenant(tenant) -> int | None:
+    """Return the operator-defined storage cap, or None for unlimited storage."""
+    configured = int(getattr(settings, "STORAGE_QUOTA_BYTES", 0))
+    return configured if configured > 0 else None
 
 
 def usage_for_tenant(tenant) -> TenantStorageUsage:
@@ -59,12 +61,14 @@ def can_store_note_bytes(
         attachment_usage=attachment_usage,
     )
     projected = breakdown["storage_bytes_used"] - previous_bytes + next_bytes
-    return projected <= quota_for_tenant(tenant)
+    quota = quota_for_tenant(tenant)
+    return quota is None or projected <= quota
 
 
 def can_reserve_attachment_bytes(tenant, ciphertext_size: int) -> bool:
     breakdown = storage_breakdown_for_tenant(tenant)
-    return breakdown["storage_bytes_used"] + ciphertext_size <= quota_for_tenant(tenant)
+    quota = quota_for_tenant(tenant)
+    return quota is None or breakdown["storage_bytes_used"] + ciphertext_size <= quota
 
 
 def reserve_attachment_bytes(tenant, ciphertext_size: int) -> TenantStorageUsage | None:
@@ -74,7 +78,8 @@ def reserve_attachment_bytes(tenant, ciphertext_size: int) -> TenantStorageUsage
             tenant,
             attachment_usage=usage,
         )
-        if breakdown["storage_bytes_used"] + ciphertext_size > quota_for_tenant(tenant):
+        quota = quota_for_tenant(tenant)
+        if quota is not None and breakdown["storage_bytes_used"] + ciphertext_size > quota:
             return None
         usage.ciphertext_bytes_used += ciphertext_size
         usage.attachments_count += 1

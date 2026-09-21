@@ -13,12 +13,11 @@ void main() {
       'save',
       'profile',
       'personalVault',
-      'essentialAnnual',
       'noteMovedToTrash',
       'noteArchived',
       'noteRestored',
       'noteDeletedPermanently',
-      'localUsageEstimate',
+      'syncServer',
     ];
     const english = AppL10n('en');
     const german = AppL10n('de');
@@ -31,10 +30,6 @@ void main() {
     expect(
       german.t('emailConfirmDescription', params: {'email': 'a@example.com'}),
       contains('a@example.com'),
-    );
-    expect(
-      english.t('currentPlan', params: {'plan': 'Pro'}),
-      'Current: Pro',
     );
   });
 }

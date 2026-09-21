@@ -19,7 +19,7 @@ class ApiException implements Exception {
 class ApiClient {
   ApiClient({
     http.Client? httpClient,
-    this.baseUrl = 'https://api.safernotes.com',
+    this.baseUrl = '',
     this.requestTimeout = const Duration(seconds: 5),
   }) : _http = httpClient ?? http.Client();
 
@@ -307,68 +307,6 @@ class ApiClient {
     );
   }
 
-  Future<SubscriptionInfo> fetchSubscription({
-    required String accessToken,
-    required String tenant,
-  }) async {
-    final response = await _request(
-      () => _http.get(
-        Uri.parse('$baseUrl/api/v1/subscription').replace(
-          queryParameters: {'tenant': tenant},
-        ),
-        headers: {'Authorization': 'Bearer $accessToken'},
-      ),
-    );
-    return SubscriptionInfo.fromJson(_decode(response));
-  }
-
-  Future<BillingPlanCatalog> fetchBillingPlans({
-    required String accessToken,
-  }) async {
-    final json = await _get('/api/v1/subscription/plans', accessToken);
-    return BillingPlanCatalog.fromJson(json);
-  }
-
-  Future<SubscriptionUsage> fetchSubscriptionUsage({
-    required String accessToken,
-    required String tenant,
-  }) async {
-    final response = await _request(
-      () => _http.get(
-        Uri.parse('$baseUrl/api/v1/subscription/usage').replace(
-          queryParameters: {'tenant': tenant},
-        ),
-        headers: {'Authorization': 'Bearer $accessToken'},
-      ),
-    );
-    return SubscriptionUsage.fromJson(_decode(response));
-  }
-
-  Future<CheckoutSession> createCheckout({
-    required String accessToken,
-    required String tenant,
-    required String plan,
-  }) async {
-    final json = await _post(
-      '/api/v1/subscription/checkout',
-      {'tenant': tenant, 'plan': plan},
-      accessToken: accessToken,
-    );
-    return CheckoutSession.fromJson(json);
-  }
-
-  Future<PortalSession> createBillingPortal({
-    required String accessToken,
-    required String tenant,
-  }) async {
-    final json = await _post(
-      '/api/v1/subscription/portal',
-      {'tenant': tenant},
-      accessToken: accessToken,
-    );
-    return PortalSession.fromJson(json);
-  }
-
   Future<Map<String, dynamic>> _get(String path, String accessToken) async {
     final response = await _request(
       () => _http.get(
@@ -429,6 +367,9 @@ class ApiClient {
   }
 
   Future<http.Response> _request(Future<http.Response> Function() send) async {
+    if (baseUrl.trim().isEmpty) {
+      throw ApiException('No sync server is configured.', 0);
+    }
     try {
       return await send().timeout(requestTimeout);
     } on TimeoutException {
@@ -486,202 +427,6 @@ class ApiClient {
       return _stringifyError(value.values.first);
     }
     return 'Request failed. Please try again.';
-  }
-}
-
-class SubscriptionInfo {
-  const SubscriptionInfo({
-    required this.plan,
-    required this.status,
-    this.billingProvider = '',
-    this.policy = const {},
-  });
-
-  final String plan;
-  final String status;
-  final String billingProvider;
-  final Map<String, dynamic> policy;
-
-  factory SubscriptionInfo.fromJson(Map<String, dynamic> json) {
-    return SubscriptionInfo(
-      plan: json['plan'] as String? ?? 'free',
-      status: json['status'] as String? ?? 'active',
-      billingProvider: json['billing_provider'] as String? ?? '',
-      policy: Map<String, dynamic>.from(json['policy'] as Map? ?? const {}),
-    );
-  }
-}
-
-class BillingPlanCatalog {
-  const BillingPlanCatalog({
-    required this.currency,
-    required this.plans,
-  });
-
-  final String currency;
-  final List<BillingPlan> plans;
-
-  factory BillingPlanCatalog.fromJson(Map<String, dynamic> json) {
-    return BillingPlanCatalog(
-      currency: json['currency'] as String? ?? 'EUR',
-      plans: (json['plans'] as List? ?? const [])
-          .map(
-            (value) => BillingPlan.fromJson(
-              Map<String, dynamic>.from(value as Map),
-            ),
-          )
-          .toList(growable: false),
-    );
-  }
-}
-
-class BillingPlan {
-  const BillingPlan({
-    required this.key,
-    required this.name,
-    required this.currency,
-    required this.monthlyEquivalentCents,
-    required this.yearlyCents,
-    required this.storageBytes,
-    required this.maxNotes,
-    required this.maxCollaboratorsPerNote,
-    required this.versionHistoryDays,
-    required this.checkoutEnabled,
-  });
-
-  final String key;
-  final String name;
-  final String currency;
-  final int monthlyEquivalentCents;
-  final int yearlyCents;
-  final int storageBytes;
-  final int? maxNotes;
-  final int maxCollaboratorsPerNote;
-  final int versionHistoryDays;
-  final bool checkoutEnabled;
-
-  factory BillingPlan.fromJson(Map<String, dynamic> json) {
-    final pricing =
-        Map<String, dynamic>.from(json['pricing'] as Map? ?? const {});
-    final limits =
-        Map<String, dynamic>.from(json['limits'] as Map? ?? const {});
-    final features =
-        Map<String, dynamic>.from(json['features'] as Map? ?? const {});
-    return BillingPlan(
-      key: json['key'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      currency: json['currency'] as String? ?? 'EUR',
-      monthlyEquivalentCents: _jsonInt(pricing['monthly_equivalent_cents']),
-      yearlyCents: _jsonInt(pricing['yearly_cents']),
-      storageBytes: _jsonInt(limits['storage_bytes']),
-      maxNotes:
-          limits['max_notes'] == null ? null : _jsonInt(limits['max_notes']),
-      maxCollaboratorsPerNote: _jsonInt(limits['max_collaborators_per_note']),
-      versionHistoryDays: _jsonInt(features['version_history_days']),
-      checkoutEnabled: json['checkout_enabled'] as bool? ?? false,
-    );
-  }
-}
-
-class SubscriptionUsage {
-  const SubscriptionUsage({
-    required this.plan,
-    required this.storageBytesUsed,
-    required this.storageBytesLimit,
-    required this.notesCount,
-    required this.maxNotes,
-    this.notesBytesUsed = 0,
-    this.attachmentsBytesUsed = 0,
-  });
-
-  final String plan;
-  final int storageBytesUsed;
-  final int storageBytesLimit;
-  final int notesCount;
-  final int? maxNotes;
-  final int notesBytesUsed;
-  final int attachmentsBytesUsed;
-
-  Map<String, dynamic> toJson() => {
-        'plan': plan,
-        'usage': {
-          'storage_bytes_used': storageBytesUsed,
-          'notes_bytes_used': notesBytesUsed,
-          'attachments_bytes_used': attachmentsBytesUsed,
-          'notes_count': notesCount,
-        },
-        'limits': {
-          'storage_bytes': storageBytesLimit,
-          'max_notes': maxNotes,
-        },
-      };
-
-  factory SubscriptionUsage.fromJson(Map<String, dynamic> json) {
-    final usage = Map<String, dynamic>.from(
-      json['usage'] as Map? ?? const {},
-    );
-    final limits = Map<String, dynamic>.from(
-      json['limits'] as Map? ?? const {},
-    );
-    return SubscriptionUsage(
-      plan: json['plan'] as String? ?? 'free',
-      storageBytesUsed: _jsonInt(
-        usage['storage_bytes_used'] ?? usage['ciphertext_bytes_used'],
-      ),
-      storageBytesLimit: _jsonInt(limits['storage_bytes']),
-      notesCount: _jsonInt(usage['notes_count']),
-      maxNotes:
-          limits['max_notes'] == null ? null : _jsonInt(limits['max_notes']),
-      notesBytesUsed: _jsonInt(usage['notes_bytes_used']),
-      attachmentsBytesUsed: _jsonInt(usage['attachments_bytes_used']),
-    );
-  }
-}
-
-int _jsonInt(dynamic value) => switch (value) {
-      int number => number,
-      num number => number.toInt(),
-      String text => int.tryParse(text) ?? 0,
-      _ => 0,
-    };
-
-class CheckoutSession {
-  const CheckoutSession({
-    required this.status,
-    required this.provider,
-    required this.targetPlan,
-    this.checkoutUrl,
-  });
-
-  final String status;
-  final String provider;
-  final String targetPlan;
-  final String? checkoutUrl;
-
-  factory CheckoutSession.fromJson(Map<String, dynamic> json) {
-    return CheckoutSession(
-      status: json['status'] as String? ?? 'unknown',
-      provider: json['provider'] as String? ?? 'unconfigured',
-      targetPlan: json['target_plan'] as String? ?? '',
-      checkoutUrl: json['checkout_url'] as String?,
-    );
-  }
-}
-
-class PortalSession {
-  const PortalSession({
-    required this.status,
-    this.portalUrl,
-  });
-
-  final String status;
-  final String? portalUrl;
-
-  factory PortalSession.fromJson(Map<String, dynamic> json) {
-    return PortalSession(
-      status: json['status'] as String? ?? 'unknown',
-      portalUrl: json['portal_url'] as String?,
-    );
   }
 }
 

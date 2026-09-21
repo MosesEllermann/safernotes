@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Installation &amp; Dokumentation - Safernotes</title>
+    <meta
+      name="description"
+      content="Safernotes installieren, offline verwenden oder mit Docker selbst hosten. Mit Konfiguration, Updates, Backups und häufigen Fragen."
+    />
+    <meta name="theme-color" content="#8051a8" />
+    <link rel="icon" href="./assets/safernotes-logo.svg" type="image/svg+xml" />
+    <link rel="icon" href="./assets/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
+    <link rel="manifest" href="./site.webmanifest" />
+    <link rel="stylesheet" href="./styles.css?v=docs-1" />
+  </head>
+  <body class="docs-page">
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
+          <img class="brand-mark" src="./assets/safernotes-logo.svg" width="34" height="34" alt="" />
+          <span>Safernotes</span>
+        </a>
+
+        <nav class="site-nav" aria-label="Hauptnavigation">
+          <a href="./index.html#product">Produkt</a>
+          <a href="./index.html#security">Sicherheit</a>
+          <a href="./downloads.html">Downloads</a>
+          <a href="./docs.html" aria-current="page">Doku &amp; Q&amp;A</a>
+        </nav>
+
+        <a class="button button-small button-dark header-desktop-action" href="#docker">
+          Selbst hosten
+        </a>
+        <a class="button button-small button-dark header-mobile-action" href="#start">
+          Installieren
+        </a>
+      </div>
+    </header>
+
+    <main>
+      <section class="docs-hero" aria-labelledby="docs-title">
+        <p class="eyebrow">Dokumentation</p>
+        <h1 id="docs-title">Installation, Betrieb und Antworten.</h1>
+        <p>
+          Nutze Safernotes nur auf deinem Gerät oder betreibe Web-App und
+          Synchronisierung unter deiner eigenen URL.
+        </p>
+        <div class="docs-hero-actions">
+          <a class="button button-primary" href="#start">Installation starten</a>
+          <a class="text-link" href="#faq">Zu den häufigen Fragen</a>
+        </div>
+      </section>
+
+      <div class="docs-shell">
+        <aside class="docs-aside" aria-label="Dokumentationsnavigation">
+          <strong>Auf dieser Seite</strong>
+          <a href="#start">Welche Installation?</a>
+          <a href="#android">Android &amp; Offline</a>
+          <a href="#docker">Docker-Installation</a>
+          <a href="#connect">App verbinden</a>
+          <a href="#operate">Updates &amp; Backups</a>
+          <a href="#troubleshooting">Fehlersuche</a>
+          <a href="#faq">Q&amp;A</a>
+        </aside>
+
+        <article class="docs-content">
+          <section id="start">
+            <p class="section-label">1 · Start</p>
+            <h2>Wähle deinen Modus</h2>
+            <div class="docs-choice-grid">
+              <article>
+                <h3>Nur offline</h3>
+                <p>
+                  Kein Server und kein Konto. Die verschlüsselten Notizen
+                  bleiben ausschließlich im Speicher dieses Geräts.
+                </p>
+                <a class="text-link" href="#android">Android installieren</a>
+              </article>
+              <article>
+                <h3>Eigener Sync-Server</h3>
+                <p>
+                  Web-App und API laufen per Docker auf deinem Server. Android
+                  verbindet sich mit derselben, von dir festgelegten URL.
+                </p>
+                <a class="text-link" href="#docker">Docker einrichten</a>
+              </article>
+            </div>
+            <div class="docs-callout">
+              <strong>Wichtig bei Offline-Nutzung</strong>
+              <p>
+                Das Löschen der App, der App-Daten oder des Browser-Speichers
+                kann lokale Notizen unwiederbringlich entfernen. Offline-Daten
+                werden derzeit nicht automatisch auf einen Server migriert.
+              </p>
+            </div>
+          </section>
+
+          <section id="android">
+            <p class="section-label">2 · Android &amp; Offline</p>
+            <h2>Safernotes auf Android installieren</h2>
+            <ol class="step-list">
+              <li>
+                <strong>App beziehen</strong>
+                <span>
+                  Installiere Safernotes aus dem
+                  <a class="inline-link" href="https://play.google.com/store/apps/details?id=at.ecrumedia.safernotes">Google Play Store</a>
+                  oder lade die <a class="inline-link" href="./downloads/safernotes-android.apk" download>APK direkt</a> herunter.
+                </span>
+              </li>
+              <li>
+                <strong>APK bei Bedarf freigeben</strong>
+                <span>
+                  Bei einer direkten APK kann Android einmalig „Unbekannte Apps
+                  installieren“ für deinen Browser oder Dateimanager verlangen.
+                </span>
+              </li>
+              <li>
+                <strong>Offline starten</strong>
+                <span>
+                  Wähle auf dem ersten Bildschirm <em>Nur offline verwenden</em>.
+                  Es wird keine Verbindung zu einem Safernotes-Server aufgebaut.
+                </span>
+              </li>
+            </ol>
+            <p>
+              Für Erinnerungen muss Android Benachrichtigungen erlauben. Auf
+              GrapheneOS müssen zusätzlich die Benachrichtigungsberechtigung und
+              eine passende Akku-Einstellung für Safernotes aktiv sein. Lokale
+              Erinnerungen benötigen weder Google Play Services noch einen
+              Safernotes-Server.
+            </p>
+          </section>
+
+          <section id="docker">
+            <p class="section-label">3 · Self-Hosting</p>
+            <h2>Mit Docker installieren</h2>
+            <p>
+              Du brauchst Git, Docker Engine und Docker Compose v2. Der Stack
+              enthält die Web-App, Django-API, PostgreSQL, Redis und MinIO.
+            </p>
+
+            <h3>Lokal testen</h3>
+            <pre><code>git clone https://github.com/MosesEllermann/Notizen-App.git
+cd Notizen-App
+cp .env.selfhost.example .env
+docker compose up --build -d</code></pre>
+            <p>
+              Öffne danach <code>http://localhost:8080</code>. Der erste Build
+              kann einige Minuten dauern. Die Datenbankmigrationen und der
+              verschlüsselte Attachment-Bucket werden automatisch angelegt.
+            </p>
+
+            <h3>Öffentlich unter deiner Domain</h3>
+            <ol class="step-list">
+              <li>
+                <strong>Secrets ersetzen</strong>
+                <span>Setze in <code>.env</code> einen langen zufälligen <code>SECRET_KEY</code> und ein starkes <code>MINIO_ROOT_PASSWORD</code>.</span>
+              </li>
+              <li>
+                <strong>Eigene URL eintragen</strong>
+                <span>Setze <code>ALLOWED_HOSTS</code>, <code>CORS_ALLOWED_ORIGINS</code>, <code>APP_BASE_URL</code> und <code>WEBSITE_BASE_URL</code> auf deine Domain.</span>
+              </li>
+              <li>
+                <strong>HTTPS bereitstellen</strong>
+                <span>Leite die Web-App über einen Reverse Proxy mit gültigem TLS-Zertifikat weiter. Verwende für öffentliche Installationen kein unverschlüsseltes HTTP.</span>
+              </li>
+              <li>
+                <strong>Objektspeicher erreichbar machen</strong>
+                <span>Setze <code>ATTACHMENT_ENDPOINT_URL</code> auf den vom Browser erreichbaren HTTPS-Endpunkt deines MinIO- oder S3-Speichers.</span>
+              </li>
+            </ol>
+
+            <h3>Optional: E-Mail über SMTP</h3>
+            <p>
+              SMTP-Schlüssel gehören ausschließlich in deine lokale
+              <code>.env</code>-Datei. Setze dort <code>EMAIL_BACKEND</code>,
+              <code>EMAIL_HOST</code>, <code>EMAIL_PORT</code>, Benutzername,
+              Passwort, TLS/SSL und <code>DEFAULT_FROM_EMAIL</code>. Ohne SMTP
+              schreibt die Standardkonfiguration Verifizierungs- und
+              Wiederherstellungs-E-Mails in das Container-Log.
+            </p>
+            <p>
+              Ausführlichere Betreiberhinweise stehen auch im
+              <a class="inline-link" href="https://github.com/MosesEllermann/Notizen-App/blob/main/docs/SELF_HOSTING.md">Self-Hosting-Handbuch im Repository</a>.
+            </p>
+          </section>
+
+          <section id="connect">
+            <p class="section-label">4 · Verbinden</p>
+            <h2>Android mit deinem Server verbinden</h2>
+            <ol class="step-list">
+              <li>
+                <strong>Safernotes öffnen</strong>
+                <span>Trage auf dem Anmeldebildschirm deine vollständige Server-URL ein, zum Beispiel <code>https://notes.example.com</code>.</span>
+              </li>
+              <li>
+                <strong>Konto anlegen oder anmelden</strong>
+                <span>Verwende danach Registrierung oder Anmeldung gegen deinen eigenen Server. Hänge kein <code>/api</code> an die URL an.</span>
+              </li>
+              <li>
+                <strong>URL später ändern</strong>
+                <span>Öffne <em>Einstellungen → Sync-Server</em>. Die URL wird nur lokal auf diesem Gerät gespeichert.</span>
+              </li>
+            </ol>
+            <p>
+              Die von Docker ausgelieferte Web-App verwendet automatisch ihre
+              eigene Domain. Dort muss keine Server-URL eingetragen werden.
+            </p>
+          </section>
+
+          <section id="operate">
+            <p class="section-label">5 · Betrieb</p>
+            <h2>Updates und Backups</h2>
+            <h3>Installation aktualisieren</h3>
+            <pre><code>git pull --ff-only
+docker compose up --build -d
+docker compose ps</code></pre>
+            <p>
+              Lies vor einem Update die Versionshinweise und sichere deine
+              Daten. Datenbankmigrationen laufen beim Start des API-Containers.
+            </p>
+
+            <h3>PostgreSQL sichern</h3>
+            <pre><code>docker compose exec -T postgres \
+  pg_dump -U safernotes safernotes &gt; safernotes-backup.sql</code></pre>
+            <p>
+              Sichere zusätzlich das MinIO-Volume mit den verschlüsselten
+              Anhängen und bewahre deine <code>.env</code> sicher auf. Prüfe
+              Wiederherstellungen regelmäßig auf einem getrennten System.
+            </p>
+          </section>
+
+          <section id="troubleshooting">
+            <p class="section-label">6 · Fehlersuche</p>
+            <h2>Wenn etwas nicht funktioniert</h2>
+            <div class="command-grid">
+              <div>
+                <strong>Containerstatus</strong>
+                <pre><code>docker compose ps</code></pre>
+              </div>
+              <div>
+                <strong>API-Protokoll</strong>
+                <pre><code>docker compose logs --tail=200 api</code></pre>
+              </div>
+              <div>
+                <strong>Web-Protokoll</strong>
+                <pre><code>docker compose logs --tail=200 web</code></pre>
+              </div>
+              <div>
+                <strong>Healthcheck</strong>
+                <pre><code>curl https://notes.example.com/api/v1/health/live</code></pre>
+              </div>
+            </div>
+            <ul>
+              <li><strong>Server nicht erreichbar:</strong> Prüfe HTTPS, DNS, Firewall und ob die URL ohne <code>/api</code> gespeichert wurde.</li>
+              <li><strong>Registrierungs-E-Mail fehlt:</strong> Prüfe die <code>EMAIL_*</code>-Werte und das API-Log. Bei der Console-Konfiguration steht der Inhalt nur im Log.</li>
+              <li><strong>Anhänge schlagen fehl:</strong> Prüfe <code>ATTACHMENT_ENDPOINT_URL</code>, Zertifikat, MinIO-Zugangsdaten und Browser-Erreichbarkeit.</li>
+              <li><strong>Android-Erinnerungen fehlen:</strong> Erlaube Benachrichtigungen, kontrolliere Datum und Uhrzeit und entferne Akku-Beschränkungen für Safernotes.</li>
+            </ul>
+          </section>
+
+          <section id="faq">
+            <p class="section-label">7 · Q&amp;A</p>
+            <h2>Häufige Fragen</h2>
+            <div class="faq-list">
+              <details>
+                <summary>Brauche ich für Safernotes einen Server?</summary>
+                <p>Nein. Im Offline-Modus arbeitet die App ohne Konto und ohne API. Einen Server brauchst du nur für Synchronisierung oder die selbst gehostete Web-App.</p>
+              </details>
+              <details>
+                <summary>Kann ich eine beliebige Safernotes-URL in der App verwenden?</summary>
+                <p>Ja. Trage die Basis-URL deiner eigenen Installation ein, beispielsweise <code>https://notes.example.com</code>. Die App enthält keine verpflichtende Anbieter-URL.</p>
+              </details>
+              <details>
+                <summary>Kann der Server meine Notizen lesen?</summary>
+                <p>Notiztitel, Texte, Checklisten und Anhänge werden clientseitig verschlüsselt. Der Server verarbeitet weiterhin notwendige Konto-, Freigabe- und technische Metadaten.</p>
+              </details>
+              <details>
+                <summary>Funktionieren Erinnerungen ohne Google Play Services?</summary>
+                <p>Ja. Erinnerungen werden lokal über Android geplant. Safernotes benötigt dafür die Benachrichtigungsberechtigung und darf nicht durch Akku- oder Hintergrundbeschränkungen gestoppt werden.</p>
+              </details>
+              <details>
+                <summary>Kann ich Offline-Notizen später automatisch synchronisieren?</summary>
+                <p>Noch nicht. Offline-Modus und Server-Vault sind getrennt. Verlasse dich bis zu einer Export-/Import-Funktion nicht auf eine automatische Migration.</p>
+              </details>
+              <details>
+                <summary>Was kostet Self-Hosting?</summary>
+                <p>Safernotes selbst ist kostenlos und unter AGPL-3.0-or-later verfügbar. Kosten können für deinen Server, Domain, Speicher, SMTP-Dienst oder Backups entstehen.</p>
+              </details>
+              <details>
+                <summary>Wo melde ich Fehler oder schlage Funktionen vor?</summary>
+                <p>Nutze die <a class="inline-link" href="https://github.com/MosesEllermann/Notizen-App/issues">GitHub Issues</a> des Open-Source-Projekts und beschreibe Plattform, App-Version und reproduzierbare Schritte.</p>
+              </details>
+            </div>
+          </section>
+        </article>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <a class="brand" href="./index.html" aria-label="Safernotes Startseite">
+        <img class="brand-mark" src="./assets/safernotes-logo.svg" width="34" height="34" alt="" />
+        <span>Safernotes</span>
+      </a>
+      <p>Private Notizen, sicher synchronisiert.</p>
+      <nav aria-label="Footer Navigation">
+        <a href="./downloads.html">Downloads</a>
+        <a href="./docs.html">Doku &amp; Q&amp;A</a>
+        <a href="https://github.com/MosesEllermann/Notizen-App">Quellcode</a>
+        <a href="./terms.html">Nutzungsbedingungen</a>
+        <a href="./privacy.html">Datenschutz</a>
+        <a href="./impressum.html">Impressum</a>
+      </nav>
+    </footer>
+  </body>
+</html>

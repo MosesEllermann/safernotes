@@ -663,32 +663,6 @@ a.sn-metric:hover {
 .sn-list__main small,
 .sn-activity-row time { color: var(--sn-muted); font-size: 10px; margin-top: 3px; }
 
-.sn-plan-list { display: flex; flex-direction: column; gap: 18px; padding-top: 8px; }
-
-.sn-plan-row > div:first-child {
-  display: flex;
-  font-size: 11px;
-  justify-content: space-between;
-  margin-bottom: 7px;
-}
-
-.sn-plan-row span { color: var(--sn-muted); }
-
-.sn-progress {
-  background: var(--darkened-bg);
-  border-radius: 999px;
-  height: 7px;
-  overflow: hidden;
-}
-
-.sn-progress span {
-  background: linear-gradient(90deg, #1a7256, #58c99c);
-  border-radius: inherit;
-  display: block;
-  height: 100%;
-  min-width: 3px;
-}
-
 .sn-actions { display: flex; flex-direction: column; }
 
 .sn-actions > a {

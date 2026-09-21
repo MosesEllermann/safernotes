@@ -22,7 +22,7 @@ void main() {
   test('reads the cold-start invitation URL from Android', () async {
     messenger.setMockMethodCallHandler(channel, (call) async {
       expect(call.method, 'getInitialLink');
-      return 'https://app.safernotes.com/?invitation='
+      return 'safernotes://invite?invitation='
           '123e4567-e89b-42d3-a456-426614174000';
     });
     final links = IncomingLinks(channel: channel);
@@ -31,7 +31,7 @@ void main() {
     expect(
       await links.initialUri(),
       Uri.parse(
-        'https://app.safernotes.com/?invitation='
+        'safernotes://invite?invitation='
         '123e4567-e89b-42d3-a456-426614174000',
       ),
     );
@@ -44,7 +44,7 @@ void main() {
     final message = const StandardMethodCodec().encodeMethodCall(
       const MethodCall(
         'link',
-        'https://app.safernotes.com/?invitation='
+        'safernotes://invite?invitation='
             '123e4567-e89b-42d3-a456-426614174000',
       ),
     );
@@ -58,7 +58,7 @@ void main() {
     expect(
       await received,
       Uri.parse(
-        'https://app.safernotes.com/?invitation='
+        'safernotes://invite?invitation='
         '123e4567-e89b-42d3-a456-426614174000',
       ),
     );

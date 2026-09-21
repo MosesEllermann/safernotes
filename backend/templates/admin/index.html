@@ -10,7 +10,7 @@
     <div>
       <p class="sn-eyebrow">Operations overview</p>
       <h1 id="dashboard-title">Good to see you, {{ request.user.email|default:"operator" }}.</h1>
-      <p class="sn-hero__copy">Monitor accounts, billing and sharing health without exposing encrypted note content.</p>
+      <p class="sn-hero__copy">Monitor accounts and sharing health without exposing encrypted note content.</p>
     </div>
     <div class="sn-environment">
       <span class="sn-live-dot" aria-hidden="true"></span>
@@ -35,11 +35,6 @@
       <span class="sn-metric__label">Active accounts</span>
       <strong>{{ dashboard.users.active }}</strong>
       <span class="sn-metric__detail">{{ dashboard.users.verified }} email verified</span>
-    </a>
-    <a class="sn-metric" href="{% url 'owner_admin:subscriptions_subscription_changelist' %}?health=healthy">
-      <span class="sn-metric__label">Active subscriptions</span>
-      <strong>{{ dashboard.subscriptions.active }}</strong>
-      <span class="sn-metric__detail{% if dashboard.subscriptions.attention %} sn-metric__detail--warning{% endif %}">{{ dashboard.subscriptions.attention }} need attention</span>
     </a>
     <a class="sn-metric" href="{% url 'owner_admin:notes_shareinvitation_changelist' %}?status=pending">
       <span class="sn-metric__label">Pending invites</span>
@@ -81,26 +76,6 @@
     <section class="sn-panel">
       <header class="sn-panel__header">
         <div>
-          <p class="sn-eyebrow">Billing</p>
-          <h2>Plan mix</h2>
-        </div>
-        <a href="{% url 'owner_admin:subscriptions_subscription_changelist' %}">Manage</a>
-      </header>
-      <div class="sn-plan-list">
-        {% for plan in dashboard.plans %}
-          <div class="sn-plan-row">
-            <div><strong>{{ plan.plan|title }}</strong><span>{{ plan.total }}</span></div>
-            <div class="sn-progress" aria-label="{{ plan.percentage }} percent"><span style="width: {{ plan.percentage }}%"></span></div>
-          </div>
-        {% empty %}
-          <p class="sn-empty">No subscriptions configured.</p>
-        {% endfor %}
-      </div>
-    </section>
-
-    <section class="sn-panel">
-      <header class="sn-panel__header">
-        <div>
           <p class="sn-eyebrow">Shortcuts</p>
           <h2>Common tasks</h2>
         </div>
@@ -108,7 +83,6 @@
       <nav class="sn-actions" aria-label="Common admin tasks">
         <a href="{% url 'owner_admin:users_user_changelist' %}?email_verified=no"><span class="sn-action-icon">@</span><span><strong>Review unverified accounts</strong><small>Filter accounts awaiting verification</small></span><span>→</span></a>
         <a href="{% url 'owner_admin:notes_shareinvitation_changelist' %}?status=pending"><span class="sn-action-icon">↗</span><span><strong>Inspect sharing invites</strong><small>Diagnose pending collaboration links</small></span><span>→</span></a>
-        <a href="{% url 'owner_admin:subscriptions_subscription_add' %}"><span class="sn-action-icon">+</span><span><strong>Create subscription</strong><small>Add a manually managed plan</small></span><span>→</span></a>
       </nav>
     </section>
 

@@ -42,13 +42,7 @@ Open:
 http://localhost:3000
 ```
 
-By default, the Flutter app uses the online API:
-
-```sh
-https://api.safernotes.com
-```
-
-Use `API_BASE_URL=http://127.0.0.1:8000 ./tool/run_web.sh` only when intentionally testing a local backend.
+The local helper uses `http://127.0.0.1:8000`. Native builds have no default server; enter a self-hosted URL in the app or use offline-only mode.
 
 The Flutter wrapper prefers `/Users/moses/Dev/flutter/bin/flutter` when it exists.
 
@@ -78,7 +72,7 @@ Frontend:
 ```sh
 cd frontend
 ./tool/flutterw analyze
-./tool/flutterw build web --dart-define=API_BASE_URL=https://api.safernotes.com --no-wasm-dry-run
+./tool/flutterw build web --dart-define=API_BASE_URL=same-origin --no-wasm-dry-run
 ./tool/build_android_release.sh
 ```
 
