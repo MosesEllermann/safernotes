@@ -11,6 +11,7 @@ import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:uuid/uuid.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
 import 'package:safernotes_app/features/notes/note_editor_state.dart';
+import 'package:safernotes_app/features/notes/checklist_input_formatter.dart';
 import 'package:safernotes_app/features/notes/rich_text_document.dart';
 import 'package:safernotes_app/features/notes/notes_controller.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
@@ -1820,6 +1821,7 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
                       );
                     },
                     onInsertAfter: () => _insertItem(after: item),
+                    onDeleteEmpty: () => _deleteEmptyItem(item),
                     onFocusChanged: (focused) =>
                         _handleItemFocusChanged(item.id, focused),
                   ),
@@ -1859,6 +1861,32 @@ class _ChecklistEditorState extends ConsumerState<_ChecklistEditor> {
         ),
       ),
     );
+  }
+
+  void _deleteEmptyItem(ChecklistItem item) {
+    if (item.text.isNotEmpty) return;
+    final visibleItems = [
+      ...widget.items.where((item) => !item.done),
+      ...widget.items.where((item) => item.done),
+    ];
+    final index = visibleItems.indexWhere((entry) => entry.id == item.id);
+    if (index < 0) return;
+    final target = index > 0
+        ? visibleItems[index - 1]
+        : (visibleItems.length > 1 ? visibleItems[1] : null);
+    if (target != null) {
+      // Transfer focus before removing the old input connection so the IME
+      // stays open, just as it does when inserting a row with Enter.
+      _focusedItemId = target.id;
+      widget.onItemFocusChanged(true);
+      _itemKeys[target.id]?.currentState?.requestTextFocus(atEnd: true);
+    } else {
+      _handleItemFocusChanged(item.id, false);
+    }
+    widget.onChanged(
+      widget.items.where((entry) => entry.id != item.id).toList(),
+    );
+    _scheduleFocusedItemVisibility();
   }
 
   void _insertItem({ChecklistItem? after}) {
@@ -1958,6 +1986,7 @@ class _ChecklistRow extends StatefulWidget {
     required this.onChanged,
     required this.onDelete,
     required this.onInsertAfter,
+    required this.onDeleteEmpty,
     required this.onFocusChanged,
   });
 
@@ -1967,6 +1996,7 @@ class _ChecklistRow extends StatefulWidget {
   final ValueChanged<ChecklistItem> onChanged;
   final VoidCallback onDelete;
   final VoidCallback onInsertAfter;
+  final VoidCallback onDeleteEmpty;
   final ValueChanged<bool> onFocusChanged;
 
   @override
@@ -1974,9 +2004,13 @@ class _ChecklistRow extends StatefulWidget {
 }
 
 class _ChecklistRowState extends State<_ChecklistRow> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.item.text,
-  )..selection = TextSelection.collapsed(offset: widget.item.text.length);
+  late final TextEditingController _controller =
+      TextEditingController.fromValue(
+    ChecklistInputFormatter.initialValue(widget.item.text),
+  );
+  late final _inputFormatter =
+      ChecklistInputFormatter(onEmptyBackspace: _queueEmptyDelete);
+  bool _emptyDeletePending = false;
   final _focusNode = FocusNode();
   Offset? _swipeOrigin;
   double _swipeOffset = 0;
@@ -1986,18 +2020,31 @@ class _ChecklistRowState extends State<_ChecklistRow> {
   void initState() {
     super.initState();
     _focusNode.addListener(_handleFocusChanged);
+    _focusNode.onKeyEvent = (_, event) {
+      if ((event is KeyDownEvent || event is KeyRepeatEvent) &&
+          event.logicalKey == LogicalKeyboardKey.backspace &&
+          ChecklistInputFormatter.itemText(_controller.text).isEmpty) {
+        _queueEmptyDelete();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    };
+    _controller.addListener(_keepEmptyCaretAfterMarker);
   }
 
   @override
   void didUpdateWidget(covariant _ChecklistRow oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.item.text != _controller.text) {
+    if (widget.item.text !=
+        ChecklistInputFormatter.itemText(_controller.text)) {
       final offset =
           _controller.selection.extentOffset.clamp(0, widget.item.text.length);
-      _controller.value = TextEditingValue(
-        text: widget.item.text,
-        selection: TextSelection.collapsed(offset: offset),
-      );
+      _controller.value = widget.item.text.isEmpty
+          ? ChecklistInputFormatter.initialValue('')
+          : TextEditingValue(
+              text: widget.item.text,
+              selection: TextSelection.collapsed(offset: offset),
+            );
     }
   }
 
@@ -2012,7 +2059,32 @@ class _ChecklistRowState extends State<_ChecklistRow> {
 
   void _handleFocusChanged() => widget.onFocusChanged(_focusNode.hasFocus);
 
-  void requestTextFocus() => _focusNode.requestFocus();
+  void _keepEmptyCaretAfterMarker() {
+    if (_controller.text == ChecklistInputFormatter.emptyMarker &&
+        _controller.selection != const TextSelection.collapsed(offset: 1)) {
+      _controller.selection = const TextSelection.collapsed(offset: 1);
+    }
+  }
+
+  void _queueEmptyDelete() {
+    if (_emptyDeletePending) return;
+    _emptyDeletePending = true;
+    scheduleMicrotask(() {
+      _emptyDeletePending = false;
+      if (!mounted ||
+          !_focusNode.hasFocus ||
+          ChecklistInputFormatter.itemText(_controller.text).isNotEmpty) return;
+      widget.onDeleteEmpty();
+    });
+  }
+
+  void requestTextFocus({bool atEnd = false}) {
+    if (atEnd) {
+      _controller.selection =
+          TextSelection.collapsed(offset: _controller.text.length);
+    }
+    _focusNode.requestFocus();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2063,8 +2135,10 @@ class _ChecklistRowState extends State<_ChecklistRow> {
           ),
           Expanded(
             child: TextField(
+              key: ValueKey('checklist-input-${widget.item.id}'),
               controller: _controller,
               focusNode: _focusNode,
+              inputFormatters: [_inputFormatter],
               textInputAction: TextInputAction.next,
               decoration: _borderlessInput('Task'),
               style: Theme.of(context).textTheme.bodyLarge?.copyWith(
@@ -2077,8 +2151,9 @@ class _ChecklistRowState extends State<_ChecklistRow> {
                             .withValues(alpha: 0.56)
                         : null,
                   ),
-              onChanged: (value) =>
-                  widget.onChanged(widget.item.copyWith(text: value)),
+              onChanged: (value) => widget.onChanged(widget.item.copyWith(
+                text: ChecklistInputFormatter.itemText(value),
+              )),
               onEditingComplete: widget.onInsertAfter,
             ),
           ),

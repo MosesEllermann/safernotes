@@ -3,6 +3,36 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:safernotes_app/shared/theme/app_theme.dart';
 
 void main() {
+  test('system font replaces Urbanist throughout light and dark themes', () {
+    for (final brightness in Brightness.values) {
+      final standard = buildAppTheme(brightness);
+      final system = buildAppTheme(brightness, useSystemFont: true);
+      expect(standard.textTheme.bodyMedium!.fontFamily, 'Urbanist');
+      final typography =
+          Typography.material2021(platform: TargetPlatform.android);
+      final expected =
+          (brightness == Brightness.dark ? typography.white : typography.black)
+              .bodyMedium!
+              .fontFamily;
+      for (final style in [
+        system.textTheme.displayLarge,
+        system.textTheme.displayMedium,
+        system.textTheme.headlineLarge,
+        system.textTheme.headlineMedium,
+        system.textTheme.titleLarge,
+        system.textTheme.titleMedium,
+        system.textTheme.bodyLarge,
+        system.textTheme.bodyMedium,
+        system.textTheme.labelLarge,
+        system.textTheme.labelSmall,
+        system.primaryTextTheme.bodyMedium,
+      ]) {
+        expect(style!.fontFamily, expected);
+        expect(style.fontFamilyFallback ?? [], isNot(contains('Urbanist')));
+      }
+    }
+  });
+
   test('dark ambient mesh stays deliberately subdued', () {
     expect(
       ambientMeshIntensity(Brightness.dark),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safernotes_app/features/settings/system_font_setting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:safernotes_app/shared/theme/app_icons.dart';
 import 'package:safernotes_app/features/auth/auth_controller.dart';
@@ -394,6 +395,12 @@ class _AppearanceSettings extends StatelessWidget {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 18),
+        _SettingsSection(
+          icon: AppIcons.type,
+          title: l10n.t('font'),
+          child: const SystemFontSetting(),
         ),
         const SizedBox(height: 18),
         _SettingsSection(

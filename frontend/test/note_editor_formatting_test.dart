@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:safernotes_app/features/notes/checklist_input_formatter.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:flutter_test/flutter_test.dart';
@@ -486,7 +488,7 @@ void main() {
       (widget) =>
           widget is TextField &&
           widget.decoration?.hintText == 'Task' &&
-          widget.controller?.text.isEmpty == true,
+          ChecklistInputFormatter.itemText(widget.controller!.text).isEmpty,
     );
     expect(emptyTaskFinder, findsOneWidget);
     final emptyTaskField = tester.widget<TextField>(emptyTaskFinder);
@@ -501,6 +503,85 @@ void main() {
           .bottom,
       390,
     );
+  });
+
+  for (final softKeyboard in [true, false]) {
+    testWidgets(
+        'empty checklist backspace moves focus back (IME: $softKeyboard)',
+        (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final note = _checklistNote();
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          authControllerProvider.overrideWith(_TestAuthController.new),
+          notesControllerProvider
+              .overrideWith(() => _TestNotesController([note])),
+        ],
+        child: _editorApp(note),
+      ));
+      await tester.pumpAndSettle();
+      final openFinder = find.byKey(const ValueKey('checklist-input-open'));
+      await tester.tap(openFinder);
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pumpAndSettle();
+      expect(find.byType(Checkbox), findsNWidgets(3));
+      tester.testTextInput.log.clear();
+      if (softKeyboard) {
+        tester.testTextInput.updateEditingValue(const TextEditingValue(
+          text: '',
+          selection: TextSelection.collapsed(offset: 0),
+        ));
+      } else {
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(Checkbox), findsNWidgets(2));
+      final previous = tester.widget<TextField>(openFinder);
+      expect(previous.focusNode!.hasFocus, isTrue);
+      expect(previous.controller!.selection.extentOffset, 4);
+      expect(
+          tester.testTextInput.log
+              .where((call) => call.method == 'TextInput.hide'),
+          isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('deleting last character keeps row until next backspace',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final note = _checklistNote();
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        authControllerProvider.overrideWith(_TestAuthController.new),
+        notesControllerProvider
+            .overrideWith(() => _TestNotesController([note])),
+      ],
+      child: _editorApp(note),
+    ));
+    await tester.pumpAndSettle();
+    final field = find.byKey(const ValueKey('checklist-input-open'));
+    await tester.enterText(field, 'x');
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+    ));
+    await tester.pumpAndSettle();
+    expect(field, findsOneWidget);
+    // First visible item has no predecessor: focus the next surviving row.
+    tester.testTextInput.updateEditingValue(const TextEditingValue(
+      text: '',
+      selection: TextSelection.collapsed(offset: 0),
+    ));
+    await tester.pumpAndSettle();
+    expect(field, findsNothing);
+    expect(
+        tester
+            .widget<TextField>(
+                find.byKey(const ValueKey('checklist-input-done')))
+            .focusNode!
+            .hasFocus,
+        isTrue);
   });
 
   testWidgets('checked rows animate below the add row and back up',

@@ -348,6 +348,7 @@ ThemeData buildAppTheme(
   Brightness brightness, {
   Color? dynamicSeed,
   TargetPlatform platform = TargetPlatform.android,
+  bool useSystemFont = false,
 }) {
   final dark = brightness == Brightness.dark;
   final isApple =
@@ -362,6 +363,12 @@ ThemeData buildAppTheme(
   final surface = dark ? const Color(0xff0f1615) : const Color(0xfff1ecf0);
   final field = dark ? const Color(0xff232e2c) : Colors.white;
   final typography = Typography.material2021(platform: platform);
+  final fontFamily = useSystemFont
+      ? (dark ? typography.white : typography.black).bodyMedium?.fontFamily
+      : 'Urbanist';
+  final fontFallback = useSystemFont
+      ? null
+      : const ['SF Pro Text', 'Roboto', 'Helvetica Neue', 'Arial'];
   final scheme = baseScheme.copyWith(
     primary: dynamicSeed != null
         ? baseScheme.primary
@@ -458,32 +465,22 @@ ThemeData buildAppTheme(
     platform: platform,
     colorScheme: scheme,
     useMaterial3: true,
-    fontFamily: 'Urbanist',
-    fontFamilyFallback: const [
-      'SF Pro Text',
-      'Roboto',
-      'Helvetica Neue',
-      'Arial'
-    ],
+    fontFamily: fontFamily,
+    fontFamilyFallback: fontFallback,
     scaffoldBackgroundColor: surface,
     visualDensity: VisualDensity.standard,
     splashFactory: isApple ? NoSplash.splashFactory : InkSparkle.splashFactory,
     extensions: [appTheme],
     textTheme: (dark ? typography.white : typography.black)
         .apply(
-          fontFamily: 'Urbanist',
-          fontFamilyFallback: const [
-            'SF Pro Text',
-            'Roboto',
-            'Helvetica Neue',
-            'Arial'
-          ],
+          fontFamily: fontFamily,
+          fontFamilyFallback: fontFallback,
           bodyColor: scheme.onSurface,
           displayColor: scheme.onSurface,
         )
         .copyWith(
           displayLarge: TextStyle(
-            fontFamily: 'Urbanist',
+            fontFamily: fontFamily,
             fontSize: 62,
             height: 0.98,
             fontWeight: FontWeight.w300,
@@ -491,7 +488,7 @@ ThemeData buildAppTheme(
             color: scheme.onSurface,
           ),
           displayMedium: TextStyle(
-            fontFamily: 'Urbanist',
+            fontFamily: fontFamily,
             fontSize: 48,
             height: 1.0,
             fontWeight: FontWeight.w300,
@@ -499,7 +496,7 @@ ThemeData buildAppTheme(
             color: scheme.onSurface,
           ),
           headlineLarge: TextStyle(
-            fontFamily: 'Urbanist',
+            fontFamily: fontFamily,
             fontSize: 40,
             height: 1.04,
             fontWeight: FontWeight.w300,
@@ -507,7 +504,7 @@ ThemeData buildAppTheme(
             color: scheme.onSurface,
           ),
           headlineMedium: TextStyle(
-            fontFamily: 'Urbanist',
+            fontFamily: fontFamily,
             fontSize: 34,
             height: 1.08,
             fontWeight: FontWeight.w300,
@@ -515,7 +512,7 @@ ThemeData buildAppTheme(
             color: scheme.onSurface,
           ),
           titleLarge: TextStyle(
-            fontFamily: 'Urbanist',
+            fontFamily: fontFamily,
             fontSize: 21,
             height: 1.2,
             fontWeight: FontWeight.w500,
@@ -523,7 +520,7 @@ ThemeData buildAppTheme(
             color: scheme.onSurface,
           ),
           titleMedium: TextStyle(
-            fontFamily: 'Urbanist',
+            fontFamily: fontFamily,
             fontSize: 17,
             height: 1.25,
             fontWeight: FontWeight.w500,
@@ -531,7 +528,7 @@ ThemeData buildAppTheme(
             color: scheme.onSurface,
           ),
           bodyLarge: TextStyle(
-            fontFamily: 'Urbanist',
+            fontFamily: fontFamily,
             fontSize: 16,
             height: 1.5,
             fontWeight: FontWeight.w400,
@@ -539,7 +536,7 @@ ThemeData buildAppTheme(
             color: scheme.onSurface,
           ),
           bodyMedium: TextStyle(
-            fontFamily: 'Urbanist',
+            fontFamily: fontFamily,
             fontSize: 15,
             height: 1.45,
             fontWeight: FontWeight.w400,
@@ -547,7 +544,7 @@ ThemeData buildAppTheme(
             color: scheme.onSurface,
           ),
           labelLarge: TextStyle(
-            fontFamily: 'Urbanist',
+            fontFamily: fontFamily,
             fontSize: 15,
             height: 1.2,
             fontWeight: FontWeight.w600,

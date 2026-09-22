@@ -135,6 +135,10 @@ const _strings = {
         'This web app syncs with the server that hosts it.',
     'syncServerSaved': 'Sync server saved.',
     'appearance': 'Appearance',
+    'font': 'Font',
+    'useSystemFont': 'Use system font',
+    'useSystemFontDescription':
+        'Use the standard platform font instead of Urbanist.',
     'noteLayout': 'Notes layout',
     'cardsView': 'Cards',
     'listView': 'List',
@@ -404,6 +408,10 @@ const _strings = {
         'Diese Web-App synchronisiert mit dem Server, der sie hostet.',
     'syncServerSaved': 'Sync-Server gespeichert.',
     'appearance': 'Darstellung',
+    'font': 'Schriftart',
+    'useSystemFont': 'Systemschrift verwenden',
+    'useSystemFontDescription':
+        'Die Standardschrift der Plattform statt Urbanist verwenden.',
     'noteLayout': 'Notizansicht',
     'cardsView': 'Karten',
     'listView': 'Liste',

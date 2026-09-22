@@ -88,11 +88,13 @@ class _SafernotesAppState extends ConsumerState<SafernotesApp> {
           theme: buildAppTheme(
             Brightness.light,
             dynamicSeed: lightDynamic?.primary,
+            useSystemFont: preferences?.useSystemFont ?? false,
             platform: platform,
           ),
           darkTheme: buildAppTheme(
             Brightness.dark,
             dynamicSeed: darkDynamic?.primary,
+            useSystemFont: preferences?.useSystemFont ?? false,
             platform: platform,
           ),
           themeMode: preferences?.themeMode ?? ThemeMode.system,

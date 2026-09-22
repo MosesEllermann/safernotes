@@ -7,8 +7,39 @@ import 'package:safernotes_app/features/settings/settings_screen.dart';
 import 'package:safernotes_app/shared/app/sync_server_settings.dart';
 import 'package:safernotes_app/shared/models/session.dart';
 import 'package:safernotes_app/shared/providers.dart';
+import 'package:safernotes_app/shared/app/app_preferences.dart';
 
 void main() {
+  testWidgets('system font can be enabled and is retained after reload',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({'zk.pref.language': 'en'});
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        authControllerProvider.overrideWith(_SignedOutAuthController.new)
+      ],
+      child: const MaterialApp(home: SettingsScreen()),
+    ));
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const ValueKey('system-font-setting'));
+    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    final fresh = ProviderContainer();
+    addTearDown(fresh.dispose);
+    expect((await fresh.read(appPreferencesProvider.future)).useSystemFont,
+        isTrue);
+    await fresh
+        .read(appPreferencesProvider.notifier)
+        .setThemeMode(ThemeMode.dark);
+    expect(fresh.read(appPreferencesProvider).value!.useSystemFont, isTrue);
+    await fresh.read(appPreferencesProvider.notifier).setUseSystemFont(false);
+    expect(
+        (await SharedPreferences.getInstance()).getBool('zk.pref.system_font'),
+        isFalse);
+  });
+
   testWidgets('desktop settings exposes self-hosted sync configuration',
       (tester) async {
     tester.view.physicalSize = const Size(1200, 800);

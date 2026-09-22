@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:safernotes_app/features/settings/system_font_setting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:safernotes_app/shared/app/app_l10n.dart';
 import 'package:safernotes_app/shared/app/app_preferences.dart';
@@ -76,6 +77,8 @@ class SettingsSheet extends ConsumerWidget {
                   .read(appPreferencesProvider.notifier)
                   .setThemeMode(value.first),
             ),
+            const SizedBox(height: 18),
+            const SystemFontSetting(),
           ],
         ),
       ),
