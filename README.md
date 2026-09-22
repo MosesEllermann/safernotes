@@ -11,7 +11,6 @@ The backend stores encrypted envelopes for user-facing content. The frontend own
 - `docs/`: development notes, project context, roadmap.
 - `infra/`: Kubernetes/Helm starter manifests.
 - `.github/workflows/`: CI workflows.
-- `AGENTS.md`: compact context for future Codex/AI work.
 
 ## Choose a mode
 
@@ -22,7 +21,7 @@ Run the Flutter app and choose **Use offline only**. No account is created and t
 ### Self-host with Docker
 
 ```sh
-cp .env.selfhost.example .env
+python3 tools/init_selfhost.py
 docker compose up --build -d
 ```
 
@@ -71,12 +70,13 @@ cd frontend
 
 `frontend/tool/build_android_release.sh` builds the Play Store Android App
 Bundle at `frontend/build/app/outputs/bundle/release/app-release.aab` and
-requires `frontend/android/key.properties` for upload signing. Native users can
+requires your own signing configuration, selected with
+`SAFERNOTES_SIGNING_PROPERTIES`. Native users can
 enter their own self-hosted URL on the sign-in screen or under Settings. Set
 `API_BASE_URL=https://notes.example.com` only if a distributor wants to prefill
 a default; without it, the app has no default sync service.
-Run `frontend/tool/generate_android_upload_key.sh` once to create the local
-upload key and signing properties.
+Run `frontend/tool/generate_android_upload_key.sh` once to create an upload key
+and signing properties outside the checkout.
 
 ## Security Boundary
 
@@ -85,14 +85,19 @@ Do not submit plaintext note titles, bodies, checklist items, labels, attachment
 ## More Context
 
 - [Start here](docs/START_HERE.md)
-- [Project context](docs/PROJECT_CONTEXT.md)
 - [Development guide](docs/DEVELOPMENT.md)
 - [Self-hosting guide](docs/SELF_HOSTING.md)
 - [Roadmap](docs/ROADMAP.md)
 
-## Repository Note
+## Contributing
 
-This project folder is prepared for GitHub Desktop and can be published as one repository.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance and
+[SECURITY.md](SECURITY.md) for handling security reports and local credentials.
+
+Run `python3 tools/check_source.py` before publishing. To produce a source ZIP
+from the current checkout without Git history or ignored local files, run
+`python3 tools/export_source.py /path/outside/repository/safernotes-source.zip`.
+Review the export before distribution. This does not modify existing Git history.
 
 ## Open-source license
 

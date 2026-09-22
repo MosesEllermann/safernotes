@@ -6,7 +6,7 @@ FRONTEND_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 cd "$FRONTEND_DIR"
 
 API_BASE_URL="${API_BASE_URL:-}"
-KEY_PROPERTIES="$FRONTEND_DIR/android/key.properties"
+KEY_PROPERTIES="${SAFERNOTES_SIGNING_PROPERTIES:-$FRONTEND_DIR/android/key.properties}"
 
 case "$API_BASE_URL" in
   http://127.0.0.1:*|http://localhost:*|http://10.0.2.2:*|http://192.168.*)

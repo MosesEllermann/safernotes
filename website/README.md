@@ -1,42 +1,28 @@
 # Safernotes website
 
-Static marketing website for Safernotes. No framework, no build step, no dev
-server required.
+Static product website, installation guide and FAQ. No build step is required.
+Open `index.html` locally or serve this directory with a static web server.
 
-## Files
+Deploy the complete contents of this directory together, including `docs.html`
+and `styles.css`. Uploading only the homepage will leave documentation links
+broken or keep older layouts in use. After deployment, check `/docs.html` and
+`/docs.html#faq`, and invalidate cached HTML in your hosting/CDN if needed.
+The shared navigation remains visible on mobile; the footer links wrap within
+the viewport.
 
-- `index.html`: product landing page with desktop/mobile preview, security, offline use, and self-hosting
-- `downloads.html`: device-aware download recommendations for web, Android, and iOS
-- `docs.html`: installation, self-hosting, operations, troubleshooting, and Q&A
-- `downloads.js`: local device detection and platform tab switching
-- `assets/product-desktop.png`: real desktop product screenshot
-- `assets/product-mobile.png`: real mobile product screenshot
-- `privacy.html`: privacy information for offline and self-hosted operation
-- `impressum.html`: legal notice with operator and business details
-- `terms.html`: open-source software usage information
-- `styles.css`: shared responsive design system
+- `index.html`: product overview and download links.
+- `downloads.html`: platform availability and installation links.
+- `docs.html`: installation, Docker configuration, operations and FAQ.
+- `privacy.html`, `terms.html`, `impressum.html`: operator-neutral templates.
+- `styles.css`: shared responsive styles.
 
-## Preview
+Before publishing your own website, complete the operator information and adapt
+the privacy and usage pages to your installation. The landing page includes
+the supplied desktop and Android screenshots in `assets/product-desktop.png`
+and `assets/product-mobile.png`. Their visible note content is part of the
+published website; review replacement screenshots before distributing them.
 
-Open `index.html` directly in a browser:
-
-```text
-website/index.html
-```
-
-All links between the static pages are relative and work from the filesystem.
-
-## Legal To-dos
-
-Obtain a final legal review of the Impressum, privacy policy, and product terms
-before enabling live payments.
-
-The website links to the Google Play listing and also offers a direct Android
-APK at `/downloads/safernotes-android.apk`. The Play Store release workflow is
-handled from `frontend/` and produces an `.aab` for upload to Play Console.
-
-## Deployment
-
-The folder can be deployed as static files on providers such as Cloudflare Pages,
-Netlify, Vercel static hosting, S3-compatible object storage, or any ordinary
-web server.
+The Android APK is a separate release artifact. Place a signed release at
+`downloads/safernotes-android.apk` when deploying a site that offers direct APK
+downloads. The repository links identify the upstream project; forks can replace
+them with their own project links.

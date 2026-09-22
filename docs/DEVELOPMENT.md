@@ -2,7 +2,14 @@
 
 ## Backend
 
-Create/install the Python environment, then:
+Create the Python environment from the repository root:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -e './backend[dev]'
+```
+
+Start the backend:
 
 ```sh
 cd backend
@@ -49,25 +56,14 @@ cd frontend
 
 The Android release helper builds
 `build/app/outputs/bundle/release/app-release.aab` for Google Play. It requires
-an untracked `android/key.properties` file based on
-`android/key.properties.example`. Run `./tool/generate_android_upload_key.sh`
-once to create the local upload key interactively.
+your own signing properties based on `android/key.properties.example`.
+Run `./tool/generate_android_upload_key.sh` once to create the upload key
+interactively outside the checkout, then set `SAFERNOTES_SIGNING_PROPERTIES`
+to the generated properties path.
 
-## GitHub Push
+Alternatively, keep signing material outside the checkout and set
+`SAFERNOTES_SIGNING_PROPERTIES` to an absolute path to `key.properties`.
+Its `storeFile` path is relative to that file.
 
-From the repository root:
-
-```sh
-git init
-git add .
-git commit -m "Initial Safernotes prototype"
-git branch -M main
-git remote add origin git@github.com:YOUR_USER/YOUR_REPO.git
-git push -u origin main
-```
-
-Use HTTPS instead of SSH if you prefer:
-
-```sh
-git remote add origin https://github.com/YOUR_USER/YOUR_REPO.git
-```
+Development settings generate a temporary signing secret if `SECRET_KEY` is
+unset. Set your own persistent secret for sessions that must survive restarts.

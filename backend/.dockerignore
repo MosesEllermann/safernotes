@@ -7,3 +7,11 @@ media
 staticfiles
 *.egg-info
 *.pyc
+.env
+.env.*
+*.pem
+*.p12
+*.sql
+*.log
+*.sqlite3
+*.sqlite

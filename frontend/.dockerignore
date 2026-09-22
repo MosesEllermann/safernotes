@@ -1,4 +1,14 @@
 .dart_tool
+.dart-tool
+.env
+.env.*
+android/key.properties
+**/*.jks
+**/*.keystore
+**/*.pem
+**/*.p12
+**/*.log
+android/local.properties
 .idea
 build
 android/.gradle

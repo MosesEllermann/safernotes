@@ -5,8 +5,9 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 FRONTEND_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 cd "$FRONTEND_DIR"
 
-KEYSTORE_PATH="android/app/upload-keystore.jks"
-KEY_PROPERTIES_PATH="android/key.properties"
+SIGNING_DIRECTORY="${SAFERNOTES_SIGNING_DIRECTORY:-${XDG_DATA_HOME:-$HOME/.local/share}/safernotes/signing}"
+KEYSTORE_PATH="$SIGNING_DIRECTORY/upload-keystore.jks"
+KEY_PROPERTIES_PATH="$SIGNING_DIRECTORY/key.properties"
 KEY_ALIAS="${KEY_ALIAS:-upload}"
 KEY_DNAME="${KEY_DNAME:-CN=Safernotes Upload Key, O=Safernotes}"
 
@@ -36,6 +37,7 @@ if [ "${#STORE_PASSWORD}" -lt 6 ] || [ "${#KEY_PASSWORD}" -lt 6 ]; then
 fi
 
 umask 077
+mkdir -p "$SIGNING_DIRECTORY"
 
 keytool -genkeypair \
   -v \
@@ -52,11 +54,12 @@ keytool -genkeypair \
   echo "storePassword=$STORE_PASSWORD"
   echo "keyPassword=$KEY_PASSWORD"
   echo "keyAlias=$KEY_ALIAS"
-  echo "storeFile=app/upload-keystore.jks"
+  echo "storeFile=upload-keystore.jks"
 } > "$KEY_PROPERTIES_PATH"
 
 echo
 echo "Android upload signing is configured."
 echo "Keystore: $KEYSTORE_PATH"
 echo "Gradle properties: $KEY_PROPERTIES_PATH"
+echo "Set SAFERNOTES_SIGNING_PROPERTIES to the Gradle properties path for release builds."
 echo "Back up both the keystore and passwords securely."

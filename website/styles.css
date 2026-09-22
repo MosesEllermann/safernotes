@@ -307,17 +307,10 @@ dd {
   bottom: 0;
   overflow: hidden;
   width: 26%;
-  aspect-ratio: 896 / 2000;
   background: var(--dark);
   border: 6px solid #342832;
   border-radius: 30px;
   box-shadow: 0 24px 60px rgba(61, 37, 54, 0.26);
-}
-
-.mobile-shot img {
-  height: 100%;
-  object-fit: cover;
-  object-position: top;
 }
 
 .platform-status {
@@ -537,7 +530,7 @@ dd {
 
 .site-footer {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 2fr);
   align-items: center;
   gap: 40px;
   width: min(var(--max), calc(100% - 40px));
@@ -555,7 +548,16 @@ dd {
 .site-footer nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
+  min-width: 0;
+  width: 100%;
+  gap: 8px 24px;
+}
+
+.site-footer nav a {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 0;
+  overflow-wrap: anywhere;
 }
 
 /* Documentation */
@@ -1115,11 +1117,29 @@ a.download-option:hover h3 {
 
 @media (max-width: 800px) {
   .header-inner {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 8px;
+    padding: 12px 0;
   }
 
   .site-nav {
-    display: none;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .site-nav a {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 10px;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  .header-inner > .button {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .hero {
@@ -1182,8 +1202,15 @@ a.download-option:hover h3 {
   }
 
   .site-footer {
+    grid-template-columns: minmax(0, 1fr);
     justify-items: start;
     gap: 18px;
+  }
+
+  .docs-content > section,
+  .legal-content > section,
+  main > section[id] {
+    scroll-margin-top: 170px;
   }
 
   .platform-status {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+from secrets import token_hex
 
 import pytest
 from django.core import mail
@@ -166,7 +167,7 @@ def test_code_emails_have_production_safe_links_in_every_locale(
 
 
 @override_settings(
-    SECRET_KEY="unsafe-dev-secret-change-me",
+    SECRET_KEY="short-test-value",
     DATABASES={"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}},
     EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
     CORS_ALLOWED_ORIGINS=["http://localhost:3000"],
@@ -181,7 +182,7 @@ def test_production_configuration_check_flags_unsafe_launch_settings():
 
 
 @override_settings(
-    SECRET_KEY="production-secret",
+    SECRET_KEY=token_hex(32),
     DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "safernotes"}},
     EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
     EMAIL_HOST="",
@@ -199,7 +200,7 @@ def test_production_configuration_check_flags_incomplete_smtp_settings():
 
 
 @override_settings(
-    SECRET_KEY="production-secret",
+    SECRET_KEY=token_hex(32),
     DATABASES={"default": {"ENGINE": "django.db.backends.postgresql", "NAME": "safernotes"}},
     EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
     EMAIL_HOST="smtp.example.com",

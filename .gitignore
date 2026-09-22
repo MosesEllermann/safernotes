@@ -2,7 +2,6 @@
 .env
 .env.*
 !.env.example
-!.env.production.example
 !.env.selfhost.example
 .venv/
 venv/
@@ -21,6 +20,17 @@ backend/safernotes_backend.egg-info/
 
 # Flutter and Dart generated files
 frontend/.dart_tool/
+**/.dart-tool/
+**/key.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.sqlite
+*.sqlite3
+*.sql
+*.log
 frontend/.flutter-plugins
 frontend/.flutter-plugins-dependencies
 frontend/.pub-cache/
@@ -42,3 +52,6 @@ frontend/android/local.properties
 *.swo
 .vscode/
 .local/
+outputs/
+tmp/
+work/

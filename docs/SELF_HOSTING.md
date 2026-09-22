@@ -7,10 +7,10 @@ Safernotes supports two independent modes:
 
 ## Local Docker deployment
 
-Requirements: Docker Engine with Docker Compose v2.
+Requirements: Python 3, Docker Engine with Docker Compose v2.
 
 ```sh
-cp .env.selfhost.example .env
+python3 tools/init_selfhost.py
 docker compose up --build -d
 ```
 
@@ -32,12 +32,23 @@ Useful endpoints:
 
 At minimum:
 
-1. Replace `SECRET_KEY` and `MINIO_ROOT_PASSWORD` in `.env`.
+1. Keep the generated `SECRET_KEY`, `POSTGRES_PASSWORD`, and `MINIO_ROOT_PASSWORD`
+   private. The initializer creates independent random values and never overwrites
+   an existing `.env`. Compose refuses to start if any of them are missing.
 2. Set `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `APP_BASE_URL`, and `WEBSITE_BASE_URL` to your domain.
 3. Set `ATTACHMENT_ENDPOINT_URL` to the browser-reachable HTTPS MinIO/S3 endpoint.
 4. Put the web service and object storage behind a TLS reverse proxy.
 5. Back up the PostgreSQL and MinIO volumes.
 6. Configure the `EMAIL_*` values in `.env` if registration verification and recovery email should leave the server. The default writes email to container logs.
+
+PostgreSQL and Redis are available only inside the Docker network. The API and
+MinIO administration console bind to loopback. Restrict the MinIO S3 port at your
+firewall and expose it through your HTTPS reverse proxy when using attachments.
+
+For an existing database, set `POSTGRES_PASSWORD` to its current password first.
+Changing this environment variable does not rotate a password stored in an
+existing PostgreSQL volume. Back up data and rotate the database role password
+deliberately; do not delete volumes to make an update start.
 
 The backend stores encrypted note envelopes. Plaintext note titles, bodies, checklist items, labels, and attachment contents remain client-side.
 

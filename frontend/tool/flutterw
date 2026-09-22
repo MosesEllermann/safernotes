@@ -5,24 +5,20 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 FRONTEND_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$FRONTEND_DIR/.." && pwd)
 
-if command -v flutter >/dev/null 2>&1; then
+if [ -n "${FLUTTER_SDK:-}" ] && [ -x "$FLUTTER_SDK/bin/flutter" ]; then
+  FLUTTER_BIN="$FLUTTER_SDK/bin/flutter"
+elif command -v flutter >/dev/null 2>&1; then
   FLUTTER_BIN="flutter"
-elif [ -x "/Users/moses/Dev/flutter/bin/flutter" ]; then
-  FLUTTER_BIN="/Users/moses/Dev/flutter/bin/flutter"
 elif [ -x "$REPO_ROOT/../flutter-sdk/bin/flutter" ]; then
   FLUTTER_BIN="$REPO_ROOT/../flutter-sdk/bin/flutter"
-elif [ -x "/Users/moses/Documents/Codex/flutter-sdk/bin/flutter" ]; then
-  FLUTTER_BIN="/Users/moses/Documents/Codex/flutter-sdk/bin/flutter"
 else
   echo "Flutter was not found. Install Flutter or add it to PATH." >&2
   exit 127
 fi
 
-export HOME="${FLUTTER_HOME:-$REPO_ROOT/.local/flutter-home}"
-export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export PUB_CACHE="${PUB_CACHE:-$REPO_ROOT/.local/flutter-pub-cache}"
 export FLUTTER_SUPPRESS_ANALYTICS=true
 
-mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$PUB_CACHE"
+mkdir -p "$PUB_CACHE"
 
 exec "$FLUTTER_BIN" "$@"

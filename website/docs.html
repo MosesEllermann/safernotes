@@ -13,7 +13,7 @@
     <link rel="icon" href="./assets/favicon-32.png" sizes="32x32" type="image/png" />
     <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
     <link rel="manifest" href="./site.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=docs-1" />
+    <link rel="stylesheet" href="./styles.css?v=mobile-nav-2" />
   </head>
   <body class="docs-page">
     <header class="site-header">
@@ -137,14 +137,14 @@
             <p class="section-label">3 · Self-Hosting</p>
             <h2>Mit Docker installieren</h2>
             <p>
-              Du brauchst Git, Docker Engine und Docker Compose v2. Der Stack
+              Du brauchst Git, Python 3, Docker Engine und Docker Compose v2. Der Stack
               enthält die Web-App, Django-API, PostgreSQL, Redis und MinIO.
             </p>
 
             <h3>Lokal testen</h3>
             <pre><code>git clone https://github.com/MosesEllermann/Notizen-App.git
 cd Notizen-App
-cp .env.selfhost.example .env
+python3 tools/init_selfhost.py
 docker compose up --build -d</code></pre>
             <p>
               Öffne danach <code>http://localhost:8080</code>. Der erste Build
@@ -155,8 +155,8 @@ docker compose up --build -d</code></pre>
             <h3>Öffentlich unter deiner Domain</h3>
             <ol class="step-list">
               <li>
-                <strong>Secrets ersetzen</strong>
-                <span>Setze in <code>.env</code> einen langen zufälligen <code>SECRET_KEY</code> und ein starkes <code>MINIO_ROOT_PASSWORD</code>.</span>
+                <strong>Zugangsdaten erzeugen und aufbewahren</strong>
+                <span>Das Setup erzeugt <code>SECRET_KEY</code>, <code>POSTGRES_PASSWORD</code> und <code>MINIO_ROOT_PASSWORD</code> zufällig und speichert sie nur in deiner privaten <code>.env</code>. Eine bestehende Datei wird nicht überschrieben.</span>
               </li>
               <li>
                 <strong>Eigene URL eintragen</strong>
@@ -172,6 +172,9 @@ docker compose up --build -d</code></pre>
               </li>
             </ol>
 
+            <p>PostgreSQL ist ausschließlich im Docker-Netz erreichbar. Die MinIO-Verwaltung
+              bindet nur an localhost. Begrenze den S3-Port per Firewall und leite
+              ihn für öffentlichen Zugriff über deinen HTTPS-Proxy weiter.</p>
             <h3>Optional: E-Mail über SMTP</h3>
             <p>
               SMTP-Schlüssel gehören ausschließlich in deine lokale
@@ -307,7 +310,8 @@ docker compose ps</code></pre>
       <p>Private Notizen, sicher synchronisiert.</p>
       <nav aria-label="Footer Navigation">
         <a href="./downloads.html">Downloads</a>
-        <a href="./docs.html">Doku &amp; Q&amp;A</a>
+        <a href="./docs.html">Dokumentation</a>
+        <a href="./docs.html#faq">Q&amp;A</a>
         <a href="https://github.com/MosesEllermann/Notizen-App">Quellcode</a>
         <a href="./terms.html">Nutzungsbedingungen</a>
         <a href="./privacy.html">Datenschutz</a>
