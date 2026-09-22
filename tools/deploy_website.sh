@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-for required in SPANEL_HOST SPANEL_USER SPANEL_SSH_KEY SPANEL_LANDING_PATH SPANEL_KNOWN_HOSTS; do
+for required in SPANEL_HOST SPANEL_USER SPANEL_SSH_KEY SPANEL_LANDING_PATH; do
   if [[ -z "${!required:-}" ]]; then
     echo "::error::Missing GitHub secret: $required"
     exit 1
@@ -44,9 +44,18 @@ umask 077
 deploy_tmp="$(mktemp -d)"
 trap 'rm -f "$deploy_tmp/key" "$deploy_tmp/known_hosts"; rmdir "$deploy_tmp"' EXIT
 printf '%s\n' "$SPANEL_SSH_KEY" > "$deploy_tmp/key"
-printf '%s\n' "$SPANEL_KNOWN_HOSTS" > "$deploy_tmp/known_hosts"
+if [[ -n "${SPANEL_KNOWN_HOSTS:-}" ]]; then
+  printf '%s\n' "$SPANEL_KNOWN_HOSTS" > "$deploy_tmp/known_hosts"
+else
+  # Preserve the original deployment setup when no pinned host key is supplied.
+  # This trusts the key returned by the server without independent verification.
+  if ! ssh-keyscan -T 15 -p "$deploy_port" -H "$SPANEL_HOST" > "$deploy_tmp/known_hosts" ||
+     [[ ! -s "$deploy_tmp/known_hosts" ]]; then
+    echo '::error::Could not retrieve the SSH host key; nothing will be uploaded.'
+    exit 1
+  fi
+fi
 
-# Use a pinned host key, never an unverified ssh-keyscan result during deployment.
 export RSYNC_RSH="ssh -p $deploy_port -i '$deploy_tmp/key' -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile='$deploy_tmp/known_hosts' -o ConnectTimeout=20"
 
 # No --delete: unrelated downloads, .htaccess, ACME files and hosted apps stay intact.

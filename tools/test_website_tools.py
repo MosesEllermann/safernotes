@@ -57,6 +57,58 @@ class WebsiteToolsTest(unittest.TestCase):
                 )
                 self.assertNotEqual(rejected.returncode, 0)
 
+    def test_optional_host_key_and_scan_failures(self):
+        for pinned, scan_result, scan_status, port, succeeds in [
+            (None, "test-host-key", "0", None, True),
+            ("", "test-host-key", "0", "2222", True),
+            ("pinned-host-key", "", "1", None, True),
+            (None, "", "0", None, False),
+            (None, "test-host-key", "1", None, False),
+        ]:
+            with self.subTest(pinned=pinned, result=scan_result, status=scan_status):
+                with tempfile.TemporaryDirectory() as directory:
+                    temporary = Path(directory)
+                    scanner = temporary / "ssh-keyscan"
+                    scanner.write_text(
+                        '#!/bin/sh\n'
+                        'printf "%s\\n" "$@" > "$SCAN_ARGUMENTS"\n'
+                        'printf "%s" "$SCAN_RESULT"\n'
+                        'exit "$SCAN_STATUS"\n'
+                    )
+                    scanner.chmod(0o700)
+                    uploader = temporary / "rsync"
+                    uploader.write_text('#!/bin/sh\necho UPLOAD_REACHED\n')
+                    uploader.chmod(0o700)
+                    arguments = temporary / "scan-arguments"
+                    environment = {
+                        "PATH": f"{directory}:{os.environ['PATH']}",
+                        "TMPDIR": directory,
+                        "SPANEL_HOST": "host.example.test",
+                        "SPANEL_USER": "website",
+                        "SPANEL_LANDING_PATH": "/srv/website",
+                        "SPANEL_SSH_KEY": "test-fixture-not-a-key",
+                        "SCAN_RESULT": scan_result,
+                        "SCAN_STATUS": scan_status,
+                        "SCAN_ARGUMENTS": str(arguments),
+                    }
+                    if pinned is not None:
+                        environment["SPANEL_KNOWN_HOSTS"] = pinned
+                    if port is not None:
+                        environment["SPANEL_PORT"] = port
+                    result = subprocess.run(
+                        ["bash", str(ROOT / "tools/deploy_website.sh")],
+                        env=environment, capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+                    self.assertEqual("UPLOAD_REACHED" in result.stdout, succeeds)
+                    if pinned:
+                        self.assertFalse(arguments.exists())
+                    else:
+                        self.assertEqual(arguments.read_text().splitlines(), [
+                            "-T", "15", "-p", port or "22", "-H", "host.example.test",
+                        ])
+                    self.assertFalse(any(path.is_dir() for path in temporary.iterdir()))
+
     def test_apk_upload_is_explicit_and_requires_a_built_artifact(self):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)

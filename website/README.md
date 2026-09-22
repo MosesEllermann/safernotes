@@ -25,10 +25,12 @@ Configure repository secrets or secrets in the `production` environment:
 - `SPANEL_HOST`, `SPANEL_USER`, `SPANEL_SSH_KEY`: the website SSH account.
 - `SPANEL_PORT`: optional; defaults to 22.
 - `SPANEL_LANDING_PATH`: the absolute document root for the homepage.
-- `SPANEL_KNOWN_HOSTS`: the verified SSH host-key entry in OpenSSH known_hosts
+- `SPANEL_KNOWN_HOSTS`: optional verified SSH host-key entry in OpenSSH known_hosts
   format, with `[hostname]:port` for a non-default port. Obtain the host key
   from the hosting provider or verify its fingerprint through their trusted
-  console before saving it. This is required to authenticate the server.
+  console before saving it. If absent or empty, the upload uses `ssh-keyscan`
+  automatically, as in the original deployment. That fallback does not
+  independently verify the server identity; a pinned entry is more secure.
 - `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEY_PROPERTIES_BASE64`: the existing
   base64-encoded Android release keystore and signing properties. Keep the same
   signing key for updates to existing direct-download installations.
