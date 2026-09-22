@@ -2073,7 +2073,9 @@ class _ChecklistRowState extends State<_ChecklistRow> {
       _emptyDeletePending = false;
       if (!mounted ||
           !_focusNode.hasFocus ||
-          ChecklistInputFormatter.itemText(_controller.text).isNotEmpty) return;
+          ChecklistInputFormatter.itemText(_controller.text).isNotEmpty) {
+        return;
+      }
       widget.onDeleteEmpty();
     });
   }
