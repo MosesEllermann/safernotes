@@ -23,10 +23,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:?Generate .env with python3 tools/init_selfhost.py}
       DATABASE_URL: postgres://safernotes:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/safernotes
       REDIS_URL: redis://redis:6379/0
-      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,api}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
-      WEBSITE_BASE_URL: ${WEBSITE_BASE_URL:-http://localhost:8080}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
       EMAIL_HOST: ${EMAIL_HOST:-}
       EMAIL_PORT: ${EMAIL_PORT:-25}
@@ -37,12 +34,10 @@ services:
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Safernotes <noreply@localhost>}
       STORAGE_QUOTA_BYTES: ${STORAGE_QUOTA_BYTES:-0}
       ATTACHMENT_BUCKET: ${ATTACHMENT_BUCKET:-safernotes-local}
-      ATTACHMENT_ENDPOINT_URL: ${ATTACHMENT_ENDPOINT_URL:-http://localhost:9000}
+      ATTACHMENT_ENDPOINT_URL: ${ATTACHMENT_ENDPOINT_URL:-http://minio:9000}
       ATTACHMENT_REGION: ${ATTACHMENT_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
-    ports:
-      - "127.0.0.1:${SAFERNOTES_API_PORT:-8000}:8000"
+      AWS_ACCESS_KEY_ID: ${ATTACHMENT_ACCESS_KEY_ID:-${MINIO_ROOT_USER:-minio}}
+      AWS_SECRET_ACCESS_KEY: ${ATTACHMENT_SECRET_ACCESS_KEY:-${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -88,9 +83,6 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
-    ports:
-      - "9000:9000"
-      - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
 

@@ -6,7 +6,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from rest_framework import decorators, exceptions, response, viewsets
+from rest_framework import decorators, exceptions, mixins, permissions, response, viewsets
 
 from apps.attachments.models import Attachment, AttachmentUploadState
 from apps.attachments.quota import (
@@ -20,12 +20,24 @@ from apps.attachments.serializers import (
     AttachmentSerializer,
 )
 from apps.attachments.storage import presigned_download_target, presigned_upload_target
+from apps.attachments.transfer import (
+    TransferAuthentication,
+    store_ciphertext,
+    stream_ciphertext,
+    transfer_target,
+)
 from apps.audit.events import record_audit_event
 from apps.core.abuse import increment_metadata_limit
 from apps.notes.permissions import can_write_note
 
 
-class AttachmentViewSet(viewsets.ModelViewSet):
+class AttachmentViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
     serializer_class = AttachmentSerializer
 
     def get_queryset(self):
@@ -91,19 +103,29 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         attachment = serializer.instance
-        target = presigned_upload_target(attachment.object_key, attachment.ciphertext_size)
+        target = (
+            transfer_target(attachment, request.user, "PUT")
+            if settings.ATTACHMENT_PROXY_ENABLED
+            else presigned_upload_target(attachment.object_key, attachment.ciphertext_size)
+        )
         data = AttachmentSerializer(attachment, context={"request": request}).data
         data["upload"] = target.__dict__
-        return response.Response(data, status=201)
+        return response.Response(data, status=201, headers={"Cache-Control": "no-store"})
 
     @decorators.action(detail=True, methods=["put"])
     @transaction.atomic
     def complete(self, request, pk=None):
         attachment = self.get_object()
+        attachment = Attachment.objects.select_for_update().get(pk=attachment.pk)
         if not can_write_note(request.user, attachment.note):
             raise exceptions.PermissionDenied(
                 "Viewer role cannot complete encrypted attachment uploads."
             )
+        if (
+            settings.ATTACHMENT_PROXY_ENABLED
+            and attachment.upload_state != AttachmentUploadState.UPLOADED
+        ):
+            raise exceptions.ValidationError("Upload the encrypted content before completing it.")
         serializer = AttachmentCompleteSerializer(
             data=request.data, context={"attachment": attachment}
         )
@@ -132,8 +154,44 @@ class AttachmentViewSet(viewsets.ModelViewSet):
         attachment = self.get_object()
         if attachment.upload_state != AttachmentUploadState.COMPLETE:
             raise exceptions.ValidationError("Attachment is not available for download.")
-        target = presigned_download_target(attachment.object_key)
-        return response.Response({"encrypted": True, "download": target.__dict__})
+        target = (
+            transfer_target(attachment, request.user, "GET")
+            if settings.ATTACHMENT_PROXY_ENABLED
+            else presigned_download_target(attachment.object_key)
+        )
+        return response.Response(
+            {"encrypted": True, "download": target.__dict__}, headers={"Cache-Control": "no-store"}
+        )
+
+    @decorators.action(
+        detail=True,
+        methods=["get", "put"],
+        authentication_classes=[TransferAuthentication],
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def content(self, request, pk=None):
+        attachment = self.get_object()
+        if request.method == "GET":
+            if attachment.upload_state != AttachmentUploadState.COMPLETE:
+                raise exceptions.ValidationError("Attachment is not available for download.")
+            return stream_ciphertext(attachment)
+        with transaction.atomic():
+            attachment = Attachment.objects.select_for_update().get(pk=attachment.pk)
+            if not can_write_note(request.user, attachment.note):
+                raise exceptions.PermissionDenied(
+                    "Viewer role cannot upload encrypted attachments."
+                )
+            if attachment.upload_state not in {
+                AttachmentUploadState.INITIATED,
+                AttachmentUploadState.UPLOADED,
+            }:
+                raise exceptions.ValidationError("Attachment is not available for upload.")
+            if not attachment.upload_expires_at or attachment.upload_expires_at < timezone.now():
+                raise exceptions.ValidationError("Attachment upload target has expired.")
+            store_ciphertext(request, attachment)
+            attachment.upload_state = AttachmentUploadState.UPLOADED
+            attachment.save(update_fields=["upload_state", "updated_at"])
+        return response.Response(status=204)
 
     @decorators.action(detail=True, methods=["post"])
     def abort(self, request, pk=None):

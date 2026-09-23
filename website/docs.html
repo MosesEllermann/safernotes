@@ -45,7 +45,8 @@
         <h1 id="docs-title">Installation, Betrieb und Antworten.</h1>
         <p>
           Nutze Safernotes nur auf deinem Gerät oder betreibe Web-App und
-          Synchronisierung unter deiner eigenen URL.
+          Synchronisierung unter deiner eigenen URL. Eine Adresse für Web-App,
+          Android-Synchronisierung und Anhänge – der Speicher ist bereits dabei.
         </p>
         <div class="docs-hero-actions">
           <a class="button button-primary" href="#start">Installation starten</a>
@@ -141,40 +142,66 @@
               enthält die Web-App, Django-API, PostgreSQL, Redis und MinIO.
             </p>
 
-            <h3>Lokal testen</h3>
+            <h3>1. Quellcode herunterladen</h3>
             <pre><code>git clone https://github.com/MosesEllermann/Notizen-App.git
-cd Notizen-App
-python3 tools/init_selfhost.py
+cd Notizen-App</code></pre>
+
+            <h3>2. Deine URL festlegen und starten</h3>
+            <p>Ersetze die Beispieladresse durch deine eigene HTTPS-Adresse:</p>
+            <pre><code>python3 tools/init_selfhost.py --url https://notizen.example.com
 docker compose up --build -d</code></pre>
             <p>
-              Öffne danach <code>http://localhost:8080</code>. Der erste Build
-              kann einige Minuten dauern. Die Datenbankmigrationen und der
-              verschlüsselte Attachment-Bucket werden automatisch angelegt.
+              Das Setup speichert die Adresse als <code>PUBLIC_URL</code> und erzeugt
+              alle internen Geheimnisse automatisch in deiner privaten <code>.env</code>.
+              Erlaubte Hosts, Browser-Zugriffe und App-Links werden aus dieser einen
+              Adresse abgeleitet. Beim ersten Start werden Datenbankmigrationen und
+              der Speicherbereich für verschlüsselte Anhänge automatisch angelegt.
+              Der erste Build kann einige Minuten dauern.
             </p>
+            <div class="docs-callout">
+              <strong>Nur bei der ersten Einrichtung ausführen</strong>
+              <p>Eine vorhandene <code>.env</code> wird nicht überschrieben.
+                Behalte die erzeugten Geheimnisse auch bei Updates und sichere die Datei
+                privat. Für einen bestehenden Server folge <a class="inline-link" href="#operate">Updates &amp; Backups</a>.</p>
+            </div>
 
-            <h3>Öffentlich unter deiner Domain</h3>
-            <ol class="step-list">
-              <li>
-                <strong>Zugangsdaten erzeugen und aufbewahren</strong>
-                <span>Das Setup erzeugt <code>SECRET_KEY</code>, <code>POSTGRES_PASSWORD</code> und <code>MINIO_ROOT_PASSWORD</code> zufällig und speichert sie nur in deiner privaten <code>.env</code>. Eine bestehende Datei wird nicht überschrieben.</span>
-              </li>
-              <li>
-                <strong>Eigene URL eintragen</strong>
-                <span>Setze <code>ALLOWED_HOSTS</code>, <code>CORS_ALLOWED_ORIGINS</code>, <code>APP_BASE_URL</code> und <code>WEBSITE_BASE_URL</code> auf deine Domain.</span>
-              </li>
-              <li>
-                <strong>HTTPS bereitstellen</strong>
-                <span>Leite die Web-App über einen Reverse Proxy mit gültigem TLS-Zertifikat weiter. Verwende für öffentliche Installationen kein unverschlüsseltes HTTP.</span>
-              </li>
-              <li>
-                <strong>Objektspeicher erreichbar machen</strong>
-                <span>Setze <code>ATTACHMENT_ENDPOINT_URL</code> auf den vom Browser erreichbaren HTTPS-Endpunkt deines MinIO- oder S3-Speichers.</span>
-              </li>
-            </ol>
-
-            <p>PostgreSQL ist ausschließlich im Docker-Netz erreichbar. Die MinIO-Verwaltung
-              bindet nur an localhost. Begrenze den S3-Port per Firewall und leite
-              ihn für öffentlichen Zugriff über deinen HTTPS-Proxy weiter.</p>
+            <h3>3. Domain und HTTPS verbinden</h3>
+            <p>
+              Richte deine Domain auf deinen Server und leite sie über einen
+              HTTPS-Reverse-Proxy mit gültigem TLS-Zertifikat an den Web-Port
+              <code>8080</code> weiter. Der Proxy muss den ursprünglichen Host und
+              <code>X-Forwarded-Proto: https</code> weitergeben und Uploads bis
+              100 MiB erlauben. Rufe danach deine eigene URL im Browser auf.
+            </p>
+            <p>
+              Nur die Web-App veröffentlicht einen Port. API, PostgreSQL, Redis
+              und MinIO bleiben im Docker-Netz. Anhänge laufen ebenfalls über
+              deine App-Adresse: kein zusätzlicher Speicher-Port, keine zweite
+              Domain und kein Cloud-Konto. Domain, HTTPS und Backups bleiben
+              Aufgaben des Serverbetreibers.
+            </p>
+            <div class="faq-list">
+            <details>
+              <summary>Erst einmal lokal ausprobieren</summary>
+              <p>Führe nach dem Herunterladen des Quellcodes diese Befehle
+                <strong>statt</strong> der Einrichtung mit eigener Domain aus:</p>
+              <pre><code>python3 tools/init_selfhost.py
+docker compose up --build -d</code></pre>
+              <p>Öffne <code>http://localhost:8080</code> auf demselben Rechner.
+                Für den Zugriff vom Smartphone brauchst du eine von dort erreichbare
+                HTTPS-Adresse. Stelle dafür <code>PUBLIC_URL</code> in der bestehenden
+                <code>.env</code> um und starte den Stack erneut; die Geheimnisse bleiben gleich.</p>
+            </details>
+            <details>
+              <summary>Optional: vorhandenen S3-Speicher verwenden</summary>
+              <p>Standardmäßig speichert MinIO die Anhänge in einem Docker-Volume
+                auf deinem Server. Nur wenn du bewusst einen anderen S3-Speicher
+                einsetzen möchtest, sind zusätzliche Speicher-Zugangsdaten nötig.
+                Auch dann verwenden App und Browser weiterhin nur deine App-URL.</p>
+              <p>Die erweiterten Einstellungen und Hinweise zum Umzug bestehender
+                Anhänge stehen im <a class="inline-link" href="https://github.com/MosesEllermann/Notizen-App/blob/main/docs/SELF_HOSTING.md">Self-Hosting-Handbuch</a>.</p>
+            </details>
+            </div>
             <h3>Optional: E-Mail über SMTP</h3>
             <p>
               SMTP-Schlüssel gehören ausschließlich in deine lokale
@@ -196,7 +223,7 @@ docker compose up --build -d</code></pre>
             <ol class="step-list">
               <li>
                 <strong>Safernotes öffnen</strong>
-                <span>Trage auf dem Anmeldebildschirm deine vollständige Server-URL ein, zum Beispiel <code>https://notes.example.com</code>.</span>
+                <span>Trage auf dem Anmeldebildschirm dieselbe vollständige URL wie bei <code>PUBLIC_URL</code> ein, zum Beispiel <code>https://notizen.example.com</code>.</span>
               </li>
               <li>
                 <strong>Konto anlegen oder anmelden</strong>
@@ -224,6 +251,19 @@ docker compose ps</code></pre>
               Lies vor einem Update die Versionshinweise und sichere deine
               Daten. Datenbankmigrationen laufen beim Start des API-Containers.
             </p>
+
+            <h3>Von einer älteren Docker-Konfiguration wechseln</h3>
+            <p>Behalte deine bestehende <code>.env</code>, alle Passwörter und
+              Volumes. Ergänze oder ändere für den mitgelieferten MinIO-Speicher
+              nur diese beiden Werte:</p>
+            <pre><code>PUBLIC_URL=https://notizen.example.com
+ATTACHMENT_ENDPOINT_URL=http://minio:9000</code></pre>
+            <p>Die zweite Zeile ist eine interne Docker-Adresse, keine zusätzliche
+              öffentliche URL. Bei Neuinstallationen ist sie bereits voreingestellt.
+              Starte danach <code>docker compose up --build -d</code>.
+              Erzeuge keine neuen Passwörter und lösche keine Volumes, um ein
+              Startproblem zu umgehen. Wer externen S3-Speicher nutzt, behält
+              stattdessen dessen Endpunkt und Zugangsdaten bei.</p>
 
             <h3>PostgreSQL sichern</h3>
             <pre><code>docker compose exec -T postgres \
@@ -253,15 +293,19 @@ docker compose ps</code></pre>
               </div>
               <div>
                 <strong>Healthcheck</strong>
-                <pre><code>curl https://notes.example.com/api/v1/health/live</code></pre>
+                <pre><code>curl https://notizen.example.com/api/v1/health/live</code></pre>
               </div>
             </div>
             <ul>
               <li><strong>Server nicht erreichbar:</strong> Prüfe HTTPS, DNS, Firewall und ob die URL ohne <code>/api</code> gespeichert wurde.</li>
+              <li><strong>Setup meldet eine vorhandene Datei:</strong> Das schützt deine Zugangsdaten. Bearbeite bei Bedarf <code>PUBLIC_URL</code> in der bestehenden <code>.env</code>; lösche die Datei nicht.</li>
               <li><strong>Registrierungs-E-Mail fehlt:</strong> Prüfe die <code>EMAIL_*</code>-Werte und das API-Log. Bei der Console-Konfiguration steht der Inhalt nur im Log.</li>
-              <li><strong>Anhänge schlagen fehl:</strong> Prüfe <code>ATTACHMENT_ENDPOINT_URL</code>, Zertifikat, MinIO-Zugangsdaten und Browser-Erreichbarkeit.</li>
+              <li><strong>Anhänge schlagen fehl:</strong> Prüfe den Zustand der API- und MinIO-Container, freien Speicherplatz und das Upload-Limit deines HTTPS-Proxys. Beim Standard-Setup ist kein öffentlicher Speicher-Port nötig.</li>
               <li><strong>Android-Erinnerungen fehlen:</strong> Erlaube Benachrichtigungen, kontrolliere Datum und Uhrzeit und entferne Akku-Beschränkungen für Safernotes.</li>
             </ul>
+            <p>Veröffentliche weder deine <code>.env</code> noch ungeprüfte Logs.
+              Ohne SMTP können Verifizierungs- und Wiederherstellungslinks im
+              API-Log stehen. Auch temporäre Anhang-Links gehören nicht in öffentliche Fehlerberichte.</p>
           </section>
 
           <section id="faq">
@@ -274,7 +318,53 @@ docker compose ps</code></pre>
               </details>
               <details>
                 <summary>Kann ich eine beliebige Safernotes-URL in der App verwenden?</summary>
-                <p>Ja. Trage die Basis-URL deiner eigenen Installation ein, beispielsweise <code>https://notes.example.com</code>. Die App enthält keine verpflichtende Anbieter-URL.</p>
+                <p>Ja. Trage die Basis-URL deiner eigenen Installation ein, beispielsweise <code>https://notizen.example.com</code>. Die App enthält keine verpflichtende Anbieter-URL.</p>
+              </details>
+              <details>
+                <summary>Brauche ich mehrere Domains oder URLs?</summary>
+                <p>Nein. Du konfigurierst nur <code>PUBLIC_URL</code>. Web-App,
+                  Android-Synchronisierung und Anhang-Transfers verwenden diese
+                  Adresse. Die internen Host-, Browser- und Link-Einstellungen
+                  werden automatisch daraus abgeleitet.</p>
+              </details>
+              <details>
+                <summary>Muss ich API-Keys oder Passwörter selbst erstellen?</summary>
+                <p>Nein. <code>tools/init_selfhost.py</code> erzeugt die internen
+                  Geheimnisse automatisch und speichert sie in deiner privaten
+                  <code>.env</code>. Für die Standardinstallation brauchst du kein
+                  externes Konto und keine API-Keys. Die Geheimnisse bleiben bei
+                  Updates erhalten und gehören in dein privates Backup.</p>
+              </details>
+              <details>
+                <summary>Wofür sind die drei automatisch erzeugten Geheimnisse?</summary>
+                <p><code>SECRET_KEY</code> sichert serverinterne Funktionen ab;
+                  er ist nicht der Entschlüsselungsschlüssel deiner Notizen.
+                  <code>POSTGRES_PASSWORD</code> schützt den Datenbankzugang und
+                  <code>MINIO_ROOT_PASSWORD</code> den mitgelieferten Dateispeicher.
+                  Du musst sie normalerweise nicht bearbeiten.</p>
+              </details>
+              <details>
+                <summary>Ist der Speicher bereits enthalten?</summary>
+                <p>Ja. PostgreSQL speichert unter anderem verschlüsselte Notizen
+                  und Kontodaten; MinIO speichert verschlüsselte Anhänge in einem
+                  Docker-Volume auf deinem Server. Kein zusätzlicher Cloudspeicher
+                  ist nötig. Ein externer S3-Speicher ist eine optionale Alternative.</p>
+              </details>
+              <details>
+                <summary>Muss ich Ports für Datenbank oder MinIO freigeben?</summary>
+                <p>Nein. Diese Dienste bleiben im Docker-Netz und veröffentlichen
+                  keine eigenen Ports auf dem Server. Nur der Web-Port wird an
+                  deinen HTTPS-Proxy angebunden. Eine gesonderte MinIO-Domain
+                  oder öffentliche Verwaltungsoberfläche brauchst du nicht.</p>
+              </details>
+              <details>
+                <summary>Was muss ich beim Self-Hosting noch selbst einrichten?</summary>
+                <p>Du benötigst einen Server mit Docker, eine erreichbare Domain,
+                  einen HTTPS-Reverse-Proxy und regelmäßige Backups. Das Setup
+                  übernimmt interne Geheimnisse und Datenbankmigrationen, aber
+                  keine Domainregistrierung oder automatische Datensicherung.
+                  SMTP ist optional; ohne SMTP werden E-Mails nur in die
+                  privaten Container-Logs geschrieben.</p>
               </details>
               <details>
                 <summary>Kann der Server meine Notizen lesen?</summary>

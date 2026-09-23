@@ -1,4 +1,5 @@
 import os
+from html.parser import HTMLParser
 from pathlib import Path
 import subprocess
 import shutil
@@ -10,6 +11,30 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WebsiteToolsTest(unittest.TestCase):
+    def test_homepage_hero_has_only_download_and_documentation_links(self):
+        class HeroLinks(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.depth = 0
+                self.links = []
+
+            def handle_starttag(self, tag, attrs):
+                attributes = dict(attrs)
+                if tag == "div" and (
+                    self.depth or "hero-actions" in attributes.get("class", "").split()
+                ):
+                    self.depth += 1
+                if tag == "a" and self.depth:
+                    self.links.append(attributes.get("href"))
+
+            def handle_endtag(self, tag):
+                if tag == "div" and self.depth:
+                    self.depth -= 1
+
+        page = HeroLinks()
+        page.feed((ROOT / "website/index.html").read_text())
+        self.assertEqual(page.links, ["./downloads.html", "./docs.html"])
+
     def test_website_links(self):
         subprocess.run(["python3", str(ROOT / "tools/check_website.py")], check=True)
 

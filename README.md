@@ -8,7 +8,7 @@ The backend stores encrypted envelopes for user-facing content. The frontend own
 
 - `backend/`: Django REST API.
 - `frontend/`: Flutter app.
-- `docs/`: development notes, project context, roadmap.
+- `docs/`: development, self-hosting and release documentation.
 - `infra/`: Kubernetes/Helm starter manifests.
 - `.github/workflows/`: CI workflows.
 
@@ -26,6 +26,12 @@ docker compose up --build -d
 ```
 
 Open `http://localhost:8080`. See [the self-hosting guide](docs/SELF_HOSTING.md) before exposing the stack publicly.
+
+For a new public installation use `python3 tools/init_selfhost.py --url https://notes.example.com`
+instead. Internal secrets are generated automatically; only the web port needs an
+HTTPS reverse proxy. Notes and attachments share that one URL. For an existing
+installation, retain `.env` and its credentials and follow the upgrade section in
+the guide rather than regenerating secrets.
 
 ## Run for development
 

@@ -59,3 +59,27 @@ jobs:
       - run: python3 tools/init_selfhost.py
       - run: docker compose config
       - run: docker compose build
+      - run: docker compose up -d --wait --wait-timeout 180
+      - name: Check the single web endpoint and internal attachment storage
+        run: |
+          curl --fail --silent --show-error http://localhost:8080/ --output /dev/null
+          curl --fail --silent --show-error http://localhost:8080/api/v1/health/live
+          docker compose exec -T api python manage.py shell <<'PY'
+          import uuid
+          from apps.attachments.storage import configured_bucket, s3_client
+          client = s3_client()
+          key = 'ci-smoke/' + str(uuid.uuid4())
+          try:
+              client.put_object(Bucket=configured_bucket(), Key=key, Body=b'encrypted-test-data')
+              obj = client.get_object(Bucket=configured_bucket(), Key=key)
+              try:
+                  assert obj['Body'].read() == b'encrypted-test-data'
+              finally:
+                  obj['Body'].close()
+          finally:
+              client.delete_object(Bucket=configured_bucket(), Key=key)
+          print('Internal attachment storage round trip passed.')
+          PY
+      - name: Stop the disposable test stack
+        if: always()
+        run: docker compose down

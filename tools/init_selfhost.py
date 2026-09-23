@@ -6,11 +6,16 @@ import argparse
 import os
 from pathlib import Path
 import secrets
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+from config.public_url import public_origin
 
 
-def create_environment(destination: Path) -> None:
+def create_environment(destination: Path, url: str = "http://localhost:8080") -> None:
     template = Path(__file__).resolve().parents[1] / ".env.selfhost.example"
     values = {
+        "PUBLIC_URL": public_origin(url),
         "SECRET_KEY": secrets.token_hex(32),
         "POSTGRES_PASSWORD": secrets.token_hex(32),
         "MINIO_ROOT_PASSWORD": secrets.token_hex(32),
@@ -28,12 +33,15 @@ def create_environment(destination: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path(".env"))
+    parser.add_argument("--url", default="http://localhost:8080", help="Public HTTPS URL (or local test URL).")
     args = parser.parse_args()
     try:
-        create_environment(args.output)
+        create_environment(args.output, args.url)
     except FileExistsError:
         parser.exit(1, "Environment already exists; its credentials were left unchanged.\n")
-    print("Private environment created. Review URLs and SMTP before starting Docker.")
+    except ValueError as error:
+        parser.exit(1, f"{error}\n")
+    print("Private environment created. Start with docker compose up --build -d.")
 
 
 if __name__ == "__main__":

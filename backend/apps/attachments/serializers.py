@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -52,7 +53,10 @@ class AttachmentSerializer(RejectPlaintextMixin, serializers.ModelSerializer):
 
 
 class AttachmentInitiateSerializer(AttachmentSerializer):
-    pass
+    def validate_ciphertext_size(self, value):
+        if value < 1 or value > settings.ATTACHMENT_MAX_BYTES:
+            raise serializers.ValidationError("Attachment exceeds the supported size limit.")
+        return value
 
 
 class AttachmentCompleteSerializer(serializers.Serializer):
