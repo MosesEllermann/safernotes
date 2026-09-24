@@ -18,7 +18,6 @@ def create_environment(destination: Path, url: str = "http://localhost:8080") ->
         "PUBLIC_URL": public_origin(url),
         "SECRET_KEY": secrets.token_hex(32),
         "POSTGRES_PASSWORD": secrets.token_hex(32),
-        "MINIO_ROOT_PASSWORD": secrets.token_hex(32),
     }
     lines = []
     for line in template.read_text().splitlines():

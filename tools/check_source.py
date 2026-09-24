@@ -10,7 +10,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 PRIVATE_SUFFIXES = {".jks", ".keystore", ".pem", ".p12", ".pfx", ".sqlite", ".sqlite3", ".db", ".sql", ".log"}
-PRIVATE_PARTS = {".git", ".local", ".venv", ".dart-tool", ".dart_tool", "node_modules", "Pods", "__pycache__"}
+PRIVATE_PARTS = {".git", ".local", ".venv", ".dart-tool", ".dart_tool", "node_modules", "Pods", "__pycache__", "private-attachments"}
 PATTERNS = {
     "private key": re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----"),
     "access token": re.compile(rb"\b(?:gh[pousr]_[A-Za-z0-9]{25,}|github_pat_[A-Za-z0-9_]{40,}|sk-(?:proj-)?[A-Za-z0-9_-]{25,}|sk_(?:live|test)_[A-Za-z0-9]{20,}|creem_(?:live|test)_[A-Za-z0-9_-]{15,}|xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35})\b"),

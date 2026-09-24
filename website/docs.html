@@ -139,7 +139,8 @@
             <h2>Mit Docker installieren</h2>
             <p>
               Du brauchst Git, Python 3, Docker Engine und Docker Compose v2. Der Stack
-              enthält die Web-App, Django-API, PostgreSQL, Redis und MinIO.
+              enthält die Web-App, Django-API, PostgreSQL und Redis. Verschlüsselte
+              Anhänge werden direkt in einem dauerhaften Docker-Volume gespeichert.
             </p>
 
             <h3>1. Quellcode herunterladen</h3>
@@ -179,8 +180,8 @@ sudo docker compose up --build -d</code></pre>
               100 MiB erlauben. Rufe danach deine eigene URL im Browser auf.
             </p>
             <p>
-              Nur die Web-App veröffentlicht einen Port. API, PostgreSQL, Redis
-              und MinIO bleiben im Docker-Netz. Anhänge laufen ebenfalls über
+              Nur die Web-App veröffentlicht einen Port. API, PostgreSQL und Redis
+              bleiben im Docker-Netz. Anhänge laufen ebenfalls über
               deine App-Adresse: kein zusätzlicher Speicher-Port, keine zweite
               Domain und kein Cloud-Konto. Domain, HTTPS und Backups bleiben
               Aufgaben des Serverbetreibers.
@@ -196,15 +197,6 @@ sudo docker compose up --build -d</code></pre>
                 Für den Zugriff vom Smartphone brauchst du eine von dort erreichbare
                 HTTPS-Adresse. Stelle dafür <code>PUBLIC_URL</code> in der bestehenden
                 <code>.env</code> um und starte den Stack erneut; die Geheimnisse bleiben gleich.</p>
-            </details>
-            <details>
-              <summary>Optional: vorhandenen S3-Speicher verwenden</summary>
-              <p>Standardmäßig speichert MinIO die Anhänge in einem Docker-Volume
-                auf deinem Server. Nur wenn du bewusst einen anderen S3-Speicher
-                einsetzen möchtest, sind zusätzliche Speicher-Zugangsdaten nötig.
-                Auch dann verwenden App und Browser weiterhin nur deine App-URL.</p>
-              <p>Die erweiterten Einstellungen und Hinweise zum Umzug bestehender
-                Anhänge stehen im <a class="inline-link" href="https://github.com/MosesEllermann/Notizen-App/blob/main/docs/SELF_HOSTING.md">Self-Hosting-Handbuch</a>.</p>
             </details>
             </div>
             <h3>Optional: E-Mail über SMTP</h3>
@@ -249,6 +241,8 @@ sudo docker compose up --build -d</code></pre>
             <p class="section-label">5 · Betrieb</p>
             <h2>Updates und Backups</h2>
             <h3>Installation aktualisieren</h3>
+            <p>Falls du bereits Anhänge mit der früheren Speicher-Version genutzt
+              hast, lies vor dem Update die Hinweise zum Wechsel direkt darunter.</p>
             <pre><code>git pull --ff-only
 sudo docker compose up --build -d
 sudo docker compose ps</code></pre>
@@ -258,26 +252,36 @@ sudo docker compose ps</code></pre>
             </p>
 
             <h3>Von einer älteren Docker-Konfiguration wechseln</h3>
-            <p>Behalte deine bestehende <code>.env</code>, alle Passwörter und
-              Volumes. Ergänze oder ändere für den mitgelieferten MinIO-Speicher
-              nur diese beiden Werte:</p>
-            <pre><code>PUBLIC_URL=https://notizen.example.com
-ATTACHMENT_ENDPOINT_URL=http://minio:9000</code></pre>
-            <p>Die zweite Zeile ist eine interne Docker-Adresse, keine zusätzliche
-              öffentliche URL. Bei Neuinstallationen ist sie bereits voreingestellt.
-              Starte danach <code>sudo docker compose up --build -d</code>.
+            <p>Behalte deine bestehende <code>.env</code>,
+              <code>SECRET_KEY</code>, <code>POSTGRES_PASSWORD</code> und alle
+              Volumes. Prüfe nur deine öffentliche Adresse:</p>
+            <pre><code>PUBLIC_URL=https://notizen.example.com</code></pre>
+            <p>Eine Speicher-URL oder zusätzliche Speicher-Zugangsdaten werden
+              nicht mehr verwendet. Alte Einträge in deiner <code>.env</code>
+              werden ignoriert. Starte danach den Stack wie oben beschrieben.
               Erzeuge keine neuen Passwörter und lösche keine Volumes, um ein
-              Startproblem zu umgehen. Wer externen S3-Speicher nutzt, behält
-              stattdessen dessen Endpunkt und Zugangsdaten bei.</p>
+              Startproblem zu umgehen.</p>
+            <p><strong>Bei bereits gespeicherten Anhängen aus der früheren
+              MinIO/S3-Version:</strong> Diese werden nicht automatisch übernommen.
+              Sichere und exportiere sie vor dem Wechsel; das alte Speicher-Volume
+              darf nicht einfach als neues Anhang-Volume eingebunden werden.
+              Hinweise zur Übernahme stehen im
+              <a class="inline-link" href="https://github.com/MosesEllermann/Notizen-App/blob/main/docs/SELF_HOSTING.md">Self-Hosting-Handbuch</a>.
+              Wenn die bisherige Installation schon beim Image-Download gescheitert
+              ist, gibt es keine hochgeladenen Anhänge zu übernehmen.</p>
 
             <h3>PostgreSQL sichern</h3>
             <pre><code>sudo docker compose exec -T postgres \
   pg_dump -U safernotes safernotes &gt; safernotes-backup.sql</code></pre>
             <p>
-              Sichere zusätzlich das MinIO-Volume mit den verschlüsselten
+              Sichere zusätzlich das Docker-Volume <code>attachment_data</code> mit den verschlüsselten
               Anhängen und bewahre deine <code>.env</code> sicher auf. Prüfe
               Wiederherstellungen regelmäßig auf einem getrennten System.
             </p>
+            <p>Stoppe für einen zusammengehörigen Datenbank- und Dateistand die
+              API während der Sicherung. Die Volume-Namen tragen normalerweise
+              den Compose-Projektnamen als Präfix. Verwende für Updates niemals
+              <code>docker compose down -v</code>: Das löscht die dauerhaften Daten.</p>
           </section>
 
           <section id="troubleshooting">
@@ -286,7 +290,7 @@ ATTACHMENT_ENDPOINT_URL=http://minio:9000</code></pre>
             <h3>Docker meldet „permission denied“</h3>
             <p>Wenn der Zugriff auf <code>/var/run/docker.sock</code> verweigert
               wird, fehlen deinem Linux-Benutzer die Docker-Berechtigungen.
-              Das ist kein MinIO- oder Passwortfehler. Führe im Projektverzeichnis aus:</p>
+              Das ist kein App- oder Passwortfehler. Führe im Projektverzeichnis aus:</p>
             <pre><code>sudo docker compose up --build -d
 sudo docker compose ps</code></pre>
             <p>Eine bereits erzeugte <code>.env</code> bleibt erhalten; das Setup-Skript
@@ -314,11 +318,11 @@ sudo docker compose ps</code></pre>
               </div>
             </div>
             <ul>
-              <li><strong>Image-Download für MinIO schlägt fehl:</strong> Die aktuelle Compose-Datei verwendet festgelegte Images von <code>quay.io/minio</code>. Ältere Einträge wie <code>minio/mc:latest</code> verweisen auf Docker Hub. Aktualisiere den Quellcode; für die Quay-Images brauchst du kein Registry-Konto. Lösche dafür weder deine <code>.env</code> noch deine Daten.</li>
+              <li><strong>Es wird noch ein separates Speicher-Image heruntergeladen:</strong> Aktualisiere den Quellcode mit <code>git pull --ff-only</code>. Die aktuelle Compose-Datei benötigt keinen separaten Speicherdienst mehr. Behalte deine <code>.env</code> und vorhandene Daten.</li>
               <li><strong>Server nicht erreichbar:</strong> Prüfe HTTPS, DNS, Firewall und ob die URL ohne <code>/api</code> gespeichert wurde.</li>
               <li><strong>Setup meldet eine vorhandene Datei:</strong> Das schützt deine Zugangsdaten. Bearbeite bei Bedarf <code>PUBLIC_URL</code> in der bestehenden <code>.env</code>; lösche die Datei nicht.</li>
               <li><strong>Registrierungs-E-Mail fehlt:</strong> Prüfe die <code>EMAIL_*</code>-Werte und das API-Log. Bei der Console-Konfiguration steht der Inhalt nur im Log.</li>
-              <li><strong>Anhänge schlagen fehl:</strong> Prüfe den Zustand der API- und MinIO-Container, freien Speicherplatz und das Upload-Limit deines HTTPS-Proxys. Beim Standard-Setup ist kein öffentlicher Speicher-Port nötig.</li>
+              <li><strong>Anhänge schlagen fehl:</strong> Prüfe das API-Log, freien Speicherplatz, Schreibrechte im Anhang-Volume und das Upload-Limit deines HTTPS-Proxys. Es gibt keinen zusätzlichen Speicher-Port oder Speicher-Zugangsschlüssel.</li>
               <li><strong>Android-Erinnerungen fehlen:</strong> Erlaube Benachrichtigungen, kontrolliere Datum und Uhrzeit und entferne Akku-Beschränkungen für Safernotes.</li>
             </ul>
             <p>Veröffentliche weder deine <code>.env</code> noch ungeprüfte Logs.
@@ -354,25 +358,25 @@ sudo docker compose ps</code></pre>
                   Updates erhalten und gehören in dein privates Backup.</p>
               </details>
               <details>
-                <summary>Wofür sind die drei automatisch erzeugten Geheimnisse?</summary>
+                <summary>Wofür sind die zwei automatisch erzeugten Geheimnisse?</summary>
                 <p><code>SECRET_KEY</code> sichert serverinterne Funktionen ab;
                   er ist nicht der Entschlüsselungsschlüssel deiner Notizen.
-                  <code>POSTGRES_PASSWORD</code> schützt den Datenbankzugang und
-                  <code>MINIO_ROOT_PASSWORD</code> den mitgelieferten Dateispeicher.
+                  <code>POSTGRES_PASSWORD</code> schützt den Datenbankzugang.
                   Du musst sie normalerweise nicht bearbeiten.</p>
               </details>
               <details>
                 <summary>Ist der Speicher bereits enthalten?</summary>
                 <p>Ja. PostgreSQL speichert unter anderem verschlüsselte Notizen
-                  und Kontodaten; MinIO speichert verschlüsselte Anhänge in einem
-                  Docker-Volume auf deinem Server. Kein zusätzlicher Cloudspeicher
-                  ist nötig. Ein externer S3-Speicher ist eine optionale Alternative.</p>
+                  und Kontodaten; verschlüsselte Anhänge liegen direkt im dauerhaften
+                  Docker-Volume <code>attachment_data</code> auf deinem Server.
+                  Die API prüft den Zugriff. Es gibt keinen externen Speicherdienst
+                  und keine zusätzliche Speicher-Konfiguration.</p>
               </details>
               <details>
-                <summary>Muss ich Ports für Datenbank oder MinIO freigeben?</summary>
+                <summary>Muss ich Ports für Datenbank oder Dateispeicher freigeben?</summary>
                 <p>Nein. Diese Dienste bleiben im Docker-Netz und veröffentlichen
                   keine eigenen Ports auf dem Server. Nur der Web-Port wird an
-                  deinen HTTPS-Proxy angebunden. Eine gesonderte MinIO-Domain
+                  deinen HTTPS-Proxy angebunden. Eine gesonderte Speicher-Domain
                   oder öffentliche Verwaltungsoberfläche brauchst du nicht.</p>
               </details>
               <details>

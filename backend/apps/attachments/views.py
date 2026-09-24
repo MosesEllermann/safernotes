@@ -19,7 +19,6 @@ from apps.attachments.serializers import (
     AttachmentInitiateSerializer,
     AttachmentSerializer,
 )
-from apps.attachments.storage import presigned_download_target, presigned_upload_target
 from apps.attachments.transfer import (
     TransferAuthentication,
     store_ciphertext,
@@ -103,11 +102,7 @@ class AttachmentViewSet(
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         attachment = serializer.instance
-        target = (
-            transfer_target(attachment, request.user, "PUT")
-            if settings.ATTACHMENT_PROXY_ENABLED
-            else presigned_upload_target(attachment.object_key, attachment.ciphertext_size)
-        )
+        target = transfer_target(attachment, request.user, "PUT")
         data = AttachmentSerializer(attachment, context={"request": request}).data
         data["upload"] = target.__dict__
         return response.Response(data, status=201, headers={"Cache-Control": "no-store"})
@@ -121,10 +116,7 @@ class AttachmentViewSet(
             raise exceptions.PermissionDenied(
                 "Viewer role cannot complete encrypted attachment uploads."
             )
-        if (
-            settings.ATTACHMENT_PROXY_ENABLED
-            and attachment.upload_state != AttachmentUploadState.UPLOADED
-        ):
+        if attachment.upload_state != AttachmentUploadState.UPLOADED:
             raise exceptions.ValidationError("Upload the encrypted content before completing it.")
         serializer = AttachmentCompleteSerializer(
             data=request.data, context={"attachment": attachment}
@@ -154,11 +146,7 @@ class AttachmentViewSet(
         attachment = self.get_object()
         if attachment.upload_state != AttachmentUploadState.COMPLETE:
             raise exceptions.ValidationError("Attachment is not available for download.")
-        target = (
-            transfer_target(attachment, request.user, "GET")
-            if settings.ATTACHMENT_PROXY_ENABLED
-            else presigned_download_target(attachment.object_key)
-        )
+        target = transfer_target(attachment, request.user, "GET")
         return response.Response(
             {"encrypted": True, "download": target.__dict__}, headers={"Cache-Control": "no-store"}
         )

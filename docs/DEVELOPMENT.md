@@ -26,6 +26,12 @@ cd backend
 ../.venv/bin/python -m pytest -q
 ```
 
+Backend attachments use the gitignored `backend/private-attachments/` directory
+during local development. Never publish this directory or serve it as static media.
+Docker mounts persistent storage automatically. Other deployment templates under
+`infra/` are incomplete starters: mount a durable filesystem at `ATTACHMENT_ROOT`
+before using them. Do not run replicas with separate attachment filesystems.
+
 ## Frontend
 
 Install Flutter, then:

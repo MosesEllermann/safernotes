@@ -6,10 +6,11 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import os
+from dataclasses import dataclass
 from tempfile import SpooledTemporaryFile
 from urllib.parse import urlencode
 
-from botocore.exceptions import BotoCoreError, ClientError
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core import signing
@@ -17,9 +18,18 @@ from django.http import StreamingHttpResponse
 from django.urls import reverse
 from rest_framework import authentication, exceptions
 
-from apps.attachments.storage import PresignedObjectTarget, configured_bucket, s3_client
+from apps.attachments.storage import open_ciphertext, write_ciphertext
 
 TRANSFER_SALT = "safernotes.attachment.transfer.v1"
+
+
+@dataclass(frozen=True)
+class TransferTarget:
+    object_key: str
+    url: str
+    fields: dict
+    method: str
+    expires_in: int
 
 
 class StorageUnavailable(exceptions.APIException):
@@ -29,8 +39,6 @@ class StorageUnavailable(exceptions.APIException):
 
 class TransferAuthentication(authentication.BaseAuthentication):
     def authenticate(self, request):
-        if not settings.ATTACHMENT_PROXY_ENABLED:
-            raise exceptions.NotFound()
         method = request.method
         ttl = settings.ATTACHMENT_STORAGE[
             "upload_url_ttl_seconds" if method == "PUT" else "download_url_ttl_seconds"
@@ -50,7 +58,7 @@ class TransferAuthentication(authentication.BaseAuthentication):
         return user, None
 
 
-def transfer_target(attachment, user, method: str) -> PresignedObjectTarget:
+def transfer_target(attachment, user, method: str) -> TransferTarget:
     ttl = settings.ATTACHMENT_STORAGE[
         "upload_url_ttl_seconds" if method == "PUT" else "download_url_ttl_seconds"
     ]
@@ -60,16 +68,20 @@ def transfer_target(attachment, user, method: str) -> PresignedObjectTarget:
     )
     path = reverse("attachments-content", kwargs={"pk": attachment.pk})
     url = settings.APP_BASE_URL.rstrip("/") + path + "?" + urlencode({"token": token})
-    return PresignedObjectTarget(attachment.object_key, url, {}, method, ttl)
+    return TransferTarget(attachment.object_key, url, {}, method, ttl)
 
 
 def store_ciphertext(request, attachment):
+    try:
+        _store_ciphertext(request, attachment)
+    except OSError as error:
+        raise StorageUnavailable() from error
+
+
+def _store_ciphertext(request, attachment):
     size = attachment.ciphertext_size
     if size < 1 or size > settings.ATTACHMENT_MAX_BYTES:
         raise exceptions.ValidationError("Attachment exceeds the supported size limit.")
-    client = s3_client()
-    if client is None:
-        raise StorageUnavailable()
     digest = hashlib.sha256()
     total = 0
     if request.stream is None:
@@ -94,27 +106,17 @@ def store_ciphertext(request, attachment):
         ):
             raise exceptions.ValidationError("Ciphertext checksum mismatch.")
         buffer.seek(0)
-        try:
-            client.put_object(
-                Bucket=configured_bucket(),
-                Key=attachment.object_key,
-                Body=buffer,
-                ContentLength=size,
-                ContentType="application/octet-stream",
-            )
-        except (BotoCoreError, ClientError) as error:
-            raise StorageUnavailable() from error
+        write_ciphertext(attachment.object_key, buffer)
 
 
 def stream_ciphertext(attachment):
-    client = s3_client()
-    if client is None:
-        raise StorageUnavailable()
     try:
-        stored = client.get_object(Bucket=configured_bucket(), Key=attachment.object_key)
-    except (BotoCoreError, ClientError) as error:
+        body = open_ciphertext(attachment.object_key)
+    except OSError as error:
         raise StorageUnavailable() from error
-    body = stored["Body"]
+    if os.fstat(body.fileno()).st_size != attachment.ciphertext_size:
+        body.close()
+        raise StorageUnavailable()
 
     async def chunks():
         try:
@@ -124,7 +126,7 @@ def stream_ciphertext(attachment):
             body.close()
 
     result = StreamingHttpResponse(chunks(), content_type="application/octet-stream")
-    result["Content-Length"] = stored["ContentLength"]
+    result["Content-Length"] = attachment.ciphertext_size
     result["Content-Disposition"] = 'attachment; filename="encrypted-attachment.bin"'
     result["Cache-Control"] = "no-store"
     result["X-Content-Type-Options"] = "nosniff"

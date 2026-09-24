@@ -33,6 +33,13 @@ HTTPS reverse proxy. Notes and attachments share that one URL. For an existing
 installation, retain `.env` and its credentials and follow the upgrade section in
 the guide rather than regenerating secrets.
 
+Encrypted attachments are stored directly in the persistent `attachment_data`
+Docker volume. No additional storage service or storage credentials are required.
+Back up this volume together with PostgreSQL and `.env`. Installations with
+attachments from the old storage service must migrate those objects before updating;
+see the self-hosting guide. On Linux, use `sudo docker compose ...` if Docker
+reports a socket permission error.
+
 ## Run for development
 
 Terminal 1:

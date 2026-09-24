@@ -54,7 +54,6 @@ def test_single_origin_derives_all_selfhost_settings(monkeypatch):
     assert selfhost.CSRF_TRUSTED_ORIGINS == selfhost.CORS_ALLOWED_ORIGINS
     assert selfhost.APP_BASE_URL == selfhost.WEBSITE_BASE_URL == "https://notes.example.com:8443"
     assert selfhost.SESSION_COOKIE_SECURE and selfhost.CSRF_COOKIE_SECURE
-    assert selfhost.ATTACHMENT_PROXY_ENABLED
 
 
 def test_access_log_hides_signed_transfer_token():

@@ -4,6 +4,7 @@ __pycache__
 build
 db.sqlite3
 media
+private-attachments
 staticfiles
 *.egg-info
 *.pyc

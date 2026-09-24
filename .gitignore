@@ -14,6 +14,7 @@ __pycache__/
 backend/db.sqlite3
 backend/build/
 backend/media/
+backend/private-attachments/
 backend/staticfiles/
 backend/zknotes_backend.egg-info/
 backend/safernotes_backend.egg-info/

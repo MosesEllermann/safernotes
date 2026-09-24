@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v7
       - run: python3 tools/init_selfhost.py
       - run: docker compose config --quiet
-      - run: docker compose pull postgres redis minio minio-create-bucket
+      - run: docker compose pull postgres redis
       - run: docker compose build
       - run: docker compose up -d --wait --wait-timeout 180
       - name: Check the single web endpoint and internal attachment storage
@@ -66,20 +66,17 @@ jobs:
           curl --fail --silent --show-error http://localhost:8080/ --output /dev/null
           curl --fail --silent --show-error http://localhost:8080/api/v1/health/live
           docker compose exec -T api python manage.py shell <<'PY'
-          import uuid
-          from apps.attachments.storage import configured_bucket, s3_client
-          client = s3_client()
-          key = 'ci-smoke/' + str(uuid.uuid4())
-          try:
-              client.put_object(Bucket=configured_bucket(), Key=key, Body=b'encrypted-test-data')
-              obj = client.get_object(Bucket=configured_bucket(), Key=key)
-              try:
-                  assert obj['Body'].read() == b'encrypted-test-data'
-              finally:
-                  obj['Body'].close()
-          finally:
-              client.delete_object(Bucket=configured_bucket(), Key=key)
-          print('Internal attachment storage round trip passed.')
+          import io
+          from apps.attachments.storage import write_ciphertext
+          write_ciphertext('ci-storage-smoke', io.BytesIO(b'encrypted-test-data'))
+          PY
+          docker compose up -d --force-recreate --no-deps --wait --wait-timeout 180 api
+          docker compose exec -T api python manage.py shell <<'PY'
+          from apps.attachments.storage import open_ciphertext, object_path
+          with open_ciphertext('ci-storage-smoke') as stored:
+              assert stored.read() == b'encrypted-test-data'
+          object_path('ci-storage-smoke').unlink()
+          print('Attachment storage survives API container replacement.')
           PY
       - name: Stop the disposable test stack
         if: always()

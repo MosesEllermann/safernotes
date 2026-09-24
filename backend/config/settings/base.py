@@ -16,9 +16,7 @@ env = environ.Env(
     DATABASE_URL=(str, f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
     REDIS_URL=(str, "redis://localhost:6379/0"),
     CORS_ALLOWED_ORIGINS=(list, ["http://localhost:3000", "http://localhost:5173"]),
-    ATTACHMENT_BUCKET=(str, ""),
-    ATTACHMENT_ENDPOINT_URL=(str, ""),
-    ATTACHMENT_REGION=(str, "auto"),
+    ATTACHMENT_ROOT=(str, str(BASE_DIR / "private-attachments")),
     ATTACHMENT_UPLOAD_URL_TTL_SECONDS=(int, 900),
     ATTACHMENT_DOWNLOAD_URL_TTL_SECONDS=(int, 900),
     STORAGE_QUOTA_BYTES=(int, 0),
@@ -197,13 +195,10 @@ LOGGING = {
     },
 }
 
+ATTACHMENT_ROOT = Path(env("ATTACHMENT_ROOT"))
 ATTACHMENT_STORAGE = {
-    "bucket": env("ATTACHMENT_BUCKET"),
-    "endpoint_url": env("ATTACHMENT_ENDPOINT_URL"),
-    "region_name": env("ATTACHMENT_REGION"),
     "upload_url_ttl_seconds": env("ATTACHMENT_UPLOAD_URL_TTL_SECONDS"),
     "download_url_ttl_seconds": env("ATTACHMENT_DOWNLOAD_URL_TTL_SECONDS"),
 }
-ATTACHMENT_PROXY_ENABLED = False
 ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024
 STORAGE_QUOTA_BYTES = env("STORAGE_QUOTA_BYTES")

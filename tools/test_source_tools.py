@@ -8,11 +8,12 @@ from init_selfhost import create_environment
 
 
 class SourceToolsTest(unittest.TestCase):
-    def test_minio_images_use_digest_pinned_quay_references(self):
+    def test_attachments_use_a_private_persistent_api_volume(self):
         compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
-        for name in ("minio", "mc"):
-            self.assertRegex(compose, rf"image: quay\.io/minio/{name}@sha256:[0-9a-f]{{64}}")
-            self.assertNotIn(f"image: minio/{name}:", compose)
+        self.assertIn("ATTACHMENT_ROOT: /var/lib/safernotes/attachments", compose)
+        self.assertIn("- attachment_data:/var/lib/safernotes/attachments", compose)
+        for obsolete in ("minio", "ATTACHMENT_ENDPOINT", "AWS_", "ATTACHMENT_BUCKET"):
+            self.assertNotIn(obsolete, compose)
 
     def test_public_url_is_the_only_public_address(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -40,8 +41,9 @@ class SourceToolsTest(unittest.TestCase):
                 line.split("=", 1) for line in original.decode().splitlines()
                 if line and not line.startswith("#")
             )
-            secrets = [values[name] for name in ("SECRET_KEY", "POSTGRES_PASSWORD", "MINIO_ROOT_PASSWORD")]
-            self.assertEqual(len(set(secrets)), 3)
+            secrets = [values[name] for name in ("SECRET_KEY", "POSTGRES_PASSWORD")]
+            self.assertEqual(len(set(secrets)), 2)
+            self.assertFalse(any(name.startswith(("MINIO_", "ATTACHMENT_", "AWS_")) for name in values))
             self.assertTrue(all(len(value) == 64 for value in secrets))
             self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o600)
             with self.assertRaises(FileExistsError):
@@ -63,6 +65,14 @@ class SourceToolsTest(unittest.TestCase):
             root = Path(directory)
             (root / "external.txt").symlink_to("/nonexistent/private-file")
             self.assertIn("symbolic link", inspect_source(root, [Path("external.txt")])[0])
+
+    def test_private_attachments_are_rejected_from_source_exports(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            relative = Path("backend/private-attachments/ciphertext")
+            (root / relative).parent.mkdir(parents=True)
+            (root / relative).write_bytes(b"encrypted content")
+            self.assertIn("private/generated file", inspect_source(root, [relative])[0])
 
 
 if __name__ == "__main__":

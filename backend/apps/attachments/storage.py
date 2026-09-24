@@ -1,61 +1,50 @@
+"""Private, persistent ciphertext storage; never served as static/media files."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import os
+import shutil
+import stat
+import tempfile
+from pathlib import Path
 
 from django.conf import settings
 
 
-@dataclass(frozen=True)
-class PresignedObjectTarget:
-    object_key: str
-    url: str | None
-    fields: dict
-    method: str
-    expires_in: int
+def object_path(object_key: str) -> Path:
+    # Logical keys never become filesystem paths, even for older database entries.
+    filename = hashlib.sha256(object_key.encode("utf-8")).hexdigest()
+    return Path(settings.ATTACHMENT_ROOT) / filename
 
 
-def configured_bucket() -> str:
-    return settings.ATTACHMENT_STORAGE.get("bucket", "")
+def write_ciphertext(object_key: str, source) -> None:
+    destination = object_path(object_key)
+    root = destination.parent
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if root.is_symlink():
+        raise OSError("Attachment root must not be a symbolic link.")
+    # Same-filesystem replacement: interrupted writes leave the old object intact.
+    fd, temporary = tempfile.mkstemp(prefix=".upload-", dir=root)
+    try:
+        with os.fdopen(fd, "wb") as target:
+            shutil.copyfileobj(source, target, length=64 * 1024)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary, destination)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
 
 
-def s3_client():
-    if not configured_bucket():
-        return None
-    import boto3
-
-    return boto3.client(
-        "s3",
-        endpoint_url=settings.ATTACHMENT_STORAGE.get("endpoint_url") or None,
-        region_name=settings.ATTACHMENT_STORAGE.get("region_name") or None,
-    )
-
-
-def presigned_upload_target(object_key: str, ciphertext_size: int) -> PresignedObjectTarget:
-    expires_in = settings.ATTACHMENT_STORAGE["upload_url_ttl_seconds"]
-    client = s3_client()
-    if client is None:
-        return PresignedObjectTarget(object_key=object_key, url=None, fields={}, method="PUT", expires_in=expires_in)
-    url = client.generate_presigned_url(
-        ClientMethod="put_object",
-        Params={
-            "Bucket": configured_bucket(),
-            "Key": object_key,
-            "ContentLength": ciphertext_size,
-        },
-        ExpiresIn=expires_in,
-    )
-    return PresignedObjectTarget(object_key=object_key, url=url, fields={}, method="PUT", expires_in=expires_in)
-
-
-def presigned_download_target(object_key: str) -> PresignedObjectTarget:
-    expires_in = settings.ATTACHMENT_STORAGE["download_url_ttl_seconds"]
-    client = s3_client()
-    if client is None:
-        return PresignedObjectTarget(object_key=object_key, url=None, fields={}, method="GET", expires_in=expires_in)
-    url = client.generate_presigned_url(
-        ClientMethod="get_object",
-        Params={"Bucket": configured_bucket(), "Key": object_key},
-        ExpiresIn=expires_in,
-    )
-    return PresignedObjectTarget(object_key=object_key, url=url, fields={}, method="GET", expires_in=expires_in)
-
+def open_ciphertext(object_key: str):
+    path = object_path(object_key)
+    if path.parent.is_symlink():
+        raise OSError("Attachment root must not be a symbolic link.")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("Attachment must be a regular file.")
+        return os.fdopen(fd, "rb")
+    except BaseException:
+        os.close(fd)
+        raise
