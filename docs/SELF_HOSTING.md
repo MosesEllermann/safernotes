@@ -9,6 +9,12 @@ Safernotes supports two independent modes:
 
 Requirements: Python 3, Docker Engine with Docker Compose v2.
 
+The bundled MinIO server and bucket initializer use digest-pinned images from
+`quay.io/minio`, not the unavailable Docker Hub repositories. No registry login
+is required. These are legacy images from the archived MinIO community project;
+the registry change fixes installation, not upstream maintenance. Keep storage
+internal and plan a maintained storage replacement for long-term operation.
+
 ```sh
 python3 tools/init_selfhost.py
 docker compose up --build -d

@@ -57,7 +57,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python3 tools/init_selfhost.py
-      - run: docker compose config
+      - run: docker compose config --quiet
+      - run: docker compose pull postgres redis minio minio-create-bucket
       - run: docker compose build
       - run: docker compose up -d --wait --wait-timeout 180
       - name: Check the single web endpoint and internal attachment storage

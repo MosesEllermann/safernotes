@@ -8,6 +8,12 @@ from init_selfhost import create_environment
 
 
 class SourceToolsTest(unittest.TestCase):
+    def test_minio_images_use_digest_pinned_quay_references(self):
+        compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text()
+        for name in ("minio", "mc"):
+            self.assertRegex(compose, rf"image: quay\.io/minio/{name}@sha256:[0-9a-f]{{64}}")
+            self.assertNotIn(f"image: minio/{name}:", compose)
+
     def test_public_url_is_the_only_public_address(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / ".env"

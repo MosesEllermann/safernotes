@@ -13,7 +13,7 @@
     <link rel="icon" href="./assets/favicon-32.png" sizes="32x32" type="image/png" />
     <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
     <link rel="manifest" href="./site.webmanifest" />
-    <link rel="stylesheet" href="./styles.css?v=mobile-nav-2" />
+    <link rel="stylesheet" href="./styles.css?v=docs-single-url-4" />
   </head>
   <body class="docs-page">
     <header class="site-header">
@@ -149,7 +149,12 @@ cd Notizen-App</code></pre>
             <h3>2. Deine URL festlegen und starten</h3>
             <p>Ersetze die Beispieladresse durch deine eigene HTTPS-Adresse:</p>
             <pre><code>python3 tools/init_selfhost.py --url https://notizen.example.com
-docker compose up --build -d</code></pre>
+sudo docker compose up --build -d</code></pre>
+            <p>Die Docker-Befehle hier verwenden <code>sudo</code> für einen
+              Linux-Server. Wenn dein Benutzer bereits Docker-Zugriff hat oder
+              du Docker Desktop bzw. Rootless Docker verwendest, lasse
+              <code>sudo</code> weg. Das Python-Setup und Git führst du immer
+              als normaler Benutzer aus, damit deine Dateien dir gehören.</p>
             <p>
               Das Setup speichert die Adresse als <code>PUBLIC_URL</code> und erzeugt
               alle internen Geheimnisse automatisch in deiner privaten <code>.env</code>.
@@ -186,7 +191,7 @@ docker compose up --build -d</code></pre>
               <p>Führe nach dem Herunterladen des Quellcodes diese Befehle
                 <strong>statt</strong> der Einrichtung mit eigener Domain aus:</p>
               <pre><code>python3 tools/init_selfhost.py
-docker compose up --build -d</code></pre>
+sudo docker compose up --build -d</code></pre>
               <p>Öffne <code>http://localhost:8080</code> auf demselben Rechner.
                 Für den Zugriff vom Smartphone brauchst du eine von dort erreichbare
                 HTTPS-Adresse. Stelle dafür <code>PUBLIC_URL</code> in der bestehenden
@@ -245,8 +250,8 @@ docker compose up --build -d</code></pre>
             <h2>Updates und Backups</h2>
             <h3>Installation aktualisieren</h3>
             <pre><code>git pull --ff-only
-docker compose up --build -d
-docker compose ps</code></pre>
+sudo docker compose up --build -d
+sudo docker compose ps</code></pre>
             <p>
               Lies vor einem Update die Versionshinweise und sichere deine
               Daten. Datenbankmigrationen laufen beim Start des API-Containers.
@@ -260,13 +265,13 @@ docker compose ps</code></pre>
 ATTACHMENT_ENDPOINT_URL=http://minio:9000</code></pre>
             <p>Die zweite Zeile ist eine interne Docker-Adresse, keine zusätzliche
               öffentliche URL. Bei Neuinstallationen ist sie bereits voreingestellt.
-              Starte danach <code>docker compose up --build -d</code>.
+              Starte danach <code>sudo docker compose up --build -d</code>.
               Erzeuge keine neuen Passwörter und lösche keine Volumes, um ein
               Startproblem zu umgehen. Wer externen S3-Speicher nutzt, behält
               stattdessen dessen Endpunkt und Zugangsdaten bei.</p>
 
             <h3>PostgreSQL sichern</h3>
-            <pre><code>docker compose exec -T postgres \
+            <pre><code>sudo docker compose exec -T postgres \
   pg_dump -U safernotes safernotes &gt; safernotes-backup.sql</code></pre>
             <p>
               Sichere zusätzlich das MinIO-Volume mit den verschlüsselten
@@ -278,18 +283,30 @@ ATTACHMENT_ENDPOINT_URL=http://minio:9000</code></pre>
           <section id="troubleshooting">
             <p class="section-label">6 · Fehlersuche</p>
             <h2>Wenn etwas nicht funktioniert</h2>
+            <h3>Docker meldet „permission denied“</h3>
+            <p>Wenn der Zugriff auf <code>/var/run/docker.sock</code> verweigert
+              wird, fehlen deinem Linux-Benutzer die Docker-Berechtigungen.
+              Das ist kein MinIO- oder Passwortfehler. Führe im Projektverzeichnis aus:</p>
+            <pre><code>sudo docker compose up --build -d
+sudo docker compose ps</code></pre>
+            <p>Eine bereits erzeugte <code>.env</code> bleibt erhalten; das Setup-Skript
+              musst du nicht erneut ausführen. Dauerhafter Zugriff ohne
+              <code>sudo</code> lässt sich über die Docker-Gruppe einrichten – diese
+              gewährt jedoch root-ähnliche Rechte. Details stehen in der
+              <a class="inline-link" href="https://docs.docker.com/engine/install/linux-postinstall/">offiziellen Docker-Anleitung</a>.
+              Mache den Docker-Socket nicht für alle Benutzer beschreibbar.</p>
             <div class="command-grid">
               <div>
                 <strong>Containerstatus</strong>
-                <pre><code>docker compose ps</code></pre>
+                <pre><code>sudo docker compose ps</code></pre>
               </div>
               <div>
                 <strong>API-Protokoll</strong>
-                <pre><code>docker compose logs --tail=200 api</code></pre>
+                <pre><code>sudo docker compose logs --tail=200 api</code></pre>
               </div>
               <div>
                 <strong>Web-Protokoll</strong>
-                <pre><code>docker compose logs --tail=200 web</code></pre>
+                <pre><code>sudo docker compose logs --tail=200 web</code></pre>
               </div>
               <div>
                 <strong>Healthcheck</strong>
@@ -297,6 +314,7 @@ ATTACHMENT_ENDPOINT_URL=http://minio:9000</code></pre>
               </div>
             </div>
             <ul>
+              <li><strong>Image-Download für MinIO schlägt fehl:</strong> Die aktuelle Compose-Datei verwendet festgelegte Images von <code>quay.io/minio</code>. Ältere Einträge wie <code>minio/mc:latest</code> verweisen auf Docker Hub. Aktualisiere den Quellcode; für die Quay-Images brauchst du kein Registry-Konto. Lösche dafür weder deine <code>.env</code> noch deine Daten.</li>
               <li><strong>Server nicht erreichbar:</strong> Prüfe HTTPS, DNS, Firewall und ob die URL ohne <code>/api</code> gespeichert wurde.</li>
               <li><strong>Setup meldet eine vorhandene Datei:</strong> Das schützt deine Zugangsdaten. Bearbeite bei Bedarf <code>PUBLIC_URL</code> in der bestehenden <code>.env</code>; lösche die Datei nicht.</li>
               <li><strong>Registrierungs-E-Mail fehlt:</strong> Prüfe die <code>EMAIL_*</code>-Werte und das API-Log. Bei der Console-Konfiguration steht der Inhalt nur im Log.</li>

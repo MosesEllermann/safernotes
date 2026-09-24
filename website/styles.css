@@ -739,6 +739,7 @@ p code,
 li code,
 span code,
 summary code {
+  overflow-wrap: anywhere;
   padding: 2px 5px;
   background: var(--surface-soft);
   border: 1px solid var(--line);
